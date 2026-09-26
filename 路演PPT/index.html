@@ -289,8 +289,10 @@ a{color:var(--c-link);text-decoration:none}
 #grid .gt{color:rgba(255,255,255,.6);font-size:12px;padding:9px 2px 0;display:block}
 #grid .gwrap{display:block;background:#fff;aspect-ratio:16/9;overflow:hidden;position:relative;
   outline:1px solid rgba(255,255,255,.14);border-radius:12px}
-#grid .gwrap .mini{position:absolute;inset:auto;width:1920px;height:1080px;
-  transform:scale(.1542);transform-origin:top left;opacity:1;visibility:visible}
+/* Live 1:1 clone of the slide, scaled to the tile by JS (see scaleGrid). */
+#grid .gwrap .mini{position:absolute;inset:auto;top:0;left:0;width:1920px;height:1080px;
+  transform-origin:top left;opacity:1;visibility:visible;transition:none}
+#grid .gwrap .mini .r{opacity:1;transform:none;transition:none}
 
 /* ============================================================
    Render mode (?render=N) and print
@@ -939,26 +941,37 @@ body.render .slide{transition:none!important}
   }
   addEventListener('mousemove', wake);
 
-  function buildGrid(){
-    if (grid.childElementCount) return;
-    slides.forEach((s, k) => {
-      const b = document.createElement('button');
-      const w = document.createElement('span'); w.className = 'gwrap';
-      const c = s.cloneNode(true);
-      c.classList.add('active', 'mini');
-      w.appendChild(c);
-      const t = document.createElement('span'); t.className = 'gt';
-      t.textContent = String(k + 1).padStart(2, '0');
-      b.append(w, t);
-      b.onclick = ev => { ev.stopPropagation(); toggleGrid(); show(k); };
-      grid.appendChild(b);
+  /* Overview grid: live 1:1 clones of every slide, scaled to fit each tile. */
+  function scaleGrid(){
+    grid.querySelectorAll('.gwrap').forEach(w => {
+      const mini = w.firstElementChild;
+      if (mini && w.clientWidth) mini.style.transform = 'scale(' + (w.clientWidth / 1920) + ')';
     });
   }
+  function buildGrid(){
+    if (!grid.childElementCount){
+      slides.forEach((s, k) => {
+        const b = document.createElement('button');
+        const w = document.createElement('span'); w.className = 'gwrap';
+        const c = s.cloneNode(true);
+        c.classList.add('active', 'mini');
+        c.querySelectorAll('.r').forEach(el => el.classList.add('is-in'));
+        w.appendChild(c);
+        const t = document.createElement('span'); t.className = 'gt';
+        t.textContent = String(k + 1).padStart(2, '0');
+        b.append(w, t);
+        b.onclick = ev => { ev.stopPropagation(); toggleGrid(); show(k); };
+        grid.appendChild(b);
+      });
+    }
+    scaleGrid();
+  }
   function toggleGrid(){
-    buildGrid();
     gridOpen = !gridOpen;
     grid.classList.toggle('show', gridOpen);
+    if (gridOpen) buildGrid();   // build only once the tiles are measurable
   }
+  addEventListener('resize', () => { fit(); if (gridOpen) scaleGrid(); });
 
   if (renderMode){
     document.body.classList.add('render');

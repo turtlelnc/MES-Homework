@@ -102,12 +102,22 @@ g++ -std=c++17 -O2 -static -static-libgcc -static-libstdc++ `
 
 产物为静态链接的单文件程序，可直接拷到其它 Windows 10/11 机器运行。
 
+### 运行 JSON 解析器测试
+
+Cloudflare API 与隧道凭证都依赖自带的极简 JSON 解析器，可用真实响应形态验证：
+
+```powershell
+cmake --build tools/deployer/build --target json-test
+dist-deployer/json-test.exe
+```
+
 ## 源码结构
 
 ```
 tools/deployer/
 ├── CMakeLists.txt          构建配置
 ├── build.ps1               一键构建脚本
+├── tests/json_test.cpp     JSON 解析器测试（真实 API 响应形态）
 └── src/
     ├── main.cpp            入口、控制台交互菜单、命令行参数分发
     ├── deploy.h/.cpp       部署核心：依赖检测与安装、源码准备、构建、启动、隧道

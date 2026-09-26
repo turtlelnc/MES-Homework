@@ -33,3 +33,20 @@ endif()
 set_target_properties(campus-deploy PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/../../dist-deployer"
 )
+
+# JSON 解析器测试：用真实的 Cloudflare / cloudflared 响应形态验证解析实现
+#   cmake --build <build-dir> --target json-test && ./json-test
+add_executable(json-test EXCLUDE_FROM_ALL
+  tests/json_test.cpp
+  src/json.cpp
+  src/util.cpp
+)
+target_link_libraries(json-test PRIVATE ws2_32 iphlpapi shell32 advapi32)
+if(MSVC)
+  target_compile_options(json-test PRIVATE /utf-8 /W3)
+else()
+  target_compile_options(json-test PRIVATE -Wall -Wextra -Wno-unused-parameter)
+endif()
+set_target_properties(json-test PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/../../dist-deployer"
+)
