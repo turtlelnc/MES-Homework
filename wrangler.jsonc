@@ -1,0 +1,12 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "smart-campus-homework-analyzer",
+  "main": "cloudflare-worker.mjs",
+  "compatibility_date": "2026-09-26",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+  },
+  "vars": { "ORIGIN_URL": "https://请替换为你的-cloudflared-域名.example.com" },
+}

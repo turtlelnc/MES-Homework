@@ -1,0 +1,18 @@
+PRAGMA journal_mode=WAL;
+PRAGMA foreign_keys=ON;
+CREATE TABLE IF NOT EXISTS schools(id TEXT PRIMARY KEY,name TEXT NOT NULL,created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY,school_id TEXT NOT NULL,role TEXT NOT NULL CHECK(role IN('teacher','student')),name TEXT NOT NULL,email TEXT NOT NULL UNIQUE,password_hash TEXT NOT NULL,salt TEXT NOT NULL,stage TEXT CHECK(stage IN('小学','初中','高中')),subject TEXT,class_name TEXT,created_at TEXT NOT NULL,is_school_admin INTEGER NOT NULL DEFAULT 0,FOREIGN KEY(school_id) REFERENCES schools(id));
+CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY,user_id TEXT NOT NULL,expires_at TEXT NOT NULL,FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE);
+CREATE TABLE IF NOT EXISTS provider_settings(id TEXT PRIMARY KEY,user_id TEXT NOT NULL UNIQUE,provider TEXT NOT NULL,endpoint TEXT NOT NULL,model TEXT NOT NULL,encrypted_key TEXT NOT NULL,iv TEXT NOT NULL,updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS knowledge(id TEXT PRIMARY KEY,school_id TEXT NOT NULL,stage TEXT NOT NULL,subject TEXT NOT NULL,title TEXT NOT NULL,description TEXT NOT NULL DEFAULT '',created_by TEXT NOT NULL,created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS assignments(id TEXT PRIMARY KEY,school_id TEXT NOT NULL,teacher_id TEXT NOT NULL,title TEXT NOT NULL,stage TEXT NOT NULL,subject TEXT NOT NULL,class_name TEXT NOT NULL,due_at TEXT,status TEXT NOT NULL DEFAULT 'published',created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS questions(id TEXT PRIMARY KEY,assignment_id TEXT NOT NULL,number INTEGER NOT NULL,prompt TEXT NOT NULL,standard_answer TEXT NOT NULL,knowledge_id TEXT,score REAL NOT NULL DEFAULT 0,FOREIGN KEY(assignment_id) REFERENCES assignments(id) ON DELETE CASCADE);
+CREATE TABLE IF NOT EXISTS submissions(id TEXT PRIMARY KEY,assignment_id TEXT NOT NULL,student_id TEXT,student_name TEXT NOT NULL,file_path TEXT NOT NULL,file_type TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'uploaded',ocr_text TEXT,analysis_json TEXT,teacher_reviewed INTEGER NOT NULL DEFAULT 0,score REAL,created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS mistakes(id TEXT PRIMARY KEY,submission_id TEXT NOT NULL,student_id TEXT,question_id TEXT NOT NULL,knowledge_id TEXT,reason TEXT NOT NULL,student_answer TEXT NOT NULL,correction TEXT NOT NULL,created_at TEXT NOT NULL,explanation TEXT NOT NULL DEFAULT '',practice_json TEXT,mastery INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS papers(id TEXT PRIMARY KEY,teacher_id TEXT NOT NULL,title TEXT NOT NULL,filters_json TEXT NOT NULL,content_json TEXT NOT NULL,created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS teaching_analyses(id TEXT PRIMARY KEY,assignment_id TEXT NOT NULL,scope TEXT NOT NULL CHECK(scope IN('class','student')),student_id TEXT,school_id TEXT NOT NULL,created_by TEXT NOT NULL,model TEXT NOT NULL DEFAULT '',payload_json TEXT NOT NULL,stats_json TEXT NOT NULL DEFAULT '{}',created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS student_focus(id TEXT PRIMARY KEY,assignment_id TEXT NOT NULL,student_id TEXT NOT NULL,school_id TEXT NOT NULL,teacher_id TEXT NOT NULL,level TEXT NOT NULL DEFAULT 'follow',note TEXT NOT NULL DEFAULT '',updated_at TEXT NOT NULL,UNIQUE(assignment_id,student_id));
+CREATE INDEX IF NOT EXISTS idx_mistakes_submission ON mistakes(submission_id);
+CREATE INDEX IF NOT EXISTS idx_questions_assignment ON questions(assignment_id);
+CREATE INDEX IF NOT EXISTS idx_submissions_assignment ON submissions(assignment_id);
+CREATE INDEX IF NOT EXISTS idx_analyses_assignment ON teaching_analyses(assignment_id,scope);

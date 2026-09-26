@@ -1,0 +1,14 @@
+node_modules/
+dist/
+*.local
+.env
+*.tsbuildinfo
+.sites-runtime/
+.npm-cache/
+data/
+.wrangler/
+.tmp-rc5/
+.tmp-rc5-admin/
+.tmp-ai-test/
+.tmp-teaching-verify/
+.tools/
