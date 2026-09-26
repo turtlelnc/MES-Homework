@@ -19,3 +19,6 @@ data/
 dist-deployer/
 tools/deployer/build/
 cloudflared-tunnel.log
+
+# 路演 PPT 制作过程中的临时目录
+.tmp-tpl/
