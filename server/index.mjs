@@ -1414,6 +1414,11 @@ app.use((e, _q, r, _n) =>
     .json({ error: e.message || "请求失败" }),
 );
 const port = Number(process.env.PORT || 8787);
-app.listen(port, "127.0.0.1", () =>
-  console.log(`Smart Campus ${APP_VERSION}: http://127.0.0.1:${port}`),
+// 默认只监听本机；部署脚本在内网/隧道模式下通过 HOST=0.0.0.0 放开监听。
+const host = process.env.HOST || "127.0.0.1";
+const shownHost = host === "0.0.0.0" ? "127.0.0.1" : host;
+app.listen(port, host, () =>
+  console.log(
+    `Smart Campus ${APP_VERSION}: http://${shownHost}:${port}${host === "0.0.0.0" ? "（已监听全部网卡，可供局域网访问）" : ""}`,
+  ),
 );

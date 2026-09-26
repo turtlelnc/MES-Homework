@@ -12,3 +12,10 @@ data/
 .tmp-ai-test/
 .tmp-teaching-verify/
 .tools/
+路演PPT/tools/.build/
+路演PPT/tools/node_modules/
+
+# 部署器构建产物（源码在 tools/deployer/，用 build.ps1 构建）
+dist-deployer/
+tools/deployer/build/
+cloudflared-tunnel.log

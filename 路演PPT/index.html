@@ -1,0 +1,978 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>校园作业分析器 · 路演 | Smart Campus Homework Analyzer</title>
+<link rel="stylesheet" href="assets/fonts.css">
+<style>
+/* Inter ships with U+2000–206F in its latin slice, so Chinese curly quotes (“ ”)
+   and the ellipsis would render with Inter's narrow Latin glyphs and break the CJK
+   text rhythm. Re-declare the same file under a narrower range that excludes
+   U+2018-201D and U+2026, so those codepoints fall through to the CJK face.
+   (Same idea as Apple's `:lang(zh)` overrides — CJK must never inherit Latin metrics.) */
+@font-face{font-family:'Inter Deck';font-style:normal;font-weight:400 600;font-display:block;
+  src:url('assets/fonts/Inter-latin-1.woff2') format('woff2');
+  unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,
+    U+0329,U+2000-200A,U+2010-2015,U+201A-201B,U+201E-2025,U+2027,U+2030-205E,U+20AC,U+2122,
+    U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+
+/* ============================================================
+   校园作业分析器 — 路演 deck
+   Design language reproduced from Apple's shipped production CSS
+   (apple.com/os, apple.com/iphone-duo): type scale, token colors,
+   radii, motion params. Notes marked (exact) are read verbatim.
+   ============================================================ */
+
+:root{
+  /* ── Type ───────────────────────────────────────────────── */
+  --font:"Inter Deck","Inter","Noto Sans SC",-apple-system,BlinkMacSystemFont,"SF Pro SC","SF Pro Display",
+         "PingFang SC","Hiragino Sans GB","Microsoft YaHei","Segoe UI",Helvetica,Arial,sans-serif;
+  --font-num:"Inter Deck","Inter","SF Pro Display",-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;
+
+  /* Apple's scale, shifted one tier for a 1920×1080 canvas (every display size is +4px leading) */
+  --t-hero:112px;   --lh-hero:116px;
+  --t-h1:80px;      --lh-h1:84px;
+  --t-h2:64px;      --lh-h2:68px;
+  --t-h3:40px;      --lh-h3:44px;
+  --t-h4:28px;      --lh-h4:32px;
+  --t-body:21px;    --lh-body:32px;
+  --t-lead:24px;    --lh-lead:34px;
+  --t-cap:17px;     --lh-cap:25px;
+  --t-foot:14px;    --lh-foot:20px;
+  --w-reg:400; --w-med:500; --w-semi:600;   /* Apple ships only 400/500/600 — no 700, no italics */
+
+  /* ── Color — exact Apple tokens ─────────────────────────── */
+  --c-bg:#ffffff;
+  --c-bg-alt:rgb(245,245,247);
+  --c-dark:#000000;
+  --c-dark-alt:rgb(29,29,31);
+  --c-text:rgb(29,29,31);
+  --c-text-2:rgb(110,110,115);
+  --c-text-3:rgb(134,134,139);
+  --c-text-d:rgb(245,245,247);
+  --c-text-2d:rgb(134,134,139);
+  --c-blue:rgb(0,113,227);
+  --c-link:rgb(0,102,204);
+  --c-link-d:rgb(41,151,255);
+  --c-divider:rgb(210,210,215);
+  --c-divider-d:rgba(255,255,255,.15);
+  --c-mes:#19c642;                     /* sampled from the MES Hackathon template lockup */
+
+  /* ── Layout ─────────────────────────────────────────────── */
+  --w:1920px; --h:1080px;
+  --pad-x:176px; --pad-y:112px;
+
+  /* ── Motion — exact Apple StaggeredFadeIn params ────────── */
+  --ease-reveal:cubic-bezier(.455,.03,.515,.955);  /* approx of easeInOutQuad */
+  --ease-ui:cubic-bezier(0,0,.5,1);
+  --reveal-dur-o:.9s; --reveal-dur-y:.7s; --reveal-stagger:.15s; --reveal-y:30px;
+}
+
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;height:100%;background:#08080a;overflow:hidden}
+body{
+  font-family:var(--font); color:var(--c-text);
+  -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  /* Apple ships `:lang(zh){letter-spacing:0em}` for 34 classes — CJK must never be negatively tracked. */
+  letter-spacing:0;
+}
+h1,h2,h3,h4,p,figure,blockquote{margin:0}
+ul{margin:0;padding:0;list-style:none}
+.en{letter-spacing:-.011em}
+.num{font-family:var(--font-num);font-feature-settings:"tnum" 1,"lnum" 1;letter-spacing:-.022em}
+
+/* ============================================================
+   Stage & slide mechanics
+   ============================================================ */
+#stage{position:fixed;inset:0;display:grid;place-items:center}
+#deck{width:var(--w);height:var(--h);position:relative;transform-origin:center center;
+      overflow:hidden;background:var(--c-bg)}
+
+.slide{
+  position:absolute;inset:0;width:var(--w);height:var(--h);
+  display:flex;flex-direction:column;overflow:hidden;
+  opacity:0;visibility:hidden;pointer-events:none;
+  transition:opacity .5s var(--ease-ui),visibility 0s linear .5s;
+  background:var(--c-bg);color:var(--c-text);
+}
+.slide.active{opacity:1;visibility:visible;pointer-events:auto;transition-delay:0s,0s;z-index:2}
+.slide[data-theme="alt"]{background:var(--c-bg-alt)}
+.slide[data-theme="dark"]{background:var(--c-dark);color:var(--c-text-d)}
+.slide[data-theme="darkalt"]{background:var(--c-dark-alt);color:var(--c-text-d)}
+
+.pad{position:relative;z-index:2;flex:1;display:flex;flex-direction:column;
+     padding:var(--pad-y) var(--pad-x);min-height:0}
+.pad.flush{padding-bottom:0}
+
+/* Vertical rhythm: a fixed header, then the body takes the remaining space.
+   .fill    → body stretches edge-to-edge (used for bottom-bleeding screenshots)
+   .center  → body is centred in the leftover space (used for statements/lists) */
+.body-area{flex:1;min-height:0;display:flex;flex-direction:column}
+.body-area.center{justify-content:center}
+
+/* Ambient backdrop — spec restraint: ≤3 hues, ≤.25 opacity, content always on top. */
+.amb{position:absolute;inset:0;z-index:1;pointer-events:none}
+.amb-a{position:absolute;inset:0;
+  background:
+    radial-gradient(70% 62% at 76% 4%,  rgba(25,198,66,.30), transparent 66%),
+    radial-gradient(64% 58% at 14% 98%, rgba(0,113,227,.34), transparent 68%);
+  filter:blur(36px)}
+.amb-b{position:absolute;inset:0;
+  background:
+    radial-gradient(58% 54% at 18% 8%,  rgba(0,113,227,.26), transparent 66%),
+    radial-gradient(60% 56% at 86% 94%, rgba(25,198,66,.16), transparent 68%);
+  filter:blur(36px)}
+.amb-c{position:absolute;inset:0;
+  background:radial-gradient(72% 66% at 50% 108%, rgba(0,113,227,.26), transparent 70%);
+  filter:blur(36px)}
+/* The Liquid Glass specular edge — exact Apple conic gradient (light from the top-right). */
+.glassert{position:absolute;inset:0;z-index:3;pointer-events:none;
+  background:conic-gradient(from 90deg,
+    rgba(255,255,255,.08) 0deg, rgba(255,255,255,.30) 64.8deg,
+    rgba(255,255,255,.30) 115.2deg, rgba(255,255,255,.08) 180deg,
+    rgba(255,255,255,0) 208.8deg, rgba(255,255,255,0) 331.2deg,
+    rgba(255,255,255,.08) 360deg);
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor;mask-composite:exclude;padding:1px}
+
+/* ============================================================
+   Type roles
+   ============================================================ */
+.eyebrow{font-size:var(--t-h4);line-height:1;font-weight:var(--w-semi);color:var(--c-text-3);
+  letter-spacing:.011em;text-transform:uppercase}
+.slide[data-theme="dark"] .eyebrow,.slide[data-theme="darkalt"] .eyebrow{color:var(--c-text-2d)}
+.h2{font-size:var(--t-h2);line-height:var(--lh-h2);font-weight:var(--w-semi);letter-spacing:-.003em}
+.h3{font-size:var(--t-h3);line-height:var(--lh-h3);font-weight:var(--w-semi);letter-spacing:.007em;color:var(--c-text-2)}
+.slide[data-theme="dark"] .h3,.slide[data-theme="darkalt"] .h3{color:var(--c-text-2d)}
+.h4{font-size:var(--t-h4);line-height:var(--lh-h4);font-weight:var(--w-semi);letter-spacing:.007em}
+.hero{font-size:var(--t-hero);line-height:var(--lh-hero);font-weight:var(--w-semi);letter-spacing:-.015em}
+.lead{font-size:var(--t-lead);line-height:1.45;font-weight:var(--w-reg);color:var(--c-text-2)}
+.slide[data-theme="dark"] .lead,.slide[data-theme="darkalt"] .lead{color:var(--c-text-2d)}
+.body{font-size:var(--t-body);line-height:1.5;font-weight:var(--w-reg);color:var(--c-text-2)}
+.slide[data-theme="dark"] .body,.slide[data-theme="darkalt"] .body{color:var(--c-text-2d)}
+.cap{font-size:var(--t-cap);line-height:1.45;color:var(--c-text-3)}
+.slide[data-theme="dark"] .cap,.slide[data-theme="darkalt"] .cap{color:var(--c-text-3d)}
+.foot{font-size:var(--t-foot);line-height:var(--lh-foot);color:var(--c-text-3)}
+.dim{color:var(--c-text-3)}
+.slide[data-theme="dark"] .dim,.slide[data-theme="darkalt"] .dim{color:var(--c-text-3d)}
+strong{font-weight:var(--w-semi);color:inherit}
+.hl{color:var(--c-blue)}
+.slide[data-theme="dark"] .hl{color:var(--c-link-d)}
+.mes{color:var(--c-mes)}
+.nowrap{white-space:nowrap}
+
+.rule{height:1px;background:var(--c-divider);border:0;margin:0}
+.slide[data-theme="dark"] .rule,.slide[data-theme="darkalt"] .rule{background:var(--c-divider-d)}
+
+/* Header row: headline left, note right, baseline-aligned (Apple's section-header) */
+.hrow{display:flex;align-items:flex-end;justify-content:space-between;gap:80px}
+.hrow .side{max-width:30em;padding-bottom:6px;flex:0 0 auto}
+
+/* ============================================================
+   Components
+   ============================================================ */
+/* Apple card: flat fill, 28px radius, no border, no shadow. */
+.card{background:var(--c-bg-alt);border-radius:28px;padding:44px 42px;
+      clip-path:inset(1px round 28px);display:flex;flex-direction:column}
+.slide[data-theme="dark"] .card,.slide[data-theme="darkalt"] .card{background:var(--c-dark-alt)}
+.slide[data-theme="alt"] .card{background:#fff}
+
+.pill{display:inline-flex;align-items:center;border-radius:980px;
+      font-size:var(--t-foot);line-height:1;font-weight:var(--w-med);letter-spacing:-.011em;
+      padding:10px 18px;background:rgba(0,0,0,.05);color:var(--c-text-2)}
+.slide[data-theme="dark"] .pill,.slide[data-theme="darkalt"] .pill{background:rgba(255,255,255,.10);color:var(--c-text-2d)}
+.pill.solid{background:var(--c-blue);color:#fff}
+
+/* Screenshot frames. Apple uses clip-path:inset(1px round 28px) for card media and a
+   hairline (`inset 0 0 .5px 0 rgba(0,0,0,.11)`) — there are no drop shadows in this deck. */
+.shot{position:relative;border-radius:24px;overflow:hidden;background:#fff;
+      box-shadow:inset 0 0 0 1px rgba(0,0,0,.10)}
+.slide[data-theme="dark"] .shot,.slide[data-theme="darkalt"] .shot{box-shadow:inset 0 0 0 1px rgba(255,255,255,.16)}
+/* Bottom bleed: fills the remaining height and crops off the slide edge, like Apple's product heroes. */
+.bleed{flex:1;min-height:0;margin-top:46px;border-radius:24px 24px 0 0}
+.bleed img{width:100%;height:100%;object-fit:cover;object-position:top center;display:block}
+/* Exact-aspect frame: never crops the product UI. */
+.frame{width:100%;aspect-ratio:16/9}
+.frame img{width:100%;height:100%;object-fit:contain;display:block;background:#fff}
+
+.appicon{display:block;border-radius:22.5%}
+
+/* Data display */
+.stat .v{font-family:var(--font-num);font-feature-settings:"tnum" 1;font-weight:var(--w-semi);
+  font-size:var(--t-h1);line-height:1;letter-spacing:-.022em}
+.stat .k{font-size:var(--t-cap);line-height:1.45;color:var(--c-text-3);margin-top:16px}
+.slide[data-theme="dark"] .stat .k,.slide[data-theme="darkalt"] .stat .k{color:var(--c-text-3d)}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:0}
+.stats > div{padding-left:48px;border-left:1px solid var(--c-divider)}
+.stats > div:first-child{padding-left:0;border-left:0}
+.slide[data-theme="dark"] .stats > div,.slide[data-theme="darkalt"] .stats > div{border-color:var(--c-divider-d)}
+
+.steps{display:grid;grid-template-columns:repeat(5,1fr);gap:44px}
+.step{display:flex;flex-direction:column}
+.step .bar{height:2px;background:var(--c-blue);border-radius:2px;margin-bottom:28px}
+.step .n{font-family:var(--font-num);font-size:var(--t-h4);line-height:1;font-weight:var(--w-med);
+  color:var(--c-text-3);letter-spacing:.02em}
+.slide[data-theme="dark"] .step .n{color:var(--c-text-3d)}
+.step .t{font-size:var(--t-lead);line-height:1.25;font-weight:var(--w-semi);margin:24px 0 16px}
+.step .d{font-size:var(--t-cap);line-height:1.5;color:var(--c-text-2)}
+.slide[data-theme="dark"] .step .d{color:var(--c-text-2d)}
+
+.cols{display:grid;gap:32px}
+.cols.c3{grid-template-columns:repeat(3,1fr)}
+
+/* Two-column split with a hairline divider (Apple uses #d2d2d7 hairlines, never boxes). */
+.split{display:flex;align-items:stretch;gap:0}
+.split > .sc{flex:1;min-width:0}
+.split > .vr{flex:0 0 1px;background:var(--c-divider);margin:0 72px}
+.slide[data-theme="dark"] .split > .vr,.slide[data-theme="darkalt"] .split > .vr{background:var(--c-divider-d)}
+
+.featlist{display:flex;flex-wrap:wrap;gap:12px}
+/* Apple's tech-spec pattern: a quiet grey label above the value. */
+.techgrid{display:grid;grid-template-columns:1fr 1fr;gap:52px 48px}
+.techgrid .tl{font-size:var(--t-cap);line-height:1.4;font-weight:var(--w-reg);
+  color:var(--c-text-3d);margin-bottom:10px}
+.techgrid .body{color:var(--c-text-d)}
+.pllist{display:grid;gap:14px}
+.pllist li{display:flex;gap:14px;align-items:baseline}
+.pllist .d{color:var(--c-blue);font-size:var(--t-cap);line-height:1.4;flex:0 0 auto}
+.slide[data-theme="dark"] .pllist .d{color:var(--c-link-d)}
+
+.quote{font-size:var(--t-lead);line-height:1.7;color:var(--c-text-d)}
+.quote .mk{color:var(--c-mes)}
+a{color:var(--c-link);text-decoration:none}
+.slide[data-theme="dark"] a,.slide[data-theme="darkalt"] a{color:var(--c-link-d)}
+
+/* ============================================================
+   Reveal — Apple StaggeredFadeIn (exact params)
+   ============================================================ */
+.r{opacity:0;transform:translateY(var(--reveal-y))}
+.slide.active .r.is-in{
+  opacity:1;transform:translateY(0);
+  transition:opacity var(--reveal-dur-o) var(--ease-reveal),
+             transform var(--reveal-dur-y) var(--ease-reveal);
+  transition-delay:calc(var(--i,0) * var(--reveal-stagger));
+}
+
+/* ============================================================
+   HUD / notes / overview
+   ============================================================ */
+#hud{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:40;
+  display:flex;align-items:center;gap:14px;padding:8px 16px;border-radius:980px;
+  background:rgba(20,20,22,.68);backdrop-filter:saturate(180%) blur(20px);
+  color:rgba(255,255,255,.72);font-size:12px;letter-spacing:-.01em;
+  opacity:0;transition:opacity .35s var(--ease-ui);pointer-events:none;white-space:nowrap}
+#hud.show{opacity:1}
+#hud b{color:#fff;font-weight:500}
+#hud .kbd{font-family:var(--font-num);background:rgba(255,255,255,.14);
+  padding:2px 6px;border-radius:5px;color:#fff}
+#bar{position:fixed;left:0;top:0;height:2px;background:var(--c-blue);z-index:41;
+  width:0;transition:width .4s var(--ease-ui);opacity:.9}
+
+#notes{position:fixed;inset:auto 0 0 0;z-index:45;max-height:46vh;overflow:auto;
+  background:rgba(18,18,20,.94);backdrop-filter:saturate(180%) blur(20px);
+  color:rgba(255,255,255,.86);padding:30px 44px 36px;transform:translateY(101%);
+  transition:transform .4s var(--ease-ui);font-size:15px;line-height:1.8}
+#notes.show{transform:translateY(0)}
+#notes h5{margin:0 0 12px;font-size:12px;font-weight:500;letter-spacing:.06em;
+  text-transform:uppercase;color:rgba(255,255,255,.45)}
+#notes p{margin:0;max-width:112ch}
+
+#grid{position:fixed;inset:0;z-index:50;background:rgba(8,8,10,.96);
+  backdrop-filter:blur(20px);display:none;grid-template-columns:repeat(4,1fr);
+  gap:24px;padding:52px;overflow:auto;align-content:start}
+#grid.show{display:grid}
+#grid button{border:0;padding:0;background:none;cursor:pointer;text-align:left;
+  border-radius:12px;display:block;width:100%;
+  transition:outline-color .1s linear,transform .3s var(--ease-ui)}
+#grid button:hover{transform:scale(1.0161)}
+#grid .gt{color:rgba(255,255,255,.6);font-size:12px;padding:9px 2px 0;display:block}
+#grid .gwrap{display:block;background:#fff;aspect-ratio:16/9;overflow:hidden;position:relative;
+  outline:1px solid rgba(255,255,255,.14);border-radius:12px}
+#grid .gwrap .mini{position:absolute;inset:auto;width:1920px;height:1080px;
+  transform:scale(.1542);transform-origin:top left;opacity:1;visibility:visible}
+
+/* ============================================================
+   Render mode (?render=N) and print
+   ============================================================ */
+body.render #hud,body.render #notes,body.render #grid,body.render #bar{display:none!important}
+body.render .slide{transition:none!important}
+
+@page{size:1920px 1080px;margin:0}
+@media print{
+  html,body{overflow:visible;background:#fff;height:auto}
+  #stage{position:static;display:block}
+  #deck{width:1920px;height:auto;transform:none!important;overflow:visible}
+  .slide{position:relative;inset:auto;opacity:1!important;visibility:visible!important;
+    transform:none!important;transition:none!important;page-break-after:always;break-after:page}
+  .slide:last-child{page-break-after:auto;break-after:auto}
+  .r{opacity:1!important;transform:none!important}
+  #hud,#notes,#grid,#bar{display:none!important}
+  .slide,.amb,.glassert{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
+@media (prefers-reduced-motion:reduce){
+  .r{opacity:1!important;transform:none!important}
+  .slide{transition:none}
+}
+</style>
+</head>
+<body>
+<noscript><style>.r{opacity:1;transform:none}.slide{opacity:1;visibility:visible;position:relative}</style></noscript>
+
+<div id="bar"></div>
+<div id="stage"><div id="deck">
+
+<!-- ═══════════════════════ 01 · Cover ═══════════════════════ -->
+<section class="slide active" data-theme="dark"
+  data-notes="开场约 20 秒。一句话说清我们是谁：校园作业分析器——把老师每天都要做的批改，变成一个能直接上课的讲评方案。今天讲的不是“又一个批改工具”，而是批改之后那段被浪费掉的信息。">
+  <div class="amb amb-a"></div><div class="amb amb-c"></div><div class="glassert"></div>
+  <div class="pad" style="align-items:center;justify-content:center;text-align:center">
+    <svg class="appicon r" style="--i:0;width:108px;height:108px" viewBox="0 0 120 120" aria-hidden="true">
+      <defs><linearGradient id="icg" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#4AA3FF"/><stop offset="1" stop-color="#0A5CD8"/></linearGradient></defs>
+      <rect width="120" height="120" rx="27" fill="url(#icg)"/>
+      <rect x="33" y="26" width="54" height="68" rx="11" fill="#fff"/>
+      <path d="M45 62 l9 9 l21 -22" fill="none" stroke="#0A5CD8" stroke-width="7"
+            stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+
+    <p class="eyebrow r" style="--i:1;margin-top:60px">2026 梅沙青少年黑客松邀请赛 <span class="en">· MES HACKATHON</span></p>
+    <h1 class="hero r" style="--i:2;margin-top:32px">校园作业分析器</h1>
+    <p class="h3 r" style="--i:3;margin-top:28px;letter-spacing:-.003em">
+      <span class="en">Smart Campus Homework Analyzer</span></p>
+
+    <hr class="rule r" style="--i:4;width:88px;margin:56px 0 0;opacity:.45">
+    <p class="cap r" style="--i:5;margin-top:28px;color:var(--c-text-2d)">
+      <span class="en">v0.2.0-rc1</span> &nbsp;·&nbsp; B3组 &nbsp;·&nbsp; <span class="en">MIT License</span> &nbsp;·&nbsp; 数据留在学校本地
+    </p>
+  </div>
+</section>
+
+<!-- ═══════════════════════ 02 · Problem ═══════════════════════ -->
+<section class="slide" data-theme="light"
+  data-notes="全场唯一一页讲“痛”的，不煽情，只讲事实。三件事：批改本身耗时、统计只能靠手、讲评只能凭印象。最后一句是钩子——老师最累的那部分，恰恰是最容易被浪费的那部分。">
+  <div class="pad">
+    <div class="hrow">
+      <div>
+        <p class="eyebrow r" style="--i:0"><span class="en">The problem</span></p>
+        <h2 class="h2 r" style="--i:1;margin-top:22px">批改完成的那个晚上，<br>工作其实才刚开始。</h2>
+      </div>
+      <p class="lead r side" style="--i:2">一位老师要面对的，<br>从来不只是“把作业改完”。</p>
+    </div>
+
+    <div class="body-area center">
+      <div class="cols c3 r" style="--i:3;margin-top:56px">
+        <div class="card">
+          <h3 class="h4" style="margin-bottom:18px">批改耗时</h3>
+          <p class="body">逐题批注、写评语、登记分数。整块的时间被切成碎片，一个班就要一晚上。</p>
+        </div>
+        <div class="card">
+          <h3 class="h4" style="margin-bottom:18px">统计只能靠手</h3>
+          <p class="body">全班错题率、知识点掌握度、错因分布——想看清楚，只能一题一题数。</p>
+        </div>
+        <div class="card">
+          <h3 class="h4" style="margin-bottom:18px">讲评全凭印象</h3>
+          <p class="body">第二天上课，能讲的往往只是“感觉错得比较多的那几道”。</p>
+        </div>
+      </div>
+      <p class="cap r" style="--i:4;margin-top:44px;text-align:center">
+        结果：<strong style="color:var(--c-text)">老师最累的那部分，恰恰是最容易被浪费的那部分。</strong></p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════ 03 · Insight ═══════════════════════ -->
+<section class="slide" data-theme="dark"
+  data-notes="核心洞察，也是整个产品的出发点。批改其实已经产生了全班最真实的学习证据，问题在于没有人有时间把它翻译成“下一节课该讲什么”。所以我们做的不是更快的批改，而是这段翻译。">
+  <div class="amb amb-b"></div>
+  <div class="pad body-area center" style="display:flex">
+    <p class="eyebrow r" style="--i:0"><span class="en">The insight</span></p>
+    <h2 class="hero r" style="--i:1;margin-top:44px;max-width:17em">
+      批改产生数据，<br>但数据没有变成课堂。
+    </h2>
+    <hr class="rule r" style="--i:2;margin:64px 0 0;width:112px;opacity:.4">
+    <p class="lead r" style="--i:3;margin-top:48px;max-width:30em">
+      错题本上躺着全班最真实的学习证据，却没有人有时间把它翻译成
+      “下一节课该讲什么、该给谁补什么”。
+    </p>
+    <p class="body r" style="--i:4;margin-top:28px;max-width:30em">
+      所以真正缺的不是一个更快的批改工具，<br>而是一台把 <span class="dim">批改结果</span> 变成
+      <strong style="color:var(--c-text-d)">可上课内容</strong> 的翻译机。
+    </p>
+  </div>
+</section>
+
+<!-- ═══════════════════════ 04 · Product ═══════════════════════ -->
+<section class="slide" data-theme="light"
+  data-notes="产品一句话：把一叠作业，变成一节课。这张是总览截图，右侧流程卡其实就是产品的五个模块。这里可以顺手强调：整套东西是完整可运行的全栈产品，不是概念稿，现在就能跑。">
+  <div class="pad flush">
+    <div class="hrow">
+      <div>
+        <p class="eyebrow r" style="--i:0"><span class="en">The product</span></p>
+        <h2 class="h2 r" style="--i:1;margin-top:22px">把一叠作业，变成一节课。</h2>
+        <p class="lead r" style="--i:2;margin-top:26px;max-width:34em">
+          拍照上传 → <span class="en">AI</span> 逐页识别批改 → 教师复核 →
+          自动生成班级学情、知识点掌握率、错因归因，以及可以直接照着上的讲评课方案。
+        </p>
+      </div>
+      <div class="r side" style="--i:3;text-align:right">
+        <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
+          <span class="pill">全栈可运行</span><span class="pill">本地部署</span>
+          <span class="pill">数据不出校</span><span class="pill solid">v0.2.0-rc1</span>
+        </div>
+        <p class="cap" style="margin-top:18px">现在就能打开、现在就能用。</p>
+      </div>
+    </div>
+    <div class="shot bleed r" style="--i:4">
+      <img src="assets/app-overview.jpg" alt="校园作业分析器 · 教师总览">
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════ 05 · Flow ═══════════════════════ -->
+<section class="slide" data-theme="alt"
+  data-notes="五步闭环，重点讲第三步和第四步：PDF 在服务端逐页转图，不需要老师手动转；低置信度的识别结果必须老师确认才会写进学生错题本——这是我们守的底线。整个流程走完之后，第五步才有东西可分析。">
+  <div class="pad">
+    <div class="hrow">
+      <div>
+        <p class="eyebrow r" style="--i:0"><span class="en">How it works</span></p>
+        <h2 class="h2 r" style="--i:1;margin-top:22px">五步闭环，从一叠纸到一节课。</h2>
+      </div>
+      <p class="lead r side" style="--i:2">每一步都留了人工确认的入口。</p>
+    </div>
+
+    <div class="body-area center">
+      <div class="steps r" style="--i:3;margin-top:64px">
+        <div class="step">
+          <div class="bar"></div><div class="n">01</div>
+          <div class="t">建校与导入</div>
+          <div class="d">独立学校空间；学生可用 <span class="en">CSV / XLSX</span> 一次导入，最多 <span class="en">500</span> 人。</div>
+        </div>
+        <div class="step">
+          <div class="bar"></div><div class="n">02</div>
+          <div class="t">生成作业</div>
+          <div class="d">上传 <span class="en">JPG / PNG / WebP / PDF / DOCX</span> 原件，解析成可编辑题目。</div>
+        </div>
+        <div class="step">
+          <div class="bar"></div><div class="n">03</div>
+          <div class="t">逐页识别</div>
+          <div class="d"><span class="en">PDF</span> 在服务端转成页面图像，逐页 <span class="en">OCR</span>，与学生答卷严格对齐。</div>
+        </div>
+        <div class="step">
+          <div class="bar"></div><div class="n">04</div>
+          <div class="t">教师复核</div>
+          <div class="d">低置信内容必须教师确认，才会写入学生错题本。</div>
+        </div>
+        <div class="step">
+          <div class="bar"></div><div class="n">05</div>
+          <div class="t">教学分析</div>
+          <div class="d">一键得到讲评方案、错因统计、分层名单与重练作业。</div>
+        </div>
+      </div>
+      <p class="cap r" style="--i:4;margin-top:56px;text-align:center">
+        自动化负责速度，<strong style="color:var(--c-text)">教师负责判断</strong>。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════ 06 · AI teaching analysis ═══════════════════════ -->
+<section class="slide" data-theme="dark"
+  data-notes="这是 v0.2.0 的核心，也是今天最想讲的一页。左边是原始数据：1 名学生、3 份提交、18 道题、24 道错题、得分率 18%。右边是系统直接给出的教学结论——注意它说的是“失分主要丢在没动笔，而不是不会”。这个判断，靠人工统计几乎不可能在当天得出来。">
+  <div class="amb amb-a"></div>
+  <div class="pad flush">
+    <div class="hrow">
+      <div>
+        <p class="eyebrow r" style="--i:0"><span class="en">AI teaching analysis</span> · v0.2.0 新增</p>
+        <h2 class="h2 r" style="--i:1;margin-top:22px">复核完成的那一刻，<br>讲评方案已经在了。</h2>
+      </div>
+      <p class="lead r side" style="--i:2">不是一份更长的报告，<br>而是一份第二天能带进教室的东西。</p>
+    </div>
+
+    <div class="featlist r" style="--i:3;margin-top:40px">
+      <span class="pill">班级学情画像</span><span class="pill">知识点掌握率</span>
+      <span class="pill">错因归因</span><span class="pill">高频错题讲评单</span>
+      <span class="pill">讲评课方案</span><span class="pill">分层辅导</span>
+      <span class="pill">课后重练</span><span class="pill">一键导出</span>
+    </div>
+
+    <div class="shot bleed r" style="--i:4">
+      <img src="assets/app-teaching.jpg" alt="AI 教学分析 · 班级学情与教学结论">
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════ 07 · Principle ═══════════════════════ -->
+<section class="slide" data-theme="dark"
+  data-notes="这一页是评委最该记住的一页，也是我们和别人最大的区别。所有数字都是从教师已复核的数据里确定性算出来的，模型只负责把它转写成课堂语言。所以模型挂了、Key 没配，核心统计照样完整可用。还有两条细节：错因按题号严格划分，占比之和恒为 100%；判为“无法辨认”的题单独列出，不参与学生错因占比——不能因为扫描不清就冤枉学生。">
+  <div class="amb amb-b"></div>
+  <div class="pad">
+    <p class="eyebrow r" style="--i:0"><span class="en">Design principle</span></p>
+    <h2 class="h2 r" style="--i:1;margin-top:22px">数字永远可信，<span class="en">AI</span> 只负责把它讲成人话。</h2>
+
+    <div class="body-area center">
+      <div class="split r" style="--i:2;margin-top:56px">
+        <div class="sc">
+          <h3 class="h4" style="margin-bottom:10px">确定性统计 <span class="dim" style="font-weight:400">· 可验证</span></h3>
+          <p class="cap" style="margin-bottom:30px">全部由教师已复核的数据计算得出。</p>
+          <ul class="pllist">
+            <li><span class="d">·</span><span class="body">只有复核确认过的错题进入统计，未复核的单独计数</span></li>
+            <li><span class="d">·</span><span class="body">错因按题号严格划分，占比之和恒为 <span class="en">100%</span></span></li>
+            <li><span class="d">·</span><span class="body">判为「无法辨认」的题单独列出，不计入学生错因</span></li>
+          </ul>
+          <p class="cap" style="margin-top:26px">最后一条是为了不因为扫描不清而冤枉学生。</p>
+        </div>
+        <div class="vr"></div>
+        <div class="sc">
+          <h3 class="h4" style="margin-bottom:10px"><span class="en">AI</span> 转写 <span class="dim" style="font-weight:400">· 可复核</span></h3>
+          <p class="cap" style="margin-bottom:30px">只做转写与建议，不产生事实。</p>
+          <ul class="pllist">
+            <li><span class="d">·</span><span class="body">模型不可用、未配置 <span class="en">Key</span> 时，核心统计依然完整可用</span></li>
+            <li><span class="d">·</span><span class="body">教师可点「<span class="en">AI</span> 重新归因」，结合题干与知识点复核</span></li>
+            <li><span class="d">·</span><span class="body">生成的讲评脚本、板书、诊断以原文呈现，可逐条修改</span></li>
+          </ul>
+          <p class="cap" style="margin-top:26px">出错的代价是“换一种说法”，不是“算错一个数”。</p>
+        </div>
+      </div>
+    </div>
+
+    <hr class="rule r" style="--i:3">
+    <p class="cap r" style="--i:4;margin-top:28px">
+      一句话：<strong style="color:var(--c-text-d)">让模型做它擅长的表达，让代码做它擅长的算术。</strong></p>
+  </div>
+</section>
+
+<!-- ═══════════════════════ 08 · Mastery & causes ═══════════════════════ -->
+<section class="slide" data-theme="alt"
+  data-notes="真实数据截图。左边知识点掌握率从最薄弱开始排序，老师一眼就知道这节课先补哪个漏洞；右边 12 类错因是关键词确定性归类的，不消耗模型额度，点“AI 重新归因”才会调模型结合题干复核。">
+  <div class="pad flush">
+    <div class="hrow">
+      <div>
+        <p class="eyebrow r" style="--i:0"><span class="en">Knowledge mastery &amp; error causes</span></p>
+        <h2 class="h2 r" style="--i:1;margin-top:22px">先补哪一个，系统直接告诉你。</h2>
+      </div>
+      <p class="lead r side" style="--i:2">
+        18 个知识点按正确率从低到高排序；错因按题号严格归类，12 类内置规则，占比之和恒为 <span class="en nowrap">100%</span>。</p>
+    </div>
+    <div class="shot bleed r" style="--i:3">
+      <img src="assets/app-mastery.jpg" alt="知识点掌握情况与错因归因分析">
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════ 09 · Review script ═══════════════════════ -->
+<section class="slide" data-theme="light"
+  data-notes="这页是“能直接上课”的证据。展开一道高频错题，能看到出错学生、参考答案、AI 分步解析，最关键的是下面三段：讲给学生听、板书演示、讲完立刻检查。老师第二天可以照着念。内容按出错人数排序，从最该讲的那道开始。">
+  <div class="pad">
+    <div class="hrow">
+      <div>
+        <p class="eyebrow r" style="--i:0"><span class="en">Review script</span></p>
+        <h2 class="h2 r" style="--i:1;margin-top:22px">不是“错得多的题”，<br>而是“这道题怎么讲”。</h2>
+      </div>
+      <p class="lead r side" style="--i:2">按出错人数排序，从最该讲的一道开始。</p>
+    </div>
+
+    <div class="body-area center" style="flex-direction:row;align-items:center;gap:64px">
+      <div class="r" style="--i:3;flex:0 0 496px">
+        <p class="body" style="margin-bottom:28px">
+          展开即见出错学生、参考答案与 <span class="en">AI</span> 分步解析，
+          以及可以直接照读的讲评脚本。
+        </p>
+        <div class="card" style="background:var(--c-bg-alt);padding:38px 36px">
+          <p class="cap" style="margin-bottom:20px">每道高频错题都会给出</p>
+          <div style="display:grid;gap:16px">
+            <div class="body"><strong>讲给学生听</strong><br><span class="cap">一句能拿分的话</span></div>
+            <div class="body"><strong>板书演示</strong><br><span class="cap">黑板上照写的内容</span></div>
+            <div class="body"><strong>讲完立刻检查</strong><br><span class="cap">当堂验证是否听懂</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="shot frame r" style="--i:4">
+        <img src="assets/app-review.jpg" alt="高频错题讲评单">
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════ 10 · Lesson plan ═══════════════════════ -->
+<section class="slide" data-theme="alt"
+  data-notes="这一页把它推到课堂落地。45 分钟被拆成时间轴，每一步写清“讲什么、教师做什么、学生做什么”，还带板书设计；每个错因配一个 5 分钟内可执行的课堂动作，并给出可点名到人的分层名单。我们内部的说法是：这不是一份给领导看的报告，是一份给老师自己用的教案。">
+  <div class="pad">
+    <div class="body-area center" style="flex-direction:row;align-items:center;gap:64px">
+      <div class="shot frame r" style="--i:0">
+        <img src="assets/app-lessonplan.jpg" alt="课堂讲评课方案 · 45 分钟时间轴">
+      </div>
+      <div class="r" style="--i:1;flex:0 0 496px">
+        <p class="eyebrow" style="margin-bottom:22px"><span class="en">Lesson plan &amp; differentiation</span></p>
+        <h2 class="h2" style="margin-bottom:28px">45 分钟，讲什么、谁来做，都写好了。</h2>
+        <p class="lead" style="margin-bottom:22px">
+          主题、课时、目标、时间轴（讲什么 / 教师做什么 / 学生做什么），以及可以照写的板书设计。
+        </p>
+        <p class="body" style="margin-bottom:32px">
+          每个错因还会配一个 <strong>5 分钟内可执行</strong> 的课堂动作，
+          并给出可点名到人的分层辅导名单。
+        </p>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <span class="pill" style="background:#fff">板书设计</span>
+          <span class="pill" style="background:#fff">错因干预</span>
+          <span class="pill" style="background:#fff">分层名单</span>
+          <span class="pill" style="background:#fff">一键重练</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════ 11 · Student side ═══════════════════════ -->
+<section class="slide" data-theme="light"
+  data-notes="学生端只做一件事：把错题真正过关。只有老师复核确认的错题才会进学生的错题本；系统自动给出分步解析和同类型变式练习，学生全部答对后标记知识点过关。纸质错题本不用再抄，复习也有针对性。">
+  <div class="pad flush">
+    <div class="hrow">
+      <div>
+        <p class="eyebrow r" style="--i:0"><span class="en">The student side</span></p>
+        <h2 class="h2 r" style="--i:1;margin-top:22px">每个学生，<br>得到属于自己的那一份。</h2>      </div>
+      <p class="lead r side" style="--i:2">
+        教师复核确认的错题才进入学生错题本；全部答对后标记知识点过关。</p>
+    </div>
+    <div class="shot bleed r" style="--i:3">
+      <img src="assets/app-student.jpg" alt="学生端 · 我的错题与变式练习">
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════ 12 · Real data ═══════════════════════ -->
+<section class="slide" data-theme="dark"
+  data-notes="用真实数据收口。这是仓库里真实存在的一份初中物理阶段检测卷：18 道题、3 份提交、24 道已复核错题，班级得分率 18%。最有价值的是系统自己发现的那句话——24 处错里 21 处是【未作答】，占 87.5%，失分主要丢在“没动笔”而不是“不会”。这个结论直接改变了这节课该怎么上：不是多讲两道题，而是先解决“不敢动笔”。">
+  <div class="amb amb-a"></div>
+  <div class="pad">
+    <p class="eyebrow r" style="--i:0"><span class="en">Real data</span> · 初中物理 · 第十五章 阶段检测卷</p>
+    <h2 class="h2 r" style="--i:1;margin-top:22px">系统从一份真实的卷子里，<br>读出了老师没时间读出的东西。</h2>
+
+    <div class="body-area center">
+      <div class="stats r" style="--i:2;margin-top:64px">
+        <div class="stat">
+          <div class="v"><span class="en">87.5%</span></div>
+          <div class="k">的错题是「未作答」<br><span class="en">21 / 24</span> 处</div>
+        </div>
+        <div class="stat">
+          <div class="v"><span class="en">18%</span></div>
+          <div class="k">班级得分率<br>平均 <span class="en">18 / 100</span> 分</div>
+        </div>
+        <div class="stat">
+          <div class="v"><span class="en">5</span></div>
+          <div class="k">道题全班错误率 <span class="en">100%</span><br>第 <span class="en">1、6、15、16、17</span> 题</div>
+        </div>
+        <div class="stat">
+          <div class="v"><span class="en">36</span></div>
+          <div class="k">道可复用同类练习<br>覆盖 <span class="en">18</span> 个知识点</div>
+        </div>
+      </div>
+
+      <div class="card r" style="--i:3;margin-top:60px;background:var(--c-dark-alt);padding:46px 50px">
+        <p class="cap" style="margin-bottom:20px"><span class="en">AI</span> 教学结论 · 原文摘录</p>
+        <p class="quote">
+          <span class="mk">“</span>这份第十五章阶段检测卷全班只有 <span class="en">1</span> 名学生（<span class="en">c</span>）提交了
+          <span class="en">2</span> 次、共 <span class="en">3</span> 份记录，<span class="en">18</span> 道题错
+          <span class="en">24</span> 处、<span class="en">36</span> 个作答位置错误率 <span class="en">66.7%</span>，
+          得分率仅 <span class="en">18.0%</span>。最要命的是 <span class="en">24</span> 处错里
+          <span class="en">21</span> 处是<span class="mk">【未作答】</span>（占 <span class="en">87.5%</span>）……
+          失分主要丢在<span class="mk">“没动笔”</span>而不是“不会”。<span class="mk">”</span>
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════ 13 · Engineering ═══════════════════════ -->
+<section class="slide" data-theme="alt"
+  data-notes="评委常问“做完了没有”，这一页回答：能上生产才叫能用。技术栈是标准全栈；质量上 24 项单元测试加 33 项端到端校验，其中一部分专门测权限边界——学生读不到班级分析，学校管理员可以只读但不能触发生成；安全上 API Key 服务端 AES-256-GCM 加密，所有查询按学校和身份隔离。">
+  <div class="pad">
+    <div class="hrow">
+      <div>
+        <p class="eyebrow r" style="--i:0"><span class="en">Engineering</span></p>
+        <h2 class="h2 r" style="--i:1;margin-top:22px">能上生产，才叫能用。</h2>
+      </div>
+      <p class="lead r side" style="--i:2">开源 <span class="en">MIT</span>，可本地部署，数据不出校。</p>
+    </div>
+
+    <div class="body-area center">
+      <div class="cols c3 r" style="--i:3;margin-top:56px">
+        <div>
+          <h3 class="h4" style="margin-bottom:26px">技术栈</h3>
+          <div class="pllist">
+            <div class="body"><span class="dim">前端</span> &nbsp;<span class="en">React 19</span> + <span class="en">TypeScript</span> 严格模式</div>
+            <div class="body"><span class="dim">后端</span> &nbsp;<span class="en">Express</span> + <span class="en">SQLite</span>（单写节点）</div>
+            <div class="body"><span class="dim">文档</span> &nbsp;<span class="en">PDF / DOCX / DOC</span> 逐页解析，服务端转图</div>
+            <div class="body"><span class="dim">模型</span> &nbsp;<span class="en">10</span> 个厂商预设，<span class="en">OpenAI</span> 兼容视觉格式</div>
+            <div class="body"><span class="dim">部署</span> &nbsp;<span class="en">Cloudflare Worker</span> 静态托管 + <span class="en">API</span> 代理</div>
+          </div>
+        </div>
+        <div>
+          <h3 class="h4" style="margin-bottom:26px">验证</h3>
+          <div class="pllist">
+            <div class="body"><strong class="en">24</strong> 项 <span class="en">Vitest</span> 单元测试</div>
+            <div class="cap">错因归类 · 统计口径 · 数据隔离 · <span class="en">AI</span> 归因融合</div>
+            <div class="body" style="margin-top:8px"><strong class="en">33</strong> 项端到端校验</div>
+            <div class="cap">读写接口 · 统计口径 · 权限边界；使用夹具数据，不调用付费模型</div>
+            <div class="body" style="margin-top:8px"><span class="en">npm run build</span></div>
+            <div class="cap">严格 <span class="en">TS</span> 检查 + 生产构建</div>
+          </div>
+        </div>
+        <div>
+          <h3 class="h4" style="margin-bottom:26px">安全与数据</h3>
+          <div class="pllist">
+            <div class="body"><span class="en">API Key</span> 服务端 <span class="en">AES-256-GCM</span> 加密</div>
+            <div class="body">所有查询按 <strong>学校与身份</strong> 双重隔离</div>
+            <div class="body">上传类型与大小校验；原件与学生数据不入版本库</div>
+            <div class="body">教师复核是写入错题本的前置条件</div>
+            <div class="cap" style="margin-top:8px">上线前待办：邮箱验证、登录限流、病毒扫描、未成年人数据处理条款。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <hr class="rule r" style="--i:4">
+    <p class="cap r" style="--i:5;margin-top:26px">
+      <span class="en">github.com/turtlelnc/MES-Homework</span> &nbsp;·&nbsp; <span class="en">v0.2.0-rc1</span>
+    </p>
+  </div>
+</section>
+
+<!-- ═══════════════════════ 14 · Open source & stack ═══════════════════════ -->
+<section class="slide" data-theme="darkalt"
+  data-notes="开源与技术这一页，回答两个问题：凭什么信我们，以及我们用了什么。开源不是姿态，是教育软件该有的样子——学校可以自己部署、数据留在自己服务器上、校本知识点和错因规则都能改。技术选型上我们刻意选了少而稳的一套：前端 React 19 + TypeScript 严格模式，后端 Express + SQLite，文档解析用 PDF.js、mammoth、word-extractor，模型层是 10 个厂商预设加 AES-256-GCM 加密的 Key。没有为了炫技引入任何多余依赖。">
+  <div class="amb amb-b"></div>
+  <div class="pad">
+    <div class="hrow">
+      <div>
+        <p class="eyebrow r" style="--i:0"><span class="en">Open source &amp; stack</span></p>
+        <h2 class="h2 r" style="--i:1;margin-top:22px">全部开源，技术选型也摊开给你看。</h2>
+      </div>
+      <p class="lead r side" style="--i:2"><span class="en">MIT License</span>，代码在 <span class="en">GitHub</span> 上，<br>一条命令就能自己跑起来。</p>
+    </div>
+
+    <div class="body-area center">
+      <div class="split r" style="--i:3;margin-top:56px">
+        <!-- 开源 -->
+        <div class="sc" style="flex:0 0 476px">
+          <h3 class="h4" style="margin-bottom:10px">开源 <span class="dim" style="font-weight:400">· <span class="en">MIT</span></span></h3>
+          <p class="cap" style="margin-bottom:30px">源码、数据格式与统计口径全部公开。</p>
+
+          <div style="display:flex;align-items:center;gap:24px;margin-bottom:32px">
+            <img src="assets/qr-repo.png" alt="GitHub 仓库二维码"
+                 style="width:92px;height:92px;border-radius:12px;background:#fff;padding:7px;display:block;flex:0 0 auto">
+            <div>
+              <p class="body" style="color:var(--c-text-d);margin-bottom:6px"><span class="en">github.com/turtlelnc/</span></p>
+              <p class="body" style="color:var(--c-text-d)"><span class="en">MES-Homework</span></p>
+            </div>
+          </div>
+
+          <ul class="pllist">
+            <li><span class="d">·</span><span class="body"><strong style="color:var(--c-text-d)">可自部署</strong> —— 一台学校服务器即可运行，不依赖任何托管服务</span></li>
+            <li><span class="d">·</span><span class="body"><strong style="color:var(--c-text-d)">数据不出校</strong> —— 学生原件、账户与数据库留在本地</span></li>
+            <li><span class="d">·</span><span class="body"><strong style="color:var(--c-text-d)">可二次开发</strong> —— 校本知识点、错因规则、模型厂商都能替换</span></li>
+          </ul>
+        </div>
+
+        <div class="vr"></div>
+
+        <!-- 技术选型 -->
+        <div class="sc">
+          <h3 class="h4" style="margin-bottom:10px">技术选型 <span class="dim" style="font-weight:400">· 少而稳</span></h3>
+          <p class="cap" style="margin-bottom:34px">没有为了炫技引入多余依赖，每一层都可单独替换。</p>
+
+          <div class="techgrid">
+            <div>
+              <p class="tl">前端界面</p>
+              <p class="body"><span class="en nowrap">React 19</span> · <span class="en">TypeScript</span> 严格模式 · <span class="en nowrap">Vite 6</span> · <span class="en nowrap">Recharts</span></p>
+            </div>
+            <div>
+              <p class="tl">服务端与数据</p>
+              <p class="body"><span class="en nowrap">Express 5</span> · <span class="en nowrap">SQLite</span>（<span class="en">WAL</span>） · <span class="en">Multer</span> 上传类型与大小校验</p>
+            </div>
+            <div>
+              <p class="tl">文档与识别</p>
+              <p class="body"><span class="en nowrap">PDF.js</span> · <span class="en nowrap">mammoth</span> · <span class="en nowrap">word-extractor</span> · <span class="en nowrap">@napi-rs/canvas</span> 服务端转图 · 视觉模型 <span class="en">OCR</span></p>
+            </div>
+            <div>
+              <p class="tl">模型与安全</p>
+              <p class="body"><span class="en">10</span> 个厂商预设 · <span class="en">OpenAI</span> 兼容视觉格式 · <span class="en">API Key</span> 服务端 <span class="en">AES-256-GCM</span> 加密 · <span class="en">scrypt</span> 口令哈希</p>
+            </div>
+          </div>
+
+          <hr class="rule" style="margin:34px 0 22px">
+          <p class="cap">
+            测试与交付 &nbsp;·&nbsp; <span class="en">Vitest</span> 单元测试 ·
+            <span class="en">node:test</span> 端到端校验 · <span class="en">Cloudflare Worker</span> 静态托管与 <span class="en">API</span> 代理
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════ 15 · Closing ═══════════════════════ -->
+<section class="slide" data-theme="dark"
+  data-notes="收尾。回到那句话：让每一次批改，都变成下一节课。然后留时间给提问。如果评委只有 30 秒，就讲这三句：所有数字来自已复核数据、AI 只做转写；老师拿到的是一份能直接上的教案；整套东西开源、可本地部署、数据不出校。">
+  <div class="amb amb-a"></div><div class="glassert"></div>
+  <div class="pad">
+    <div class="body-area center">
+      <p class="eyebrow r" style="--i:0"><span class="en">What's next</span></p>
+      <h2 class="hero r" style="--i:1;margin-top:40px;max-width:15em">
+        让每一次批改，<br>都变成下一节课。
+      </h2>
+      <p class="lead r" style="--i:2;margin-top:44px;max-width:34em">
+        下一步：教师加入学校的管理员审批、邮箱验证与密码找回、登录限流，
+        以及与学校真实样本对齐的识别率评估。
+      </p>
+    </div>
+
+    <hr class="rule r" style="--i:3">
+    <div class="r" style="--i:4;margin-top:44px;display:flex;align-items:center;justify-content:space-between;gap:60px">
+      <div style="display:flex;align-items:center;gap:34px">
+        <img src="assets/qr-repo.png" alt="GitHub 仓库二维码"
+             style="width:104px;height:104px;border-radius:14px;background:#fff;padding:8px;display:block">
+        <div>
+          <p class="h4" style="margin-bottom:12px">校园作业分析器 <span class="dim" style="font-weight:400">· <span class="en">Smart Campus Homework Analyzer</span></span></p>
+          <p class="cap"><span class="en">github.com/turtlelnc/MES-Homework</span> &nbsp;·&nbsp; <span class="en">MIT License</span> &nbsp;·&nbsp; <span class="en">v0.2.0-rc1</span></p>
+        </div>
+      </div>
+      <div style="text-align:right">
+        <p class="h4" style="margin-bottom:12px">B3组</p>
+        <p class="cap">2026 梅沙青少年黑客松邀请赛</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+</div></div>
+
+<div id="hud"></div>
+<div id="notes"><h5>演讲备注</h5><p id="notesText"></p></div>
+<div id="grid"></div>
+
+<script>
+(function(){
+  const deck    = document.getElementById('deck');
+  const slides  = [...deck.querySelectorAll('.slide')];
+  const stage   = document.getElementById('stage');
+  const hud     = document.getElementById('hud');
+  const bar     = document.getElementById('bar');
+  const notes   = document.getElementById('notes');
+  const notesTx = document.getElementById('notesText');
+  const grid    = document.getElementById('grid');
+  const params  = new URLSearchParams(location.search);
+  const renderMode = params.has('render');
+
+  // Start at -1 so the first show(0) isn't swallowed by the "already active" guard
+  // (slide 1 carries `active` in the markup so a script-less view still renders it).
+  let i = -1, gridOpen = false, notesOpen = false;
+
+  /* Scale the fixed 1920×1080 canvas into the window. */
+  function fit(){
+    if (renderMode){ deck.style.transform = 'none'; return; }
+    deck.style.transform = 'scale(' + Math.min(innerWidth / 1920, innerHeight / 1080) + ')';
+  }
+  addEventListener('resize', fit);
+  fit();
+
+  /* Apple StaggeredFadeIn — restart on every slide entry. */
+  function reveal(slide, on){
+    slide.querySelectorAll('.r').forEach(el => {
+      el.classList.remove('is-in');
+      if (on){ void el.offsetWidth; el.classList.add('is-in'); }
+    });
+  }
+
+  function show(n){
+    n = Math.max(0, Math.min(slides.length - 1, n));
+    if (n === i && slides[i].classList.contains('active') && !renderMode) return;
+    slides.forEach((s, k) => {
+      const on = k === n;
+      s.classList.toggle('active', on);
+      reveal(s, on);
+    });
+    i = n;
+    notesTx.textContent = slides[i].dataset.notes || '';
+    bar.style.width = ((i + 1) / slides.length * 100) + '%';
+    hud.innerHTML = '<b>' + String(i + 1).padStart(2, '0') + '</b> / ' +
+      String(slides.length).padStart(2, '0') +
+      '&nbsp;&nbsp;<span class="kbd">←</span> <span class="kbd">→</span> 翻页' +
+      '&nbsp;&nbsp;<span class="kbd">N</span> 备注&nbsp;&nbsp;<span class="kbd">O</span> 总览' +
+      '&nbsp;&nbsp;<span class="kbd">F</span> 全屏';
+  }
+
+  const next = () => show(i + 1);
+  const prev = () => show(i - 1);
+
+  addEventListener('keydown', e => {
+    switch (e.key){
+      case 'ArrowRight': case 'ArrowDown': case ' ': case 'PageDown': case 'Enter':
+        e.preventDefault(); next(); break;
+      case 'ArrowLeft': case 'ArrowUp': case 'PageUp':
+        e.preventDefault(); prev(); break;
+      case 'Home': e.preventDefault(); show(0); break;
+      case 'End':  e.preventDefault(); show(slides.length - 1); break;
+      case 'n': case 'N':
+        notesOpen = !notesOpen; notes.classList.toggle('show', notesOpen); break;
+      case 'o': case 'O': toggleGrid(); break;
+      case 'f': case 'F':
+        document.fullscreenElement ? document.exitFullscreen()
+                                   : document.documentElement.requestFullscreen(); break;
+      case 'Escape':
+        if (gridOpen) toggleGrid();
+        else if (notesOpen){ notesOpen = false; notes.classList.remove('show'); }
+        break;
+    }
+  });
+
+  /* Right 60% advances, left 40% goes back. */
+  stage.addEventListener('click', e => {
+    if (gridOpen) return;
+    (e.clientX / innerWidth > 0.4 ? next : prev)();
+  });
+
+  let idle;
+  function wake(){
+    hud.classList.add('show');
+    clearTimeout(idle);
+    idle = setTimeout(() => { if (!gridOpen) hud.classList.remove('show'); }, 2600);
+  }
+  addEventListener('mousemove', wake);
+
+  function buildGrid(){
+    if (grid.childElementCount) return;
+    slides.forEach((s, k) => {
+      const b = document.createElement('button');
+      const w = document.createElement('span'); w.className = 'gwrap';
+      const c = s.cloneNode(true);
+      c.classList.add('active', 'mini');
+      w.appendChild(c);
+      const t = document.createElement('span'); t.className = 'gt';
+      t.textContent = String(k + 1).padStart(2, '0');
+      b.append(w, t);
+      b.onclick = ev => { ev.stopPropagation(); toggleGrid(); show(k); };
+      grid.appendChild(b);
+    });
+  }
+  function toggleGrid(){
+    buildGrid();
+    gridOpen = !gridOpen;
+    grid.classList.toggle('show', gridOpen);
+  }
+
+  if (renderMode){
+    document.body.classList.add('render');
+    const n = Math.max(0, Math.min(slides.length - 1, parseInt(params.get('render'), 10) || 0));
+    slides.forEach((s, k) => {
+      s.classList.toggle('active', k === n);
+      s.querySelectorAll('.r').forEach(el => el.classList.add('is-in'));
+    });
+    window.__READY__ = true;
+  } else {
+    show(0);
+    wake();
+  }
+})();
+</script>
+</body>
+</html>

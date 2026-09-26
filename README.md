@@ -35,6 +35,24 @@
 - 错题自动生成分步解析与同类型练习，学生全部答对后标记知识点过关。
 - 10 个模型厂商预设，API Key 在服务端使用 AES-256-GCM 加密。
 
+## 一键部署（Windows）
+
+仓库自带一个 C++ 控制台部署器（`tools/deployer/`），可在任意 Windows 电脑上自动检测并安装依赖、准备源码、构建并启动服务，再按需开放局域网或公网访问：
+
+```powershell
+# 构建部署器（需要 MinGW-w64 或 MSVC + CMake，产物约 3 MB 单文件）
+powershell -ExecutionPolicy Bypass -File tools/deployer/build.ps1
+
+# 使用
+dist-deployer\campus-deploy.exe                 # 交互式菜单
+dist-deployer\campus-deploy.exe --web           # 浏览器可视化部署控制台
+dist-deployer\campus-deploy.exe --mode lan      # 局域网：同一网络内设备均可访问
+dist-deployer\campus-deploy.exe --mode tunnel   # Cloudflare 临时公网地址（https）
+dist-deployer\campus-deploy.exe --mode domain --domain hw.example.com --api-token cf_xxx
+```
+
+它会自动检测 Node.js / cloudflared / curl / git，缺什么装什么（优先 winget，失败则官方下载）；源码不在本机时从 GitHub 获取。详见 `tools/deployer/README.md`。
+
 ## 本地或服务器运行
 
 要求 Node.js 24+。
@@ -46,7 +64,7 @@ npm run build
 npm start
 ```
 
-开发时分别运行 `npm run dev:server` 和 `npm run dev`，访问 `http://127.0.0.1:5173`。生产服务默认监听 `127.0.0.1:8787`，数据位于 `data/smart-campus.sqlite`，原件位于 `data/uploads/`。
+开发时分别运行 `npm run dev:server` 和 `npm run dev`，访问 `http://127.0.0.1:5173`。生产服务默认监听 `127.0.0.1:8787`，可用 `HOST=0.0.0.0` 放开为局域网可访问；数据位于 `data/smart-campus.sqlite`，原件位于 `data/uploads/`。
 
 ## 正确使用顺序
 

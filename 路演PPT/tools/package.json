@@ -1,0 +1,12 @@
+{
+  "name": "mes-homework-deck-tools",
+  "private": true,
+  "type": "module",
+  "description": "Rebuild the roadshow deck (PNG slides / PPTX / PDF) from index.html",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "pptxgenjs": "^3.12.0"
+  }
+}
