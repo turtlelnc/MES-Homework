@@ -6,6 +6,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import net from "node:net";
+import { pathToFileURL } from "node:url";
 import { seedTeachingFixture } from "./analysis.fixture.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
@@ -50,7 +51,7 @@ async function login(email: string) {
   return response.headers.get("set-cookie")!.split(";")[0];
 }
 async function start() {
-  child = spawn(process.execPath, ["--import", preload, "server/index.mjs"], {
+  child = spawn(process.execPath, ["--import", pathToFileURL(preload).href, "server/index.mjs"], {
     cwd: root,
     env: {
       ...process.env,
@@ -173,22 +174,46 @@ afterAll(async () => {
 });
 
 describe("third-round security and consistency regressions (mock model only)", () => {
-  it("denies self-enrollment even with a valid school code and arbitrary class", async () => {
-    const response = await request("/api/auth/register", "", "POST", {
+  it("lets roles self-enroll with a valid school code but never hijack identity", async () => {
+    // v0.2.1 起学生/老师/家长可凭学校代码自助注册；仍不能跨校或重复账号。
+    const created = await request("/api/auth/register", "", "POST", {
       role: "student",
       schoolCode: fixture.schoolId,
       name: "unapproved",
-      email: "new@fixture.test",
+      username: "unapproved01",
       password: "ChangeMe123!",
       stage: "初中",
       className: "other-class",
     });
-    expect(response.status).toBe(403);
+    expect(created.status).toBe(200);
     expect(
-      db.prepare("SELECT id FROM users WHERE email=?").get("new@fixture.test"),
-    ).toBeUndefined();
+      db
+        .prepare("SELECT id FROM users WHERE username=?")
+        .get("unapproved01"),
+    ).toBeTruthy();
+    const duplicate = await request("/api/auth/register", "", "POST", {
+      role: "student",
+      schoolCode: fixture.schoolId,
+      name: "duplicate",
+      username: "unapproved01",
+      password: "ChangeMe123!",
+      stage: "初中",
+      className: "other-class",
+    });
+    expect(duplicate.status).toBe(400);
+    const badSchool = await request("/api/auth/register", "", "POST", {
+      role: "teacher",
+      schoolCode: "not-a-school",
+      name: "attacker",
+      username: "attacker01",
+      password: "ChangeMe123!",
+      stage: "初中",
+      subject: "物理",
+      className: "八年级（1）班",
+    });
+    expect(badSchool.status).toBe(400);
   });
-  it("allows staff to create students after closing public enrollment", async () => {
+  it("allows staff to create students through the admin path", async () => {
     expect(
       (
         await request("/api/students", teacher, "POST", {
@@ -357,16 +382,13 @@ describe("third-round security and consistency regressions (mock model only)", (
         now + 95000,
       );
     const count = calls();
-    expect(
-      (
-        await request(
-          `/api/submissions/${submissionId}/recognize`,
-          teacher,
-          "POST",
-          {},
-        )
-      ).status,
-    ).toBe(429);
+    const busyResponse = await request(
+      `/api/submissions/${submissionId}/recognize`,
+      teacher,
+      "POST",
+      {},
+    );
+    expect(busyResponse.status).toBe(429);
     expect(
       db
         .prepare(

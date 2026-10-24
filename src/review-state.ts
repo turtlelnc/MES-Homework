@@ -9,9 +9,14 @@ export type ReviewItem = {
   questionId: string;
   studentAnswer?: string;
   correction?: string;
+  explanation?: string;
+  reason?: string;
+  reasoning?: string;
   confidence?: number;
   isCorrect?: boolean;
   score?: number | string;
+  suspect?: boolean;
+  confirmed?: boolean;
 };
 type Ticket = { id: string | null; generation: number };
 

@@ -4,7 +4,7 @@
 
 ## AI 辅助声明
 
-本项目由 **DeepSeek V4.1-Flash** 与 **Qwen 3.8 Max**（在 DeepSeek Harness 上运行）以及 **GPT 6 Sol**（在 Codex 上）辅助完成。所有 AI 生成的输出均已由开发者审核、验证并整合。开发者对最终代码库和文档保留完整的著作权和责任。
+本项目为 **DeepSeek V4.1-Flash** 与 **Qwen 3.8 Max**（在 DeepSeek Harness 上运行）和 **GPT 6 Sol**（在 Codex 上）辅助完成。所有 AI 生成的输出未由开发者仔细审核，开发者不对最终代码库和文档负责任。
 
 ## 实验性状态
 

@@ -6,6 +6,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import net from "node:net";
+import { pathToFileURL } from "node:url";
 import { randomUUID } from "node:crypto";
 import { seedTeachingFixture } from "./analysis.fixture.mjs";
 
@@ -19,7 +20,8 @@ let student: string,
   peer: string,
   teacher: string,
   outsider: string,
-  peerTeacher: string;
+  peerTeacher: string,
+  adminCookie: string;
 let submissionId: string,
   filename: string,
   hiddenAssignment: string,
@@ -70,12 +72,12 @@ beforeAll(async () => {
     ["peer-teacher@fixture.test", fixture.schoolId],
   ]) {
     db.prepare(
-      "INSERT INTO users SELECT ?,?,role,name,?,password_hash,salt,stage,subject,class_name,created_at,0 FROM users WHERE id=?",
-    ).run(randomUUID(), school, email, sample.id);
+      "INSERT INTO users(id,school_id,role,name,username,email,password_hash,salt,stage,subject,class_name,created_at,is_school_admin) SELECT ?,?,role,name,?,?,password_hash,salt,stage,subject,class_name,created_at,0 FROM users WHERE id=?",
+    ).run(randomUUID(), school, email.split("@")[0], email, sample.id);
   }
   hiddenAssignment = randomUUID();
   db.prepare(
-    "INSERT INTO assignments SELECT ?,school_id,teacher_id,title,stage,subject,'other-class',due_at,status,created_at FROM assignments WHERE id=?",
+    "INSERT INTO assignments(id,school_id,teacher_id,title,stage,subject,class_name,due_at,status,created_at,description,grading_mode) SELECT ?,school_id,teacher_id,title,stage,subject,'other-class',due_at,status,created_at,'','bank' FROM assignments WHERE id=?",
   ).run(hiddenAssignment, fixture.assignmentId);
   foreignKnowledge = randomUUID();
   db.prepare("INSERT INTO knowledge VALUES(?,?,?,?,?,?,?,?)").run(
@@ -127,7 +129,7 @@ beforeAll(async () => {
       return Response.json({choices:[{message:{content:JSON.stringify(config.payload)}}]});
     };`,
   );
-  child = spawn(process.execPath, ["--import", preload, "server/index.mjs"], {
+  child = spawn(process.execPath, ["--import", pathToFileURL(preload).href, "server/index.mjs"], {
     cwd: root,
     env: {
       ...process.env,
@@ -155,6 +157,15 @@ beforeAll(async () => {
   peer = await login("qing@fixture.test");
   outsider = await login("outside@fixture.test");
   peerTeacher = await login("peer-teacher@fixture.test");
+  adminCookie = await login("admin@fixture.test");
+  // v0.2.1：切到「老师分开」模式，教师才能配置自己的模型凭证（安全用例需要）。
+  expect(
+    (
+      await request("/api/school/model-mode", adminCookie, "PUT", {
+        mode: "teacher_class",
+      })
+    ).status,
+  ).toBe(200);
 }, 20000);
 afterAll(async () => {
   if (child && child.exitCode === null) {
@@ -220,21 +231,73 @@ describe("HTTP authorization regressions (isolated SQLite; no model requests)", 
         .status,
     ).toBe(404);
   });
-  it("denies teacher self-enrollment and student class switching", async () => {
+  it("allows account-name self-enrollment by role while keeping class boundaries", async () => {
+    // v0.2.1: 老师/学生/家长可凭学校代码自助注册（需求 4）。学校代码仍然
+    // 决定加入哪所学校，注册接口不能用来创建学校管理员或跨校身份。
+    const teacherRegister = await request("/api/auth/register", "", "POST", {
+      role: "teacher",
+      schoolCode: fixture.schoolId,
+      name: "新老师",
+      username: "newteacher01",
+      password: "attacker-password",
+      stage: "初中",
+      subject: "物理",
+      className: "八年级（1）班",
+    });
+    expect(teacherRegister.status).toBe(200);
     expect(
       (
         await request("/api/auth/register", "", "POST", {
-          role: "teacher",
+          role: "student",
           schoolCode: fixture.schoolId,
-          name: "Attacker",
-          email: "attacker@example.test",
+          name: "新同学",
+          username: "newstudent01",
           password: "attacker-password",
           stage: "初中",
-          subject: "物理",
           className: "八年级（1）班",
         })
       ).status,
-    ).toBe(403);
+    ).toBe(200);
+    expect(
+      (
+        await request("/api/auth/register", "", "POST", {
+          role: "parent",
+          schoolCode: fixture.schoolId,
+          name: "新家长",
+          username: "newparent01",
+          password: "attacker-password",
+          childUsername: "lin",
+          childPassword: "ChangeMe123!",
+        })
+      ).status,
+    ).toBe(200);
+    // 无效学校代码与重复账号名都必须被拒绝。
+    expect(
+      (
+        await request("/api/auth/register", "", "POST", {
+          role: "student",
+          schoolCode: "not-a-school",
+          name: "冒名",
+          username: "newstudent02",
+          password: "attacker-password",
+          stage: "初中",
+          className: "八年级（1）班",
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await request("/api/auth/register", "", "POST", {
+          role: "student",
+          schoolCode: fixture.schoolId,
+          name: "重名",
+          username: "newstudent01",
+          password: "attacker-password",
+          stage: "初中",
+          className: "八年级（1）班",
+        })
+      ).status,
+    ).toBe(400);
     expect(
       (await request("/api/me", student, "PATCH", { className: "other-class" }))
         .status,
@@ -616,7 +679,10 @@ describe("HTTP authorization regressions (isolated SQLite; no model requests)", 
     const own = await (await request(`/api/submissions/${id}`, student)).json();
     expect(JSON.stringify(own)).not.toContain("PRIVATE_PRACTICE");
     const notebook = await (await request("/api/mistakes", student)).json();
-    const mistake = notebook.find((m: any) => m.submission_id === id);
+    // v0.2.1 学生错题视图按白名单返回，不再包含 submission_id；用题干定位。
+    const mistake = notebook.find(
+      (m: any) => m.prompt === questions[0].prompt,
+    );
     expect(mistake.practiceQuestions).toEqual([{ prompt: "new-question" }]);
     fs.writeFileSync(
       path.join(dir, "model-response.json"),

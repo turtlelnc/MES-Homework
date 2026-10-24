@@ -60,6 +60,37 @@ import {
   validPassword,
   validateUploads,
 } from "./security.mjs";
+import { APP_VERSION, BUILD_NUMBER, VERSION_LABEL } from "./version.mjs";
+import { migrateDatabase, deriveUsernameSeed } from "./migrations.mjs";
+import { registerAccountsRoutes } from "./accounts.mjs";
+import { registerParentRoutes } from "./parent.mjs";
+import {
+  registerReviewRoutes,
+  annotateReviewItems,
+  assertReviewModeComplete,
+  commitReview,
+  isSuspectItem,
+} from "./review.mjs";
+import {
+  buildDirectGradingPrompt,
+  normalizeDirectGrading,
+  linkQuestions,
+} from "./direct-grading.mjs";
+import { registerMistakeRoutes } from "./mistakes-guide.mjs";
+import {
+  registerModelAccessRoutes,
+  resolveCredentialOwner,
+  describeModelAccess,
+  createModelConfigGuard,
+  getSchoolModelMode,
+} from "./model-access.mjs";
+import {
+  registerOAuthRoutes,
+  oauthChatText,
+  getOAuthConnection,
+  oauthProvider,
+} from "./oauth.mjs";
+import { normalizeDirectReview } from "./grading.mjs";
 
 const configuredSecret = process.env.APP_SECRET;
 if (
@@ -79,17 +110,10 @@ const db = new DatabaseSync(path.join(data, "smart-campus.sqlite"));
 db.exec(
   `PRAGMA busy_timeout=${Math.min(positive("SQLITE_BUSY_TIMEOUT_MS", 250), 1000)}`,
 );
-db.exec(fs.readFileSync(path.join(root, "server/schema.sql"), "utf8"));
-if (
-  !db
-    .prepare("PRAGMA table_info(users)")
-    .all()
-    .some((column) => column.name === "is_school_admin")
-) {
-  db.exec(
-    "ALTER TABLE users ADD COLUMN is_school_admin INTEGER NOT NULL DEFAULT 0",
-  );
-}
+const schemaSql = fs.readFileSync(path.join(root, "server/schema.sql"), "utf8");
+// v0.2.1: rebuild users/mistakes where SQLite cannot widen constraints in place,
+// then create v0.2.1 tables and derive account names for legacy rows.
+migrateDatabase(db, { schemaSql });
 db.exec(`
   UPDATE users SET is_school_admin=1
   WHERE id IN (
@@ -105,6 +129,8 @@ db.exec(`
       )
   )
 `);
+// Legacy-column guards kept for deployments that skipped intermediate releases;
+// migrateDatabase already performs the structural work.
 const mistakeColumns = db.prepare("PRAGMA table_info(mistakes)").all();
 if (!mistakeColumns.some((column) => column.name === "explanation"))
   db.exec(
@@ -215,7 +241,6 @@ const rosterUpload = multer({
 });
 const uid = () => randomUUID(),
   iso = () => new Date().toISOString();
-const APP_VERSION = "v0.2.0-rc1";
 const secret = createHash("sha256")
   .update(process.env.APP_SECRET || "development-only-change-me")
   .digest();
@@ -303,28 +328,55 @@ function decrypt(body, iv) {
   return Buffer.concat([d.update(b.subarray(0, -16)), d.final()]).toString();
 }
 
-function providerFor(userId, { vision = false } = {}) {
-  let config = db
-    .prepare("SELECT * FROM provider_settings WHERE user_id=?")
-    .get(userId);
-  if (!config) {
-    config = db
-      .prepare(
-        "SELECT ps.* FROM users current_user JOIN users administrator ON administrator.school_id=current_user.school_id AND administrator.is_school_admin=1 JOIN provider_settings ps ON ps.user_id=administrator.id WHERE current_user.id=? LIMIT 1",
-      )
-      .get(userId);
+// Resolve the credential owner for a caller according to the school's model
+// mode (school-wide / teacher+class / teacher+parent). All model calls go
+// through the owner's own API Key or OAuth connection.
+function modelOwnerFor(user) {
+  const route = resolveCredentialOwner(db, user);
+  return route.owner || user;
+}
+
+function modelConfigFor(owner, { vision = false } = {}) {
+  if (owner.model_auth_mode === "oauth" && owner.oauth_provider) {
+    const connection = getOAuthConnection(db, owner.id, owner.oauth_provider);
+    const preset = oauthProvider(owner.oauth_provider);
+    if (connection && preset) {
+      if (vision && !preset.vision)
+        throw new Error(
+          "当前 OAuth 模型不支持图片识别，请改用支持视觉的 API Key 模型",
+        );
+      return { kind: "oauth", connection, preset };
+    }
   }
-  const preset = config && providers[config.provider];
-  if (!config) throw new Error("请先在设置中配置模型 API Key");
-  if (vision && !preset?.vision) throw new Error("请配置支持图片的视觉模型");
-  return { config, preset };
+  const config = db
+    .prepare("SELECT * FROM provider_settings WHERE user_id=?")
+    .get(owner.id);
+  if (!config) {
+    throw new Error(
+      owner.model_auth_mode === "oauth"
+        ? "OAuth 授权已失效，请重新连接，或在设置中配置 API Key"
+        : "请先在设置中配置模型 API Key 或完成 OAuth 授权",
+    );
+  }
+  const preset = providers[config.provider];
+  if (!preset) throw new Error("模型厂商无效");
+  if (vision && !preset.vision) throw new Error("请配置支持图片的视觉模型");
+  return { kind: "api_key", config, preset };
+}
+
+// Throws a user-facing error when the effective credential owner has neither a
+// usable API Key nor a live OAuth connection. Returns the owner row.
+function assertModelConfigured(user) {
+  const owner = modelOwnerFor(user);
+  modelConfigFor(owner);
+  return owner;
 }
 
 const modelImages = createModelImages({
   maxBytes: Math.min(positive("MODEL_INLINE_BUDGET_MB", 96), 256) * 1024 ** 2,
 });
 async function askModel(
-  userId,
+  userOrId,
   prompt,
   images = [],
   reservation = null,
@@ -332,40 +384,26 @@ async function askModel(
 ) {
   signal = requestSignal(signal || AbortSignal.timeout(120000));
   signal.throwIfAborted();
-  const { config } = providerFor(userId, { vision: images.length > 0 });
-  const preset =
-    Object.hasOwn(providers, config.provider) && providers[config.provider];
-  if (!preset) throw new Error("模型厂商无效");
-  const endpoint = providerEndpoint(config.endpoint, preset);
-  const release = reservation || reserveModel(userId);
+  const owner =
+    typeof userOrId === "string"
+      ? db.prepare("SELECT * FROM users WHERE id=?").get(userOrId)
+      : userOrId;
+  if (!owner) throw new Error("账户不存在");
+  const release = reservation || reserveModel(owner.id);
   let cost, remote, imageLease;
   try {
-    // Reserve before DNS, image buffering, or outbound I/O. Revalidate DNS on
-    // every request while bounding its lifetime and concurrent lookups too.
-    await abortable(assertPublicProviderEndpoint(endpoint), signal);
-    pressure.assertMemory();
-    cost = costBudget.reserve(userId, config, prompt, images.length);
-    let imageBlocks;
-    if (
-      images.length &&
-      config.provider === "deepseek" &&
-      process.env.DEEPSEEK_FILES_ENABLED === "1"
-    ) {
-      if (!costBudget.enabled) throw new Error("Files API 需要先配置费用预算");
-      remote = await deepseekFiles.prepare(images, config, signal);
-      imageBlocks = remote.blocks;
-    } else {
+    // Resolve the effective credential owner (API Key or OAuth) before any
+    // DNS, image buffering or outbound I/O.
+    const credential = modelConfigFor(owner, { vision: images.length > 0 });
+    release.renew();
+    let text;
+    if (credential.kind === "oauth") {
       imageLease = await modelImages.acquire(images, signal);
       let bytes = 0;
-      imageBlocks = [];
+      const oauthImages = [];
       for (const image of images) {
         signal.throwIfAborted();
         pressure.assertMemory();
-        if (!image.base64) {
-          const stat = await fs.promises.stat(image.filePath);
-          if (bytes + 4 * Math.ceil(stat.size / 3) > 44 * 1024 * 1024)
-            throw new Error("内联图片合计过大，请减少页数或启用 Files API");
-        }
         const base64 =
           image.base64 ||
           (await fs.promises.readFile(image.filePath, { signal })).toString(
@@ -374,73 +412,125 @@ async function askModel(
         bytes += base64.length;
         if (bytes > imageLease.maxBytes)
           throw new Error("图片大小在读取期间发生变化，请重试");
-        if (bytes > 44 * 1024 * 1024)
-          throw new Error("内联图片合计过大，请减少页数或启用 Files API");
-        imageBlocks.push({
-          type: "image_url",
-          image_url: {
-            url: `data:${image.mimeType};base64,${base64}`,
-            detail: "high",
-          },
-        });
+        oauthImages.push({ ...image, base64 });
       }
-    }
-    const content = [{ type: "text", text: prompt }];
-    imageBlocks.forEach((block, index) => {
-      const image = images[index];
-      content.push({
-        type: "text",
-        text:
-          image.page === undefined
-            ? `第 ${index + 1} 页：`
-            : `第 ${image.page + 1} 页，区域(${image.x},${image.y},${image.width},${image.height})。与相邻块有重叠，同一题只返回一次，不得重复计分。`,
-      });
-      content.push(block);
-    });
-    release.renew();
-    signal.throwIfAborted();
-    cost?.dispatch();
-    const { response: rr, body: raw } = await requestJson(
-      endpoint,
-      {
-        redirect: "error",
+      text = await oauthChatText({
+        user: owner,
+        provider: credential.preset,
+        connection: credential.connection,
+        prompt,
+        images: oauthImages,
         signal,
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          authorization: `Bearer ${decrypt(config.encrypted_key, config.iv)}`,
-        },
-        body: JSON.stringify({
-          model: config.model,
-          response_format: { type: "json_object" },
-          temperature: 0,
-          stream: false,
-          max_tokens:
-            cost?.maxTokens ||
-            Math.min(positive("MODEL_MAX_OUTPUT_TOKENS", 8192), 32768),
-          messages: [
-            { role: "user", content: images.length ? content : prompt },
-          ],
-        }),
-      },
-      {
-        timeoutMs: Math.min(
-          positive("MODEL_REQUEST_TIMEOUT_MS", 60000),
-          120000,
-        ),
-        idleMs: Math.min(positive("MODEL_RESPONSE_IDLE_MS", 15000), 60000),
-        maxBytes: Math.min(
-          positive("MODEL_RESPONSE_MAX_BYTES", 2 * 1024 * 1024),
-          8 * 1024 * 1024,
-        ),
-      },
-    );
-    if (!rr.ok)
-      throw Object.assign(new Error(`模型接口请求失败 (${rr.status})`), {
-        retryable: rr.status === 429 || rr.status >= 500,
+        decrypt,
+        encrypt,
+        db,
       });
-    cost?.settle(raw.usage);
-    const text = raw.choices?.[0]?.message?.content;
+    } else {
+      const { config, preset } = credential;
+      const endpoint = providerEndpoint(config.endpoint, preset);
+      // Revalidate DNS on every request while bounding its lifetime and
+      // concurrent lookups too.
+      await abortable(assertPublicProviderEndpoint(endpoint), signal);
+      pressure.assertMemory();
+      cost = costBudget.reserve(owner.id, config, prompt, images.length);
+      let imageBlocks;
+      if (
+        images.length &&
+        config.provider === "deepseek" &&
+        process.env.DEEPSEEK_FILES_ENABLED === "1"
+      ) {
+        if (!costBudget.enabled)
+          throw new Error("Files API 需要先配置费用预算");
+        remote = await deepseekFiles.prepare(images, config, signal);
+        imageBlocks = remote.blocks;
+      } else {
+        imageLease = await modelImages.acquire(images, signal);
+        let bytes = 0;
+        imageBlocks = [];
+        for (const image of images) {
+          signal.throwIfAborted();
+          pressure.assertMemory();
+          if (!image.base64) {
+            const stat = await fs.promises.stat(image.filePath);
+            if (bytes + 4 * Math.ceil(stat.size / 3) > 44 * 1024 * 1024)
+              throw new Error("内联图片合计过大，请减少页数或启用 Files API");
+          }
+          const base64 =
+            image.base64 ||
+            (await fs.promises.readFile(image.filePath, { signal })).toString(
+              "base64",
+            );
+          bytes += base64.length;
+          if (bytes > imageLease.maxBytes)
+            throw new Error("图片大小在读取期间发生变化，请重试");
+          if (bytes > 44 * 1024 * 1024)
+            throw new Error("内联图片合计过大，请减少页数或启用 Files API");
+          imageBlocks.push({
+            type: "image_url",
+            image_url: {
+              url: `data:${image.mimeType};base64,${base64}`,
+              detail: "high",
+            },
+          });
+        }
+      }
+      const content = [{ type: "text", text: prompt }];
+      imageBlocks.forEach((block, index) => {
+        const image = images[index];
+        content.push({
+          type: "text",
+          text:
+            image.page === undefined
+              ? `第 ${index + 1} 页：`
+              : `第 ${image.page + 1} 页，区域(${image.x},${image.y},${image.width},${image.height})。与相邻块有重叠，同一题只返回一次，不得重复计分。`,
+        });
+        content.push(block);
+      });
+      release.renew();
+      signal.throwIfAborted();
+      cost?.dispatch();
+      const { response: rr, body: raw } = await requestJson(
+        endpoint,
+        {
+          redirect: "error",
+          signal,
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${decrypt(config.encrypted_key, config.iv)}`,
+          },
+          body: JSON.stringify({
+            model: config.model,
+            response_format: { type: "json_object" },
+            temperature: 0,
+            stream: false,
+            max_tokens:
+              cost?.maxTokens ||
+              Math.min(positive("MODEL_MAX_OUTPUT_TOKENS", 8192), 32768),
+            messages: [
+              { role: "user", content: images.length ? content : prompt },
+            ],
+          }),
+        },
+        {
+          timeoutMs: Math.min(
+            positive("MODEL_REQUEST_TIMEOUT_MS", 60000),
+            120000,
+          ),
+          idleMs: Math.min(positive("MODEL_RESPONSE_IDLE_MS", 15000), 60000),
+          maxBytes: Math.min(
+            positive("MODEL_RESPONSE_MAX_BYTES", 2 * 1024 * 1024),
+            8 * 1024 * 1024,
+          ),
+        },
+      );
+      if (!rr.ok)
+        throw Object.assign(new Error(`模型接口请求失败 (${rr.status})`), {
+          retryable: rr.status === 429 || rr.status >= 500,
+        });
+      cost?.settle(raw.usage);
+      text = raw.choices?.[0]?.message?.content;
+    }
     if (!text) throw new Error("模型没有返回识别内容");
     return cleanModelJson(text);
   } finally {
@@ -451,94 +541,97 @@ async function askModel(
   }
 }
 
-async function makeSchoolAndTeacher(x) {
-  if (!x.schoolName || !x.name || !x.email || !validPassword(x.password)) {
-    throw new Error("请完整填写学校与管理员信息，密码至少 8 位");
-  }
-  const school = { id: uid(), name: String(x.schoolName).trim() };
-  const id = uid();
-  const salt = randomBytes(16).toString("hex");
-  const hash = await pass(x.password, salt);
-  db.exec("BEGIN");
-  try {
-    db.prepare("INSERT INTO schools VALUES(?,?,?)").run(
-      school.id,
-      school.name,
-      iso(),
-    );
-    db.prepare(
-      "INSERT INTO users(id,school_id,role,name,email,password_hash,salt,stage,subject,class_name,created_at,is_school_admin) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-    ).run(
-      id,
-      school.id,
-      "teacher",
-      String(x.name).trim(),
-      String(x.email).trim().toLowerCase(),
-      hash,
-      salt,
-      null,
-      null,
-      null,
-      iso(),
-      1,
-    );
-    db.exec("COMMIT");
-    return { school, id };
-  } catch (error) {
-    db.exec("ROLLBACK");
-    throw error;
-  }
+// High-level entry point used by feature modules: resolves the credential
+// owner, enforces the school's model mode, and parses the JSON reply.
+// Rate/quota accounting stays on the *caller* (student/parent/teacher) so a
+// shared school credential cannot bypass per-student or per-staff budgets.
+async function callModel(
+  user,
+  prompt,
+  images = [],
+  signal = null,
+  reservation = null,
+) {
+  const owner = modelOwnerFor(user);
+  return askModel(
+    owner,
+    prompt,
+    images,
+    reservation || reserveModel(user.id),
+    signal,
+  );
 }
 
+// Route modules receive the shared application context. Keeping persistence
+// helpers here (instead of importing index.mjs from modules) avoids cycles.
+const ctx = {
+  db,
+  uid,
+  iso,
+  pass,
+  encrypt,
+  decrypt,
+  auth,
+  teacher,
+  schoolAdmin,
+  schoolStaff,
+  teachingAuthor,
+  validPassword,
+  callModel,
+  askModel,
+  reserveModel,
+  modelErrorStatus,
+  publicPractice,
+  safeParse,
+  setSession,
+  providers,
+  publicProviders,
+  // Module-facing model route: the credential owner plus the model label that
+  // the owner actually uses (API Key model or OAuth provider id).
+  resolveModelRoute: (user) => {
+    const route = resolveCredentialOwner(db, user);
+    const owner = route.owner;
+    const config = owner
+      ? db
+          .prepare(
+            "SELECT provider,model FROM provider_settings WHERE user_id=?",
+          )
+          .get(owner.id) || null
+      : null;
+    return {
+      ...route,
+      owner: owner
+        ? {
+            ...owner,
+            model: config?.model || owner.oauth_provider || "",
+            provider: config?.provider || owner.oauth_provider || "",
+          }
+        : null,
+      model: config?.model || owner?.oauth_provider || "",
+      provider: config?.provider || owner?.oauth_provider || "",
+    };
+  },
+  getSchoolModelMode: (schoolId) => getSchoolModelMode(db, schoolId),
+};
+registerAccountsRoutes(app, ctx);
+registerParentRoutes(app, ctx);
+registerReviewRoutes(app, ctx);
+registerMistakeRoutes(app, ctx);
+registerModelAccessRoutes(app, ctx);
+registerOAuthRoutes(app, ctx);
+
+const modelConfigGuard = createModelConfigGuard(db);
 app.get("/api/health", (_q, r) =>
   r.json({
     ok: true,
     version: APP_VERSION,
+    build: BUILD_NUMBER,
+    versionLabel: VERSION_LABEL,
     storage: "SQLite + local filesystem",
   }),
 );
 app.get("/api/providers", (_q, r) => r.json(publicProviders()));
-app.post("/api/schools/register", async (req, res) => {
-  try {
-    const created = await makeSchoolAndTeacher(req.body);
-    setSession(res, created.id);
-    res.json({
-      ok: true,
-      schoolCode: created.school.id,
-      schoolName: created.school.name,
-    });
-  } catch (error) {
-    res.status(error.status || 400).json({
-      error: String(error).includes("UNIQUE")
-        ? "管理员邮箱已注册"
-        : error.message || "学校注册失败",
-    });
-  }
-});
-// School IDs are identifiers, not enrollment credentials. Staff create students
-// through /api/students (or import), fixing their verified class on the server.
-app.post("/api/auth/register", (_req, res) => {
-  res
-    .status(403)
-    .json({ error: "学生账户须由学校管理员或教师创建，请联系学校领取账户" });
-});
-app.post("/api/auth/login", async (req, res) => {
-  if (
-    typeof req.body.password !== "string" ||
-    Buffer.byteLength(req.body.password) > 1024
-  )
-    return res.status(400).json({ error: "密码格式无效" });
-  const u = db
-    .prepare("SELECT * FROM users WHERE email=?")
-    .get(String(req.body.email || "").toLowerCase());
-  if (!u) return res.status(401).json({ error: "邮箱或密码错误" });
-  const a = Buffer.from(await pass(req.body.password || "", u.salt), "hex"),
-    b = Buffer.from(u.password_hash, "hex");
-  if (a.length !== b.length || !timingSafeEqual(a, b))
-    return res.status(401).json({ error: "邮箱或密码错误" });
-  setSession(res, u.id);
-  res.json({ ok: true });
-});
+
 app.post("/api/auth/logout", auth, (req, res) => {
   db.prepare("DELETE FROM sessions WHERE user_id=?").run(req.user.id);
   res.setHeader("Set-Cookie", "sc_session=; Path=/; Max-Age=0");
@@ -550,13 +643,14 @@ app.get("/api/me", auth, (req, res) => {
 });
 app.patch("/api/me", auth, (req, res) => {
   const x = req.body;
+  // 学生与家长的学段/班级/学科由学校与班主任维护，不能自行改动。
   if (
-    req.user.role === "student" &&
+    req.user.role !== "teacher" &&
     (x.stage !== undefined ||
       x.className !== undefined ||
       x.subject !== undefined)
   )
-    return res.status(403).json({ error: "学生不能自行更改学段或班级" });
+    return res.status(403).json({ error: "学生与家长不能自行更改学段或班级" });
   if (x.stage && !["小学", "初中", "高中"].includes(x.stage))
     return res.status(400).json({ error: "学段无效" });
   db.prepare(
@@ -570,7 +664,7 @@ app.patch("/api/me", auth, (req, res) => {
   );
   res.json({ ok: true });
 });
-app.get("/api/settings/provider", auth, schoolStaff, (req, res) =>
+app.get("/api/settings/provider", auth, (req, res) =>
   res.json(
     db
       .prepare(
@@ -579,33 +673,48 @@ app.get("/api/settings/provider", auth, schoolStaff, (req, res) =>
       .get(req.user.id) || null,
   ),
 );
-app.put("/api/settings/provider", auth, schoolStaff, async (req, res) => {
-  const p =
-    Object.hasOwn(providers, req.body.provider) && providers[req.body.provider];
-  if (!p || !req.body.apiKey)
-    return res.status(400).json({ error: "请选择厂商并填写 API Key" });
-  let endpoint;
-  try {
-    endpoint = providerEndpoint(req.body.endpoint || p.endpoint, p);
-  } catch (error) {
-    return res.status(400).json({ error: error.message });
-  }
-  if (typeof req.body.apiKey !== "string" || req.body.apiKey.length > 8192)
-    return res.status(400).json({ error: "API Key 格式无效" });
-  // Reject endpoints whose DNS resolves to internal addresses before saving,
-  // so a rebinding target cannot be persisted and used with the stored key.
-  try {
-    await assertPublicProviderEndpoint(endpoint);
-  } catch (error) {
-    return res.status(400).json({ error: error.message });
-  }
-  const [key, iv] = encrypt(req.body.apiKey);
-  const model = req.body.model || p.model;
-  db.prepare(
-    "INSERT INTO provider_settings(id,user_id,provider,endpoint,model,encrypted_key,iv,updated_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET provider=excluded.provider,endpoint=excluded.endpoint,model=excluded.model,encrypted_key=excluded.encrypted_key,iv=excluded.iv,updated_at=excluded.updated_at",
-  ).run(uid(), req.user.id, req.body.provider, endpoint, model, key, iv, iso());
-  res.json({ ok: true, provider: req.body.provider, endpoint, model });
-});
+app.put(
+  "/api/settings/provider",
+  auth,
+  (req, res, next) => modelConfigGuard(req, res, next),
+  async (req, res) => {
+    const p =
+      Object.hasOwn(providers, req.body.provider) &&
+      providers[req.body.provider];
+    if (!p || !req.body.apiKey)
+      return res.status(400).json({ error: "请选择厂商并填写 API Key" });
+    let endpoint;
+    try {
+      endpoint = providerEndpoint(req.body.endpoint || p.endpoint, p);
+    } catch (error) {
+      return res.status(400).json({ error: error.message });
+    }
+    if (typeof req.body.apiKey !== "string" || req.body.apiKey.length > 8192)
+      return res.status(400).json({ error: "API Key 格式无效" });
+    // Reject endpoints whose DNS resolves to internal addresses before saving,
+    // so a rebinding target cannot be persisted and used with the stored key.
+    try {
+      await assertPublicProviderEndpoint(endpoint);
+    } catch (error) {
+      return res.status(400).json({ error: error.message });
+    }
+    const [key, iv] = encrypt(req.body.apiKey);
+    const model = req.body.model || p.model;
+    db.prepare(
+      "INSERT INTO provider_settings(id,user_id,provider,endpoint,model,encrypted_key,iv,updated_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET provider=excluded.provider,endpoint=excluded.endpoint,model=excluded.model,encrypted_key=excluded.encrypted_key,iv=excluded.iv,updated_at=excluded.updated_at",
+    ).run(
+      uid(),
+      req.user.id,
+      req.body.provider,
+      endpoint,
+      model,
+      key,
+      iv,
+      iso(),
+    );
+    res.json({ ok: true, provider: req.body.provider, endpoint, model });
+  },
+);
 app.get("/api/knowledge", auth, (req, res) =>
   res.json(
     db
@@ -629,100 +738,28 @@ app.get("/api/school/summary", auth, schoolAdmin, (req, res) => {
       "SELECT COUNT(*) total FROM users WHERE school_id=? AND role='student'",
     )
     .get(req.user.school_id).total;
+  const parents = db
+    .prepare(
+      "SELECT COUNT(*) total FROM users WHERE school_id=? AND role='parent'",
+    )
+    .get(req.user.school_id).total;
+  const classes = db
+    .prepare(
+      "SELECT COUNT(DISTINCT class_name) total FROM users WHERE school_id=? AND role='student' AND class_name IS NOT NULL AND class_name<>''",
+    )
+    .get(req.user.school_id).total;
   const assignments = db
     .prepare("SELECT COUNT(*) total FROM assignments WHERE school_id=?")
     .get(req.user.school_id).total;
-  res.json({ school, teachers, students, assignments });
-});
-app.get("/api/teachers", auth, schoolAdmin, (req, res) =>
-  res.json(
-    db
-      .prepare(
-        "SELECT id,name,email,stage,subject,class_name,created_at FROM users WHERE school_id=? AND role='teacher' AND is_school_admin=0 ORDER BY name",
-      )
-      .all(req.user.school_id),
-  ),
-);
-app.post("/api/teachers", auth, schoolAdmin, async (req, res) => {
-  try {
-    const x = req.body;
-    if (
-      !x.name ||
-      !x.email ||
-      !validPassword(x.password) ||
-      !["小学", "初中", "高中"].includes(x.stage) ||
-      !x.subject ||
-      !x.className
-    )
-      return res
-        .status(400)
-        .json({ error: "请填写教师姓名、邮箱、初始密码、学段、学科和班级" });
-    const id = uid(),
-      salt = randomBytes(16).toString("hex");
-    db.prepare(
-      "INSERT INTO users(id,school_id,role,name,email,password_hash,salt,stage,subject,class_name,created_at,is_school_admin) VALUES(?,?,?,?,?,?,?,?,?,?,?,0)",
-    ).run(
-      id,
-      req.user.school_id,
-      "teacher",
-      String(x.name).trim(),
-      String(x.email).trim().toLowerCase(),
-      await pass(x.password, salt),
-      salt,
-      x.stage,
-      String(x.subject).trim(),
-      String(x.className).trim(),
-      iso(),
-    );
-    res.json({ id });
-  } catch (error) {
-    res.status(error.status || 400).json({
-      error: String(error).includes("UNIQUE") ? "邮箱已注册" : "教师注册失败",
-    });
-  }
-});
-app.get("/api/students", auth, schoolStaff, (req, res) =>
-  res.json(
-    db
-      .prepare(
-        "SELECT id,name,email,stage,class_name,created_at FROM users WHERE school_id=? AND role='student' ORDER BY class_name,name",
-      )
-      .all(req.user.school_id),
-  ),
-);
-app.post("/api/students", auth, schoolStaff, async (req, res) => {
-  try {
-    const x = req.body;
-    if (!x.name || !x.email || !validPassword(x.password))
-      return res
-        .status(400)
-        .json({ error: "姓名、邮箱必填，初始密码至少 8 位" });
-    const stage = x.stage || req.user.stage;
-    if (!["小学", "初中", "高中"].includes(stage))
-      return res.status(400).json({ error: "学段无效" });
-    const id = uid();
-    const salt = randomBytes(16).toString("hex");
-    db.prepare(
-      "INSERT INTO users(id,school_id,role,name,email,password_hash,salt,stage,subject,class_name,created_at,is_school_admin) VALUES(?,?,?,?,?,?,?,?,?,?,?,0)",
-    ).run(
-      id,
-      req.user.school_id,
-      "student",
-      String(x.name).trim(),
-      String(x.email).trim().toLowerCase(),
-      await pass(x.password, salt),
-      salt,
-      stage,
-      null,
-      String(x.className || req.user.class_name || "").trim(),
-      iso(),
-    );
-    res.json({ id });
-  } catch (error) {
-    res.status(error.status || 400).json({
-      error: String(error).includes("UNIQUE") ? "邮箱已注册" : "学生注册失败",
-    });
-  }
+  res.json({
+    school,
+    teachers,
+    students,
+    parents,
+    classes,
+    assignments,
+    modelMode: getSchoolModelMode(db, req.user.school_id),
+  });
 });
 app.post(
   "/api/students/import",
@@ -769,14 +806,35 @@ app.post(
       const created = [];
       const errors = [];
       const insert = db.prepare(
-        "INSERT INTO users(id,school_id,role,name,email,password_hash,salt,stage,subject,class_name,created_at,is_school_admin) VALUES(?,?,?,?,?,?,?,?,?,?,?,0)",
+        "INSERT INTO users(id,school_id,role,name,username,email,password_hash,salt,stage,subject,class_name,created_at,is_school_admin) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,0)",
       );
+      const usernameTaken = db.prepare(
+        "SELECT 1 present FROM users WHERE username=?",
+      );
+      const uniqueUsername = (base) => {
+        const cleaned = String(base || "")
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9_.\-\u4e00-\u9fa5]/g, "")
+          .slice(0, 28);
+        let seed =
+          cleaned.length >= 2
+            ? cleaned
+            : `stu_${randomBytes(4).toString("hex")}`;
+        let candidate = seed;
+        for (let n = 2; usernameTaken.get(candidate); n += 1)
+          candidate = `${seed.slice(0, 27)}_${n}`;
+        return candidate;
+      };
       for (const [index, row] of rows.entries()) {
         signal.throwIfAborted();
         const name = String(row["姓名"] || row.name || "").trim();
         const email = String(row["邮箱"] || row.email || "")
           .trim()
           .toLowerCase();
+        const rawUsername = String(
+          row["账号名"] || row["账号"] || row.username || row.account || "",
+        ).trim();
         const initialPassword = String(
           row["初始密码"] ||
             row.password ||
@@ -795,11 +853,13 @@ app.post(
         try {
           if (
             !name ||
-            !email ||
             !["小学", "初中", "高中"].includes(stage) ||
             !validPassword(initialPassword)
           )
-            throw new Error("姓名、邮箱、学段或密码格式无效");
+            throw new Error("姓名、学段或密码格式无效");
+          const username = uniqueUsername(
+            rawUsername || deriveUsernameSeed(email || name, name),
+          );
           const id = uid();
           const salt = randomBytes(16).toString("hex");
           insert.run(
@@ -807,7 +867,8 @@ app.post(
             req.user.school_id,
             "student",
             name,
-            email,
+            username,
+            email || null,
             await pass(initialPassword, salt, true),
             salt,
             stage,
@@ -815,7 +876,14 @@ app.post(
             className,
             iso(),
           );
-          created.push({ row: index + 2, id, name, email, initialPassword });
+          created.push({
+            row: index + 2,
+            id,
+            name,
+            username,
+            email,
+            initialPassword,
+          });
         } catch (error) {
           if (error.status === 503 || signal.aborted) throw error;
           errors.push({
@@ -823,7 +891,7 @@ app.post(
             name,
             email,
             error: String(error).includes("UNIQUE")
-              ? "邮箱已注册"
+              ? "账号名或邮箱已注册"
               : error.message,
           });
         }
@@ -877,10 +945,8 @@ app.post(
       return res
         .status(400)
         .json({ error: "请选择作业图片、PDF、DOCX 或 DOC" });
-    let reservation;
     try {
-      providerFor(req.user.id);
-      reservation = reserveModel(req.user.id);
+      assertModelConfigured(req.user);
       const signal = requestSignal();
       const { images, documentText, warnings } = await recognitionFiles(
         [{ file_path: req.file.path, file_type: req.file.mimetype }],
@@ -896,13 +962,7 @@ app.post(
         )
         .all(req.user.school_id, req.user.stage, req.user.subject);
       const prompt = `你是学校作业数字化助手。请忠实解析这份教师上传的作业原件，并整理为可直接发布的草稿。\n教师设置：学段=${req.user.stage}，学科=${req.user.subject}，班级=${req.user.class_name}。\n${word ? `Word 文档已提取文字：\n${word.text}\n` : "图片/PDF 已按页面附在消息中。"}\n现有校本知识库=${JSON.stringify(knowledge)}。\n规则：1. 只能提取原件中实际出现的题目，按原顺序，不得补题或改题；2. 无法辨认的部分写[无法辨认]；3. 原件没有答案时，根据题目自行推导标准答案与简明评分要点，并在 answerGenerated 标记 true；4. 优先使用现有知识点；没有匹配项时生成一个符合该学段教材的简洁知识点名称，并在 knowledgeGenerated 标记 true；5. 原件未标分值时，根据题型和难度给出合理分值。\n只返回 JSON：{"title":"原件标题或文件名","questions":[{"prompt":"完整题干","standardAnswer":"答案与评分要点","score":10,"knowledgeTitle":"知识点","answerGenerated":true,"knowledgeGenerated":false}],"warnings":["确实需要教师注意的识别问题"]}`;
-      const parsed = await askModel(
-        req.user.id,
-        prompt,
-        images,
-        reservation,
-        signal,
-      );
+      const parsed = await callModel(req.user, prompt, images, signal);
       if (!Array.isArray(parsed.questions) || !parsed.questions.length)
         throw new Error("未从文件中识别到题目，请检查图片清晰度或模型配置");
       const knowledgeMap = new Map(
@@ -950,14 +1010,46 @@ app.post(
         .status(modelErrorStatus(error))
         .json({ error: error.message || "作业解析失败" });
     } finally {
-      reservation?.();
       // The registered staging-file janitor also covers disconnect/error paths.
     }
   },
 );
 app.post("/api/assignments", auth, teacher, (req, res) => {
   const x = req.body;
-  if (!x.title || !x.questions?.length)
+  const gradingMode = x.gradingMode === "direct" ? "direct" : "bank";
+  const description =
+    typeof x.description === "string"
+      ? x.description.trim().slice(0, 2000)
+      : "";
+  if (!x.title || typeof x.title !== "string" || !x.title.trim())
+    return res.status(400).json({ error: "请填写作业名称" });
+  if (gradingMode === "direct") {
+    // v0.2.1: 无需先上传原题，教师只需给出作业名称与可选的内容描述，
+    // 学生答卷上传后由模型直接切题、给参考答案并批改。
+    const id = uid();
+    try {
+      db.prepare(
+        "INSERT INTO assignments(id,school_id,teacher_id,title,stage,subject,class_name,due_at,status,created_at,description,grading_mode) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+      ).run(
+        id,
+        req.user.school_id,
+        req.user.id,
+        String(x.title).trim(),
+        x.stage || req.user.stage,
+        x.subject || req.user.subject,
+        x.className || req.user.class_name,
+        x.dueAt || null,
+        "published",
+        iso(),
+        description,
+        "direct",
+      );
+      return res.json({ id, gradingMode: "direct" });
+    } catch {
+      return res.status(400).json({ error: "保存失败" });
+    }
+  }
+  if (!x.questions?.length)
     return res.status(400).json({ error: "请至少录入一道真实题目" });
   if (
     !Array.isArray(x.questions) ||
@@ -966,7 +1058,9 @@ app.post("/api/assignments", auth, teacher, (req, res) => {
       (q) =>
         !q ||
         typeof q.prompt !== "string" ||
+        !q.prompt.trim() ||
         typeof q.standardAnswer !== "string" ||
+        !q.standardAnswer.trim() ||
         !Number.isFinite(Number(q.score)) ||
         Number(q.score) < 0 ||
         (q.knowledgeId &&
@@ -979,17 +1073,21 @@ app.post("/api/assignments", auth, teacher, (req, res) => {
   const id = uid();
   db.exec("BEGIN");
   try {
-    db.prepare("INSERT INTO assignments VALUES(?,?,?,?,?,?,?,?,?,?)").run(
+    db.prepare(
+      "INSERT INTO assignments(id,school_id,teacher_id,title,stage,subject,class_name,due_at,status,created_at,description,grading_mode) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+    ).run(
       id,
       req.user.school_id,
       req.user.id,
-      x.title,
+      String(x.title).trim(),
       x.stage || req.user.stage,
       x.subject || req.user.subject,
       x.className || req.user.class_name,
       x.dueAt || null,
       "published",
       iso(),
+      description,
+      "bank",
     );
     const q = db.prepare("INSERT INTO questions VALUES(?,?,?,?,?,?,?)");
     x.questions.forEach((v, i) =>
@@ -1004,7 +1102,7 @@ app.post("/api/assignments", auth, teacher, (req, res) => {
       ),
     );
     db.exec("COMMIT");
-    res.json({ id });
+    res.json({ id, gradingMode: "bank" });
   } catch (e) {
     db.exec("ROLLBACK");
     res.status(400).json({ error: "保存失败" });
@@ -1178,35 +1276,91 @@ app.get("/api/submissions", auth, teacher, (req, res) =>
   res.json(
     db
       .prepare(
-        "SELECT s.id,s.student_name,s.status,s.teacher_reviewed,s.score,s.created_at,a.title assignment_title FROM submissions s JOIN assignments a ON a.id=s.assignment_id WHERE a.teacher_id=? ORDER BY s.created_at DESC",
+        "SELECT s.id,s.student_name,s.status,s.teacher_reviewed,s.score,s.created_at,a.title assignment_title,a.grading_mode,a.description assignment_description FROM submissions s JOIN assignments a ON a.id=s.assignment_id WHERE a.teacher_id=? ORDER BY s.created_at DESC",
       )
       .all(req.user.id),
   ),
 );
+function assignmentForSubmission(submission) {
+  return db
+    .prepare("SELECT * FROM assignments WHERE id=?")
+    .get(submission.assignment_id);
+}
+function questionsForAssignment(assignmentId) {
+  return db
+    .prepare(
+      "SELECT q.*,k.title knowledge_title FROM questions q LEFT JOIN knowledge k ON k.id=q.knowledge_id WHERE q.assignment_id=? ORDER BY q.number",
+    )
+    .all(assignmentId);
+}
+// Direct-grading submissions carry their own AI-derived question list; the
+// review UI and mistake records use the same shape as question-bank assignments.
+function questionsForSubmission(submission, assignment) {
+  if (assignment?.grading_mode === "direct" && submission.questions_json) {
+    const parsed = safeParse(submission.questions_json, []);
+    if (Array.isArray(parsed) && parsed.length)
+      return parsed.map((question, index) => ({
+        id: String(question.id || `dq${question.number || index + 1}`),
+        number: Number(question.number) || index + 1,
+        prompt: String(question.prompt || ""),
+        standard_answer: String(
+          question.standardAnswer ?? question.standard_answer ?? "",
+        ),
+        knowledge_id: question.knowledgeId || question.knowledge_id || null,
+        score: Number(question.score) || 0,
+        knowledge_title: String(
+          question.knowledgeTitle ?? question.knowledge_title ?? "",
+        ),
+      }));
+  }
+  return questionsForAssignment(submission.assignment_id);
+}
+function submissionWithAssignment(req) {
+  const submission = submissionFor(req);
+  if (!submission) return null;
+  const assignment = assignmentForSubmission(submission);
+  if (!assignment) return null;
+  return { submission, assignment };
+}
 app.get("/api/submissions/:id", auth, (req, res) => {
-  const s = submissionFor(req);
-  if (!s) return res.status(404).json({ error: "提交不存在" });
+  const found = submissionWithAssignment(req);
+  if (!found) return res.status(404).json({ error: "提交不存在" });
+  const { submission: s, assignment } = found;
   const student = req.user.role === "student";
   const visible = !student || s.teacher_reviewed;
   const parsed =
-    visible && s.analysis_json ? JSON.parse(s.analysis_json) : null;
-  const analysis = student ? studentAnalysis(parsed) : parsed;
+    visible && s.analysis_json ? safeParse(s.analysis_json, null) : null;
+  const questions = questionsForSubmission(s, assignment);
+  let analysis = student ? studentAnalysis(parsed) : parsed;
+  if (!student && analysis?.items)
+    analysis = {
+      ...analysis,
+      items: annotateReviewItems(analysis.items, questions),
+    };
   res.json({
     ...s,
     file_path: undefined,
+    assignment_title: assignment.title,
+    assignment_description: assignment.description || "",
+    grading_mode: assignment.grading_mode || "bank",
+    review_mode: req.user.review_mode || "all",
     files: submissionFiles(s).map((file) => ({
       name: file.original_name,
       mimeType: file.file_type,
       url: `/uploads/${encodeURIComponent(path.basename(file.file_path))}`,
     })),
-    questions: db
-      .prepare(
-        "SELECT id,number,prompt,score,standard_answer FROM questions WHERE assignment_id=? ORDER BY number",
-      )
-      .all(s.assignment_id)
-      .map(({ standard_answer, ...question }) =>
-        student ? question : { ...question, standard_answer },
-      ),
+    questions: questions.map((question) => {
+      const visibleQuestion = {
+        id: question.id,
+        number: question.number,
+        prompt: question.prompt,
+        score: question.score,
+        knowledge_id: question.knowledge_id,
+      };
+      return student
+        ? visibleQuestion
+        : { ...visibleQuestion, standard_answer: question.standard_answer };
+    }),
     analysis_json: analysis ? JSON.stringify(analysis) : null,
     ocr_text: visible ? s.ocr_text : null,
     analysis,
@@ -1241,23 +1395,82 @@ function auditReview(submission, actorId, action, after) {
     iso(),
   );
 }
+
+const bankRecognitionPrompt = (submission, questions, documentText) =>
+  `学校作业 OCR、自动批改与个性化练习。学段=${submission.stage}，学科=${submission.subject}，作业=${submission.title}。\n教师已经录入的正式题目=${JSON.stringify(questions)}。\n${documentText ? `答卷文字（按附件顺序）：\n${documentText}\n` : "学生答卷页面已附在消息中。"}\n规则：1. 忠实识别学生实际填写内容；2. 只能按 questionId 对齐正式题目；3. 无法辨认写[无法辨认]且 confidence 低于0.5；4. 自动判断正误和得分；5. 错题必须生成分步解析、错误原因、订正答案，以及2道同知识点同题型但数值或情境不同的练习题；6. 每个正式题目恰好返回一项；7. 每题必须给出 reasoning：说明判分依据（对照参考答案/评分要点的哪一部分、为什么判对或判错），不能只写“答案错误”；8. 错题给出 guidance：keyQuestion 是引导学生思考的关键问题（不能包含最终答案），hints 是 3 条递进提示（尽量不直接给最终答案），selfCheck 是 2-3 个自检问题。\n只返回 JSON：{"ocrText":"完整识别原文","items":[{"questionId":"题目id","knowledgeId":"知识点id","studentAnswer":"学生答案","isCorrect":false,"score":0,"reason":"错误原因","correction":"正确答案","explanation":"分步题目解析","reasoning":"AI 判断逻辑","confidence":0.0,"practiceQuestions":[{"prompt":"同类题","answer":"答案","explanation":"解析"}],"guidance":{"keyQuestion":"引导问题","hints":["提示1","提示2","提示3"],"selfCheck":["自检1"]}}]}`;
+
+// Tolerant normalization of bank-mode AI output. A structurally valid but
+// imperfect reply is still shown to the teacher for review instead of losing
+// the whole OCR result; only a completely unusable reply fails the job.
+function normalizeAiReviewItems(questions, rawItems) {
+  const byId = new Map(
+    (Array.isArray(rawItems) ? rawItems : [])
+      .filter((item) => item && typeof item.questionId === "string")
+      .map((item) => [item.questionId, item]),
+  );
+  let complete = true;
+  const items = questions.map((question) => {
+    const raw = byId.get(question.id);
+    const max = Number(question.score) || 0;
+    if (!raw) complete = false;
+    const scoreValue = Number(raw?.score);
+    const isCorrect = raw?.isCorrect === true;
+    const score = Number.isFinite(scoreValue)
+      ? Math.max(0, Math.min(max, scoreValue))
+      : isCorrect
+        ? max
+        : 0;
+    return {
+      questionId: question.id,
+      studentAnswer: String(raw?.studentAnswer ?? (raw ? "" : "[无法辨认]")),
+      correction: String(raw?.correction || ""),
+      explanation: String(raw?.explanation || raw?.correction || ""),
+      reason: String(raw?.reason || ""),
+      reasoning: String(raw?.reasoning || ""),
+      confidence: Number.isFinite(Number(raw?.confidence))
+        ? Math.max(0, Math.min(1, Number(raw.confidence)))
+        : -1,
+      isCorrect,
+      score:
+        isCorrect && max > 0
+          ? max
+          : !isCorrect && max > 0 && score === max
+            ? max - 0.5 > 0
+              ? max - 0.5
+              : 0
+            : score,
+      practiceQuestions: Array.isArray(raw?.practiceQuestions)
+        ? raw.practiceQuestions.slice(0, 5)
+        : [],
+      guidance:
+        raw?.guidance && typeof raw.guidance === "object"
+          ? raw.guidance
+          : undefined,
+    };
+  });
+  return {
+    items,
+    complete,
+    score:
+      Math.round(items.reduce((sum, item) => sum + item.score, 0) * 1e8) / 1e8,
+  };
+}
+
 async function recognizeSubmission(
-  s,
-  userId,
-  reservation,
+  submission,
+  user,
   signal,
   assertLease = () => {},
+  reservation = null,
 ) {
-  const qs = db
-    .prepare(
-      "SELECT q.*,k.title knowledge_title FROM questions q LEFT JOIN knowledge k ON k.id=q.knowledge_id WHERE assignment_id=? ORDER BY number",
-    )
-    .all(s.assignment_id);
+  const assignment = assignmentForSubmission(submission);
+  if (!assignment) throw new Error("作业不存在");
+  // Tiled uploads supply pre-cut regions; legacy uploads are read as pages.
   const tiles = db
     .prepare(
       "SELECT * FROM submission_tiles WHERE submission_id=? ORDER BY position",
     )
-    .all(s.id);
+    .all(submission.id);
   const { images, documentText } = tiles.length
     ? {
         images: tiles.map((tile) => ({
@@ -1271,12 +1484,31 @@ async function recognizeSubmission(
         })),
         documentText: "",
       }
-    : await recognitionFiles(submissionFiles(s), signal, {
+    : await recognitionFiles(submissionFiles(submission), signal, {
         admission: () => pressure.assertParser(),
       });
   assertLease();
-  const prompt = `学校作业 OCR、自动批改与个性化练习。学段=${s.stage}，学科=${s.subject}。\n教师已经录入的正式题目=${JSON.stringify(qs)}。\n${documentText ? `答卷文字（按附件顺序）：\n${documentText}\n` : "学生答卷页面已附在消息中。"}\n规则：1. 忠实识别学生实际填写内容；2. 只能按 questionId 对齐正式题目；3. 无法辨认写[无法辨认]且 confidence 低于0.5；4. 自动判断正误和得分；5. 错题必须生成分步解析、错误原因、订正答案，以及2道同知识点同题型但数值或情境不同的练习题；6. 每个正式题目恰好返回一项。\n只返回 JSON：{"ocrText":"完整识别原文","items":[{"questionId":"题目id","knowledgeId":"知识点id","studentAnswer":"学生答案","isCorrect":false,"score":0,"reason":"错误原因","correction":"正确答案","explanation":"分步题目解析","confidence":0.0,"practiceQuestions":[{"prompt":"同类题","answer":"答案","explanation":"解析"}]}]}`;
-  const parsed = await askModel(userId, prompt, images, reservation, signal);
+  if (assignment.grading_mode === "direct") {
+    const prompt = buildDirectGradingPrompt({
+      assignment,
+      userId: user.id,
+      documentText,
+      imageCount: images.length,
+    });
+    const parsed = await callModel(user, prompt, images, signal, reservation);
+    return { kind: "direct", assignment, parsed, documentText };
+  }
+  const qs = questionsForAssignment(submission.assignment_id);
+  const prompt = bankRecognitionPrompt(
+    {
+      stage: assignment.stage,
+      subject: assignment.subject,
+      title: assignment.title,
+    },
+    qs,
+    documentText,
+  );
+  const parsed = await callModel(user, prompt, images, signal, reservation);
   if (tiles.length) {
     const returnedIds = new Set(
       Array.isArray(parsed?.items)
@@ -1291,32 +1523,170 @@ async function recognizeSubmission(
     )
       throw new Error("切片识别题号缺失或重复，请重新识别或由教师检查原件");
   }
-  return parsed;
+  return { kind: "bank", assignment, parsed, questions: qs, documentText };
 }
+
+// Turn raw model output into the durable shape stored in submissions and used
+// by commitReview. Throws only when the model output is unusable.
+function prepareRecognition(user, result) {
+  const assignment = result.assignment;
+  if (result.kind === "direct") {
+    const normalized = normalizeDirectGrading(result.parsed);
+    const questions = linkQuestions(ctx, {
+      assignment,
+      questions: normalized.questions,
+      teacherId: user.id,
+    });
+    let reviewed;
+    try {
+      reviewed = normalizeDirectReview(normalized.items, questions);
+    } catch (error) {
+      throw Object.assign(new Error("模型返回的批改结果格式无效，请重新识别"), {
+        status: 502,
+      });
+    }
+    const analysis = {
+      ocrText: normalized.ocrText,
+      warnings: normalized.warnings,
+      items: reviewed.items,
+      score: reviewed.score,
+      scoreTotal: questions.reduce(
+        (sum, question) => sum + (Number(question.score) || 0),
+        0,
+      ),
+      // Parents read the per-submission question snapshot from the analysis
+      // payload; keep it there as well as in submissions.questions_json.
+      questions: questions.map((question) => ({
+        id: question.id,
+        number: question.number,
+        prompt: question.prompt,
+        standardAnswer: question.standardAnswer,
+        score: question.score,
+        knowledgeId: question.knowledgeId || null,
+        knowledgeTitle: question.knowledgeTitle || "",
+      })),
+      direct: true,
+    };
+    return {
+      kind: "direct",
+      assignment,
+      questions,
+      analysis,
+      ocrText: normalized.ocrText,
+      questionsJson: JSON.stringify(questions),
+      complete: true,
+      score: reviewed.score,
+    };
+  }
+  const normalized = normalizeAiReviewItems(
+    result.questions,
+    result.parsed?.items,
+  );
+  const analysis = {
+    ...result.parsed,
+    items: normalized.items,
+    score: normalized.score,
+    scoreTotal: result.questions.reduce(
+      (sum, question) => sum + (Number(question.score) || 0),
+      0,
+    ),
+  };
+  return {
+    kind: "bank",
+    assignment,
+    questions: result.questions,
+    analysis,
+    ocrText: String(result.parsed?.ocrText || ""),
+    questionsJson: null,
+    complete: normalized.complete,
+    score: normalized.score,
+  };
+}
+
+function submissionForJob(job) {
+  return db
+    .prepare(
+      "SELECT s.*,a.teacher_id FROM submissions s JOIN assignments a ON a.id=s.assignment_id WHERE s.id=?",
+    )
+    .get(job.submission_id);
+}
+
+function persistRecognition(job, prepared) {
+  db.prepare(
+    "UPDATE submissions SET status='review',teacher_reviewed=0,score=NULL,ocr_text=?,analysis_json=?,questions_json=? WHERE id=?",
+  ).run(
+    prepared.ocrText || "",
+    JSON.stringify(prepared.analysis),
+    prepared.questionsJson,
+    job.submission_id,
+  );
+  db.prepare(
+    "UPDATE recognition_jobs SET status='succeeded',token=NULL,lease_until=NULL,error=NULL,error_status=NULL,updated_at=? WHERE id=?",
+  ).run(Date.now(), job.id);
+}
+
+// "不复核" mode: publish the AI verdict immediately. If the reply was not
+// structurally complete we deliberately leave the submission in review so a
+// human still sees it; nothing is silently dropped.
+function autoReviewAfterRecognition(job, prepared) {
+  const user = db.prepare("SELECT * FROM users WHERE id=?").get(job.user_id);
+  if (!user || user.review_mode !== "none" || !prepared.complete) return;
+  const submission = submissionForJob(job);
+  if (!submission) return;
+  try {
+    const outcome = commitReview(ctx, {
+      submission,
+      assignment: prepared.assignment,
+      questions: prepared.questions,
+      items: prepared.analysis.items,
+      actorId: user.id,
+      reviewMode: "none",
+      auto: true,
+    });
+    db.prepare("UPDATE submissions SET analysis_json=? WHERE id=?").run(
+      JSON.stringify({
+        ...prepared.analysis,
+        items: outcome.items || prepared.analysis.items,
+        score: outcome.score,
+      }),
+      submission.id,
+    );
+  } catch (error) {
+    // Keep the AI grading for teacher review rather than failing the job.
+    db.prepare(
+      "UPDATE submissions SET status='review',teacher_reviewed=0 WHERE id=?",
+    ).run(submission.id);
+    console.error("auto review skipped:", error.message);
+  }
+}
+
 const recognitionJobs = new Set();
 const recognitionQueue = createRecognitionQueue(
   db,
   async (job, { signal, assertLease }) => {
     const submission = db
       .prepare(
-        "SELECT s.*,a.teacher_id,a.stage,a.subject FROM submissions s JOIN assignments a ON a.id=s.assignment_id WHERE s.id=? AND a.teacher_id=?",
+        "SELECT s.*,a.teacher_id FROM submissions s JOIN assignments a ON a.id=s.assignment_id WHERE s.id=? AND a.teacher_id=?",
       )
       .get(job.submission_id, job.user_id);
     if (!submission) throw new Error("提交不存在");
-    providerFor(job.user_id);
-    const reservation = reserveModel(job.user_id);
+    const user = db.prepare("SELECT * FROM users WHERE id=?").get(job.user_id);
+    if (!user) throw new Error("账户不存在");
+    assertModelConfigured(user);
+    assertLease();
+    const reservation = reserveModel(user.id);
     try {
-      assertLease();
       db.prepare("UPDATE submissions SET status='recognizing' WHERE id=?").run(
         submission.id,
       );
-      return await recognizeSubmission(
+      const result = await recognizeSubmission(
         submission,
-        job.user_id,
-        reservation,
+        user,
         signal,
         assertLease,
+        reservation,
       );
+      return prepareRecognition(user, result);
     } finally {
       reservation();
     }
@@ -1324,6 +1694,12 @@ const recognitionQueue = createRecognitionQueue(
   {
     canStart: () => pressure.limit(1) > 0,
     availableConcurrency: () => pressure.limit(positive("OCR_CONCURRENCY", 4)),
+    publish(job, prepared) {
+      persistRecognition(job, prepared);
+    },
+    afterPublish(job, prepared) {
+      autoReviewAfterRecognition(job, prepared);
+    },
   },
 );
 app.post("/api/submissions/:id/recognition-jobs", auth, teacher, (req, res) => {
@@ -1336,7 +1712,7 @@ app.post("/api/submissions/:id/recognition-jobs", auth, teacher, (req, res) => {
   if (recognitionJobs.has(submission.id))
     return res.status(409).json({ error: "识别正在进行中" });
   try {
-    providerFor(req.user.id);
+    assertModelConfigured(req.user);
     const job = recognitionQueue.enqueue(submission, req.user);
     res.status(202).json(publicJob(job));
   } catch (e) {
@@ -1387,20 +1763,27 @@ app.get("/api/operations", auth, schoolAdmin, (req, res) => {
     modelImages: modelImages.snapshot(),
   });
 });
+// Synchronous legacy endpoint kept for older clients; it shares the queue's
+// recognition and persistence helpers so behaviour cannot drift.
 app.post("/api/submissions/:id/recognize", auth, teacher, async (req, res) => {
   const s = db
     .prepare(
-      "SELECT s.*,a.teacher_id,a.stage,a.subject FROM submissions s JOIN assignments a ON a.id=s.assignment_id WHERE s.id=? AND a.teacher_id=?",
+      "SELECT s.*,a.teacher_id FROM submissions s JOIN assignments a ON a.id=s.assignment_id WHERE s.id=? AND a.teacher_id=?",
     )
     .get(req.params.id, req.user.id);
   if (!s) return res.status(404).json({ error: "提交不存在" });
   if (recognitionJobs.has(s.id) || recognitionQueue.active(s.id))
     return res.status(409).json({ error: "识别正在进行中" });
   recognitionJobs.add(s.id);
-  let reservation;
   let started = false;
+  let reservation;
+  const job = {
+    id: `sync-${s.id}`,
+    submission_id: s.id,
+    user_id: req.user.id,
+  };
   try {
-    providerFor(req.user.id);
+    assertModelConfigured(req.user);
     reservation = reserveModel(req.user.id);
     db.prepare(
       "UPDATE submissions SET status='recognizing',teacher_reviewed=0,score=NULL WHERE id=?",
@@ -1411,16 +1794,17 @@ app.post("/api/submissions/:id/recognize", auth, teacher, async (req, res) => {
       score: null,
     });
     started = true;
-    const parsed = await recognizeSubmission(
+    const result = await recognizeSubmission(
       s,
-      req.user.id,
-      reservation,
+      req.user,
       requestSignal(),
+      () => {},
+      reservation,
     );
-    db.prepare(
-      "UPDATE submissions SET status='review',teacher_reviewed=0,score=NULL,ocr_text=?,analysis_json=? WHERE id=?",
-    ).run(parsed.ocrText || "", JSON.stringify(parsed), s.id);
-    res.json(parsed);
+    const prepared = prepareRecognition(req.user, result);
+    persistRecognition(job, prepared);
+    autoReviewAfterRecognition(job, prepared);
+    res.json(prepared.analysis);
   } catch (e) {
     if (started) {
       if (e.code === "MODEL_QUOTA")
@@ -1447,183 +1831,55 @@ app.post("/api/submissions/:id/review", auth, teacher, (req, res) => {
   if (!s) return res.status(404).json({ error: "提交不存在" });
   if (recognitionJobs.has(s.id) || recognitionQueue.active(s.id))
     return res.status(409).json({ error: "请等待识别完成后再复核" });
-  const questions = db
-    .prepare(
-      "SELECT id,knowledge_id,score FROM questions WHERE assignment_id=? ORDER BY number",
-    )
-    .all(s.assignment_id);
-  const questionMap = new Map(questions.map((q) => [q.id, q.knowledge_id]));
+  const assignment = assignmentForSubmission(s);
+  if (!assignment) return res.status(404).json({ error: "作业不存在" });
+  const questions = questionsForSubmission(s, assignment);
+  const isDirect = assignment.grading_mode === "direct";
   let reviewed;
   try {
-    reviewed = normalizeReview(req.body.items, questions);
+    reviewed = (isDirect ? normalizeDirectReview : normalizeReview)(
+      req.body.items,
+      questions,
+    );
   } catch (error) {
     return res.status(400).json({ error: error.message });
   }
-  db.exec("BEGIN");
+  const reviewMode = req.user.review_mode || "all";
+  const modeError = assertReviewModeComplete(
+    reviewMode,
+    reviewed.items,
+    questions,
+  );
+  if (modeError) return res.status(400).json({ error: modeError });
   try {
-    db.prepare("DELETE FROM mistakes WHERE submission_id=?").run(s.id);
-    const ins = db.prepare(
-      "INSERT INTO mistakes(id,submission_id,student_id,question_id,knowledge_id,reason,student_answer,correction,created_at,explanation,practice_json,mastery) VALUES(?,?,?,?,?,?,?,?,?,?,?,0)",
-    );
-    for (const x of reviewed.items.filter((v) => !v.isCorrect))
-      ins.run(
-        uid(),
-        s.id,
-        s.student_id,
-        x.questionId,
-        questionMap.get(x.questionId) || null,
-        x.reason || "待归因",
-        x.studentAnswer || "",
-        x.correction || "",
-        iso(),
-        x.explanation || x.correction || "",
-        JSON.stringify(x.practiceQuestions || []),
-      );
-    db.prepare(
-      "UPDATE submissions SET analysis_json=?,teacher_reviewed=1,status='completed',score=? WHERE id=?",
-    ).run(
+    const outcome = commitReview(ctx, {
+      submission: s,
+      assignment,
+      questions,
+      items: reviewed.items,
+      actorId: req.user.id,
+      reviewMode,
+      auto: false,
+    });
+    const previous = safeParse(s.analysis_json, {});
+    db.prepare("UPDATE submissions SET analysis_json=? WHERE id=?").run(
       JSON.stringify({
-        ...req.body,
-        items: reviewed.items,
-        score: reviewed.score,
+        ...previous,
+        ...(req.body.ocrText ? { ocrText: req.body.ocrText } : {}),
+        items: outcome.items || reviewed.items,
+        score: outcome.score,
       }),
-      reviewed.score,
       s.id,
     );
-    const previousAnalysis = safeParse(s.analysis_json, {});
-    const previousItems = Array.isArray(previousAnalysis?.items)
-      ? previousAnalysis.items
-      : [];
-    auditReview(s, req.user.id, "review_saved", {
-      status: "completed",
-      reviewed: 1,
-      score: reviewed.score,
-      changes: reviewed.items.map((item) => {
-        const before = previousItems.find(
-          (previous) => previous?.questionId === item.questionId,
-        );
-        return {
-          questionId: item.questionId,
-          beforeScore: before?.score ?? null,
-          afterScore: item.score,
-          answerChanged: before?.studentAnswer !== item.studentAnswer,
-          verdictChanged: before?.isCorrect !== item.isCorrect,
-        };
-      }),
-    });
-    db.exec("COMMIT");
-    res.json({ ok: true });
+    res.json({ ok: true, score: outcome.score });
   } catch (e) {
-    db.exec("ROLLBACK");
-    res.status(400).json({ error: "复核保存失败" });
-  }
-});
-app.get("/api/mistakes", auth, (req, res) => {
-  const base =
-    "SELECT m.*,q.prompt,k.title knowledge_title,a.subject,a.stage,s.student_name FROM mistakes m JOIN submissions s ON s.id=m.submission_id JOIN questions q ON q.id=m.question_id JOIN assignments a ON a.id=s.assignment_id LEFT JOIN knowledge k ON k.id=m.knowledge_id WHERE ";
-  // 无论教师还是学生，都必须同时落在本校范围内，避免跨校读取错题。
-  const scope =
-    req.user.role === "student"
-      ? "a.school_id=? AND m.student_id=? AND s.teacher_reviewed=1"
-      : "a.school_id=? AND a.teacher_id=? AND s.teacher_reviewed=1";
-  const rows = db
-    .prepare(base + scope + " ORDER BY m.created_at DESC")
-    .all(req.user.school_id, req.user.id);
-  res.json(
-    rows.map((row) => ({
-      ...row,
-      practiceQuestions:
-        req.user.role === "student"
-          ? publicPractice(safeParse(row.practice_json, []))
-          : safeParse(row.practice_json, []),
-      practice_json: undefined,
-    })),
-  );
-});
-app.post("/api/mistakes/:id/practice/generate", auth, async (req, res) => {
-  if (req.user.role !== "student")
-    return res.status(403).json({ error: "仅学生可生成过关练习" });
-  const mistake = db
-    .prepare(
-      "SELECT m.*,q.prompt,q.standard_answer,k.title knowledge_title,a.stage,a.subject FROM mistakes m JOIN questions q ON q.id=m.question_id JOIN submissions s ON s.id=m.submission_id JOIN assignments a ON a.id=s.assignment_id LEFT JOIN knowledge k ON k.id=m.knowledge_id WHERE m.id=? AND m.student_id=? AND s.teacher_reviewed=1 AND a.school_id=?",
-    )
-    .get(req.params.id, req.user.id, req.user.school_id);
-  if (!mistake) return res.status(404).json({ error: "错题不存在" });
-  try {
-    const generated = await askModel(
-      req.user.id,
-      `为学生生成过关练习。学段=${mistake.stage}，学科=${mistake.subject}，知识点=${mistake.knowledge_title || "未标注"}。原题=${mistake.prompt}，标准答案=${mistake.standard_answer}，学生错误=${mistake.student_answer}，错误原因=${mistake.reason}。生成3道同知识点、同题型但数值或情境不同的题，难度逐步提高，不得照抄原题。只返回JSON：{"questions":[{"prompt":"题目","answer":"标准答案","explanation":"分步解析"}]}`,
-    );
-    const questions = Array.isArray(generated.questions)
-      ? generated.questions.slice(0, 5)
-      : [];
-    if (!questions.length) throw new Error("模型没有生成练习题");
-    const changed = db
-      .prepare(
-        "UPDATE mistakes SET practice_json=?,mastery=0 WHERE id=? AND practice_json IS ? AND EXISTS(SELECT 1 FROM submissions WHERE id=mistakes.submission_id AND teacher_reviewed=1)",
-      )
-      .run(JSON.stringify(questions), mistake.id, mistake.practice_json);
-    if (!changed.changes)
-      return res
-        .status(409)
-        .json({ error: "题目或复核状态已变化，请刷新后重试" });
-    res.json({ questions: publicPractice(questions) });
-  } catch (error) {
-    res
-      .status(modelErrorStatus(error))
-      .json({ error: error.message || "练习生成失败" });
-  }
-});
-app.post("/api/mistakes/:id/practice/submit", auth, async (req, res) => {
-  if (req.user.role !== "student")
-    return res.status(403).json({ error: "仅学生可提交过关练习" });
-  const mistake = db
-    .prepare(
-      "SELECT m.* FROM mistakes m JOIN submissions s ON s.id=m.submission_id JOIN assignments a ON a.id=s.assignment_id WHERE m.id=? AND m.student_id=? AND s.teacher_reviewed=1 AND a.school_id=?",
-    )
-    .get(req.params.id, req.user.id, req.user.school_id);
-  if (!mistake) return res.status(404).json({ error: "错题不存在" });
-  const questions = mistake.practice_json
-    ? JSON.parse(mistake.practice_json)
-    : [];
-  if (!questions.length)
-    return res.status(400).json({ error: "请先生成同类练习" });
-  const answers = Array.isArray(req.body.answers) ? req.body.answers : [];
-  if (
-    !Array.isArray(req.body.answers) ||
-    answers.length !== questions.length ||
-    answers.some(
-      (answer) =>
-        typeof answer !== "string" || !answer.trim() || answer.length > 10000,
-    )
-  )
-    return res.status(400).json({ error: "请完整填写每道练习的答案" });
-  try {
-    const graded = await askModel(
-      req.user.id,
-      `请严格批改过关练习。题目与参考答案=${JSON.stringify(questions)}。学生答案=${JSON.stringify(answers)}。语义等价或计算过程正确可判正确；不要因表达形式不同误判。只返回JSON：{"results":[{"correct":true,"feedback":"简短反馈"}],"passed":true}。passed 仅在全部题目正确时为 true。`,
-    );
-    const result = practiceGrade(graded, questions.length);
-    const changed = db
-      .prepare(
-        "UPDATE mistakes SET mastery=? WHERE id=? AND practice_json=? AND EXISTS(SELECT 1 FROM submissions WHERE id=mistakes.submission_id AND teacher_reviewed=1)",
-      )
-      .run(result.passed ? 1 : 0, mistake.id, mistake.practice_json);
-    if (!changed.changes)
-      return res
-        .status(409)
-        .json({ error: "题目或复核状态已变化，请刷新后重试" });
-    res.json(result);
-  } catch (error) {
-    res
-      .status(modelErrorStatus(error))
-      .json({ error: error.message || "练习批改失败" });
+    res.status(400).json({ error: e.message || "复核保存失败" });
   }
 });
 app.post("/api/papers/generate", auth, teacher, (req, res) => {
   const rows = db
     .prepare(
-      "SELECT DISTINCT q.id,q.prompt,q.standard_answer,k.title knowledge_title FROM mistakes m JOIN questions q ON q.id=m.question_id JOIN submissions s ON s.id=m.submission_id JOIN assignments a ON a.id=s.assignment_id LEFT JOIN knowledge k ON k.id=m.knowledge_id WHERE a.teacher_id=? AND s.teacher_reviewed=1 ORDER BY RANDOM() LIMIT ?",
+      "SELECT DISTINCT m.id,COALESCE(q.prompt,m.prompt) prompt,COALESCE(q.standard_answer,m.standard_answer) standard_answer,k.title knowledge_title FROM mistakes m LEFT JOIN questions q ON q.id=m.question_id JOIN submissions s ON s.id=m.submission_id JOIN assignments a ON a.id=s.assignment_id LEFT JOIN knowledge k ON k.id=m.knowledge_id WHERE a.teacher_id=? AND s.teacher_reviewed=1 AND COALESCE(q.prompt,m.prompt)<>'' ORDER BY RANDOM() LIMIT ?",
     )
     .all(
       req.user.id,
@@ -1799,12 +2055,12 @@ app.get("/api/teaching/assignments", auth, schoolStaff, (req, res) => {
   const rows = req.user.is_school_admin
     ? db
         .prepare(
-          "SELECT a.*,u.name teacher_name,COUNT(q.id) question_count FROM assignments a LEFT JOIN questions q ON q.assignment_id=a.id LEFT JOIN users u ON u.id=a.teacher_id WHERE a.school_id=? GROUP BY a.id ORDER BY a.created_at DESC",
+          "SELECT a.*,u.name teacher_name,COUNT(q.id) question_count FROM assignments a LEFT JOIN questions q ON q.assignment_id=a.id LEFT JOIN users u ON u.id=a.teacher_id WHERE a.school_id=? AND a.grading_mode='bank' GROUP BY a.id ORDER BY a.created_at DESC",
         )
         .all(req.user.school_id)
     : db
         .prepare(
-          "SELECT a.*,u.name teacher_name,COUNT(q.id) question_count FROM assignments a LEFT JOIN questions q ON q.assignment_id=a.id LEFT JOIN users u ON u.id=a.teacher_id WHERE a.teacher_id=? GROUP BY a.id ORDER BY a.created_at DESC",
+          "SELECT a.*,u.name teacher_name,COUNT(q.id) question_count FROM assignments a LEFT JOIN questions q ON q.assignment_id=a.id LEFT JOIN users u ON u.id=a.teacher_id WHERE a.teacher_id=? AND a.grading_mode='bank' GROUP BY a.id ORDER BY a.created_at DESC",
         )
         .all(req.user.id);
   const countMistakes = db.prepare(
@@ -1863,8 +2119,8 @@ app.post(
       const payload = promptPayload(stats, {
         knowledgeLabels: courseKnowledgeLabels(stats),
       });
-      const raw = await askModel(
-        req.user.id,
+      const raw = await callModel(
+        req.user,
         `你是初中/高中一线教研组长，正在把一次真实作业的复核数据转写成教师可以直接拿去上课的讲评方案。学段=${stats.assignment.stage}，学科=${stats.assignment.subject}，班级=${stats.assignment.className}，作业名称=${stats.assignment.title}。
 统计与错题数据（已由教师复核确认，请勿更改其中的数字、题号、知识点和错因结论）：${JSON.stringify(payload)}
 写作要求：
@@ -1913,8 +2169,8 @@ app.post(
     if (!stats.overview.mistakeCount)
       return res.status(400).json({ error: "暂无已复核错题，无法归因" });
     try {
-      const raw = await askModel(
-        req.user.id,
+      const raw = await callModel(
+        req.user,
         `你是学科教研员，请把下面这份作业的错题归因到统一的错因分类体系，便于教师做班级统计。学段=${stats.assignment.stage}，学科=${stats.assignment.subject}。
 统一错因体系（id 只能取以下之一）：${JSON.stringify(reasonTypeCatalog)}。
 错题明细（含有题号、知识点、教师复核后的错因文本）：${JSON.stringify(
@@ -1960,8 +2216,8 @@ app.post(
         .json({ error: "这位学生在这份作业中没有已复核错题" });
     try {
       const payload = promptPayload(stats, { student: student.student });
-      const raw = await askModel(
-        req.user.id,
+      const raw = await callModel(
+        req.user,
         `你是${stats.assignment.stage}${stats.assignment.subject}老师，正在给一位学生写作业后的个别化诊断，目的是让老师能在课堂上或课后直接照着帮这个学生补上漏洞，同时让学生自己看懂“我为什么错、下一步做什么”。学生=${student.student.name}，作业=${stats.assignment.title}。
 该生的复核错题数据：${JSON.stringify(payload)}
 要求：1. 只使用给定数据，不编造题目或分数；2. 指出知识漏洞时要说清是哪一个知识点、对应哪几题；3. 动作要具体到“今晚做什么、明天课堂做什么”；4. 语气对教师专业、对学生温和，不贴标签、不打击；5. 练习题要针对该生出错的知识点，给出参考答案要点。
@@ -2083,7 +2339,9 @@ app.post(
     ).slice(0, 80);
     db.exec("BEGIN");
     try {
-      db.prepare("INSERT INTO assignments VALUES(?,?,?,?,?,?,?,?,?,?)").run(
+      db.prepare(
+        "INSERT INTO assignments(id,school_id,teacher_id,title,stage,subject,class_name,due_at,status,created_at,description,grading_mode) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+      ).run(
         id,
         req.user.school_id,
         req.user.id,
@@ -2094,6 +2352,8 @@ app.post(
         null,
         "published",
         iso(),
+        "由 AI 教学分析的高频错题重新布置",
+        "bank",
       );
       const insert = db.prepare("INSERT INTO questions VALUES(?,?,?,?,?,?,?)");
       source.forEach((question, index) =>

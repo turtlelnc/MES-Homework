@@ -94,7 +94,7 @@ const questions = db
   .prepare("SELECT * FROM questions WHERE assignment_id=?")
   .all(f.assignmentId);
 const insertUser = db.prepare(
-  "INSERT INTO users VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+  "INSERT INTO users(id,school_id,role,name,email,password_hash,salt,stage,subject,class_name,created_at,is_school_admin) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
 );
 const insertSession = db.prepare("INSERT INTO sessions VALUES(?,?,?)");
 const manifest = { teachers: [], students: [], submissions: [] };
@@ -127,7 +127,9 @@ for (let t = 0; t < 100; t++) {
     0,
   );
   const cookie = session(teacher);
-  db.prepare("INSERT INTO assignments VALUES(?,?,?,?,?,?,?,?,?,?)").run(
+  db.prepare(
+    "INSERT INTO assignments(id,school_id,teacher_id,title,stage,subject,class_name,due_at,status,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+  ).run(
     assignment,
     f.schoolId,
     teacher,

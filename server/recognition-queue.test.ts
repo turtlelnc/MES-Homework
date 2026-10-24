@@ -31,6 +31,51 @@ const addSubmission = (id: string) => {
   return db.prepare("SELECT * FROM submissions WHERE id=?").get(id);
 };
 describe("durable recognition", () => {
+  it("keeps concurrent publication and post-commit hooks bound to the correct submission", async () => {
+    const finish = new Map<string, (value: any) => void>();
+    const published: string[] = [];
+    const queue = createRecognitionQueue(
+      db,
+      (job) => new Promise((resolve) => finish.set(job.submission_id, resolve)),
+      {
+        concurrency: 2,
+        userConcurrency: 2,
+        publish(job, value) {
+          db.prepare(
+            "UPDATE submissions SET ocr_text=?,status='review' WHERE id=?",
+          ).run(value.ocrText, job.submission_id);
+        },
+        afterPublish(job, value) {
+          expect(
+            db
+              .prepare("SELECT status FROM recognition_jobs WHERE id=?")
+              .get(job.id)!.status,
+          ).toBe("succeeded");
+          expect(
+            db
+              .prepare("SELECT ocr_text FROM submissions WHERE id=?")
+              .get(job.submission_id)!.ocr_text,
+          ).toBe(value.ocrText);
+          published.push(job.submission_id);
+        },
+      },
+    );
+    queue.enqueue(addSubmission("hook-0"), user);
+    queue.enqueue(addSubmission("hook-1"), user);
+    const pending = queue.tick();
+    finish.get("hook-1")!({ ocrText: "second result" });
+    finish.get("hook-0")!({ ocrText: "first result" });
+    await pending;
+    queue.stop();
+    expect(published).toEqual(["hook-1", "hook-0"]);
+    expect(
+      db.prepare("SELECT ocr_text FROM submissions WHERE id='hook-0'").get()!
+        .ocr_text,
+    ).toBe("first result");
+    expect(
+      db.prepare("SELECT COUNT(*) n FROM recognition_sources").get()!.n,
+    ).toBe(0);
+  });
   it("reduces new claims under pressure without cancelling work already running", async () => {
     let capacity = 1;
     const finish: Array<(r: any) => void> = [];

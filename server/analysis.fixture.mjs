@@ -158,7 +158,7 @@ export function seedTeachingFixture(db) {
   const teacherId = uid();
   const salt = randomBytes(16).toString("hex");
   const insertUser = db.prepare(
-    "INSERT INTO users(id,school_id,role,name,email,password_hash,salt,stage,subject,class_name,created_at,is_school_admin) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+    "INSERT INTO users(id,school_id,role,name,username,email,password_hash,salt,stage,subject,class_name,created_at,is_school_admin) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
   );
   db.prepare("INSERT INTO schools VALUES(?,?,?)").run(
     schoolId,
@@ -170,6 +170,7 @@ export function seedTeachingFixture(db) {
     schoolId,
     "teacher",
     "王老师",
+    "teacher",
     "teacher@fixture.test",
     pass(fixturePassword, salt),
     salt,
@@ -187,6 +188,7 @@ export function seedTeachingFixture(db) {
       schoolId,
       "student",
       item.name,
+      item.key,
       item.email,
       pass(fixturePassword, studentSalt),
       studentSalt,
@@ -206,6 +208,7 @@ export function seedTeachingFixture(db) {
     schoolId,
     "teacher",
     "校长",
+    "admin",
     "admin@fixture.test",
     pass(fixturePassword, adminSalt),
     adminSalt,
@@ -234,7 +237,9 @@ export function seedTeachingFixture(db) {
   }
 
   const assignmentId = uid();
-  db.prepare("INSERT INTO assignments VALUES(?,?,?,?,?,?,?,?,?,?)").run(
+  db.prepare(
+    "INSERT INTO assignments(id,school_id,teacher_id,title,stage,subject,class_name,due_at,status,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+  ).run(
     assignmentId,
     schoolId,
     teacherId,

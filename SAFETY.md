@@ -4,7 +4,7 @@ English | [中文](SAFETY.zh.md)
 
 ## AI-Assisted Project
 
-This project was developed with the assistance of **DeepSeek V4.1-Flash** and **Qwen 3.8 Max** (running on DeepSeek Harness), as well as **GPT 6 Sol** (running on Codex). All AI-generated outputs have been reviewed, verified, and integrated by the developer. The developer retains full authorship and responsibility for the final codebase and documentation.
+This project is assisted by DeepSeek V4.1-Flash and Qwen 3.8 Max (running on DeepSeek Harness) and GPT 6 Sol (running on Codex). All AI-generated output has not been carefully reviewed by the developers, who are not responsible for the final code base and documentation.
 
 ## Experimental Status
 

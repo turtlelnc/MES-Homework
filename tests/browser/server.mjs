@@ -28,6 +28,10 @@ fs.mkdirSync(path.join(data, "uploads"));
 const db = new DatabaseSync(path.join(data, "smart-campus.sqlite"));
 db.exec(fs.readFileSync(path.join(root, "server/schema.sql"), "utf8"));
 const f = seedTeachingFixture(db);
+// v0.2.1：教师分开模式才允许教师配置自己的模型凭证（浏览器用例沿用此假设）。
+db.prepare(
+  "INSERT INTO school_settings(school_id,model_mode,updated_at) VALUES(?,?,?) ON CONFLICT(school_id) DO UPDATE SET model_mode=excluded.model_mode,updated_at=excluded.updated_at",
+).run(f.schoolId, "teacher_class", new Date().toISOString());
 db.prepare("UPDATE assignments SET title=?,created_at=? WHERE id=?").run(
   "浏览器作业 A",
   "2026-01-02T00:00:00.000Z",
@@ -35,7 +39,7 @@ db.prepare("UPDATE assignments SET title=?,created_at=? WHERE id=?").run(
 );
 const b = randomUUID();
 db.prepare(
-  "INSERT INTO assignments SELECT ?,school_id,teacher_id,?,stage,subject,class_name,due_at,status,? FROM assignments WHERE id=?",
+  "INSERT INTO assignments(id,school_id,teacher_id,title,stage,subject,class_name,due_at,status,created_at,description,grading_mode) SELECT ?,school_id,teacher_id,?,stage,subject,class_name,due_at,status,?,'','bank' FROM assignments WHERE id=?",
 ).run(b, "浏览器作业 B", "2026-01-01T00:00:00.000Z", f.assignmentId);
 const questions = db
   .prepare("SELECT * FROM questions WHERE assignment_id=? ORDER BY number")
@@ -59,12 +63,14 @@ for (const s of db
   .all(f.assignmentId)) {
   const id = randomUUID();
   db.prepare(
-    "INSERT INTO submissions SELECT ?,?,student_id,student_name,file_path,file_type,status,ocr_text,analysis_json,teacher_reviewed,score,created_at FROM submissions WHERE id=?",
+    "INSERT INTO submissions(id,assignment_id,student_id,student_name,file_path,file_type,status,ocr_text,analysis_json,teacher_reviewed,score,created_at,questions_json) SELECT ?,?,student_id,student_name,file_path,file_type,status,ocr_text,analysis_json,teacher_reviewed,score,created_at,questions_json FROM submissions WHERE id=?",
   ).run(id, b, s.id);
   for (const m of db
     .prepare("SELECT * FROM mistakes WHERE submission_id=?")
     .all(s.id))
-    db.prepare("INSERT INTO mistakes VALUES(?,?,?,?,?,?,?,?,?,?,?,?)").run(
+    db.prepare(
+      "INSERT INTO mistakes(id,submission_id,student_id,question_id,knowledge_id,reason,student_answer,correction,created_at,explanation,practice_json,mastery,question_number,prompt,standard_answer,question_score,reasoning,guidance_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+    ).run(
       randomUUID(),
       id,
       m.student_id,
@@ -77,6 +83,12 @@ for (const s of db
       m.explanation,
       m.practice_json,
       m.mastery,
+      m.question_number,
+      m.prompt,
+      m.standard_answer,
+      m.question_score,
+      m.reasoning,
+      m.guidance_json,
     );
 }
 // Give every fixture an actual protected PNG attachment. No student data is real.
@@ -115,9 +127,15 @@ globalThis.fetch = async (_url, options) => {
         correction: x.standard_answer,
         explanation: "mock explanation",
         confidence: 0.95,
+        reasoning: "mock reasoning: 对照参考答案判定学生这一步正确。",
         practiceQuestions: [
           { prompt: "1+1=?", answer: "2", explanation: "addition" },
         ],
+        guidance: {
+          keyQuestion: "先想一想这道题用到哪个知识点？",
+          hints: ["回顾定义", "检查代入", "验算结果"],
+          selfCheck: ["结果合理吗？"],
+        },
       })),
     };
   } else if (prompt.includes("请严格批改过关练习")) {

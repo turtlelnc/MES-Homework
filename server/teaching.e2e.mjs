@@ -115,7 +115,10 @@ console.log(`教学分析端到端校验（端口 ${port}）\n`);
 const teacher = { email: "teacher@fixture.test", password: "ChangeMe123!" };
 
 const health = await call("/health");
-ok("health reports v0.2.0-rc1", health.data?.version === "v0.2.0-rc1");
+ok(
+  "health reports v0.2.1-rc1",
+  health.data?.version === "v0.2.1-rc1" && health.data?.build === "26102401",
+);
 
 ok(
   "wrong password rejected",

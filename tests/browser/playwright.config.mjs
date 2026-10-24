@@ -1,4 +1,5 @@
 import { defineConfig } from "@playwright/test";
+import { fileURLToPath } from "node:url";
 export default defineConfig({
   testDir: ".",
   testMatch: "**/*.pw.mjs",
@@ -25,7 +26,7 @@ export default defineConfig({
   },
   webServer: {
     command: "node tests/browser/server.mjs",
-    cwd: new URL("../..", import.meta.url).pathname,
+    cwd: fileURLToPath(new URL("../..", import.meta.url)),
     url: "http://127.0.0.1:18877/api/health",
     timeout: 30000,
     reuseExistingServer: false,

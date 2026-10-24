@@ -35,17 +35,27 @@ import {
 } from "./review-state";
 import { Button } from "./components/ui/button";
 import { TeachingAnalysis } from "./TeachingAnalysis";
+import { AuthPage } from "./AuthPage";
+import { ParentDashboard } from "./ParentDashboard";
+import { ProviderSettings } from "./ProviderSettings";
+import { SchoolModelPanel } from "./SchoolModelPanel";
+import { StudentMistakes } from "./StudentMistakes";
+import { VERSION_LABEL } from "./version";
 import "./styles.css";
 type User = {
   id: string;
   school_id: string;
-  role: "teacher" | "student";
+  role: "teacher" | "student" | "parent";
   name: string;
-  email: string;
+  username?: string;
+  email?: string;
   stage: string;
   subject: string;
   class_name: string;
   is_school_admin: number;
+  review_mode?: "all" | "uncertain" | "none";
+  model_auth_mode?: "api_key" | "oauth";
+  oauth_provider?: string | null;
 };
 type Knowledge = {
   id: string;
@@ -69,11 +79,14 @@ type Submission = {
   teacher_reviewed: number;
   assignment_title: string;
   score?: number;
+  grading_mode?: "bank" | "direct";
+  assignment_description?: string;
 };
 type Student = {
   id: string;
   name: string;
-  email: string;
+  username?: string;
+  email?: string;
   stage: string;
   class_name: string;
   created_at: string;
@@ -116,6 +129,10 @@ const studentNav = [
   ["mistakes", "我的错题", ClipboardCheck],
   ["settings", "账户设置", Settings],
 ] as const;
+const parentNav = [
+  ["parent", "孩子看板", BarChart3],
+  ["settings", "账户设置", Settings],
+] as const;
 function App() {
   const [user, setUser] = useState<User | null>(null),
     [loading, setLoading] = useState(true),
@@ -130,13 +147,37 @@ function App() {
             ? "school"
             : u.role === "teacher"
               ? "overview"
-              : "assignments",
+              : u.role === "parent"
+                ? "parent"
+                : "assignments",
         );
       })
       .catch(() => setUser(null))
       .finally(() => setLoading(false));
   useEffect(() => {
     refresh();
+  }, []);
+  // OAuth 回调会带 ?oauth_status=connected|error|denied 返回单页应用。
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const status = params.get("oauth_status");
+    if (!status) return;
+    const provider = params.get("oauth_provider") || "";
+    const labels: Record<string, string> = {
+      connected: `OAuth 授权成功（${provider}），可在设置中选择使用。`,
+      denied: "已取消 OAuth 授权。",
+      error: "OAuth 授权未完成，请重试或改用 API Key。",
+    };
+    setToast(labels[status] || "OAuth 授权状态已更新。");
+    params.delete("oauth_status");
+    params.delete("oauth_provider");
+    params.delete("oauth_reason");
+    const query = params.toString();
+    window.history.replaceState(
+      null,
+      "",
+      `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`,
+    );
   }, []);
   useEffect(() => {
     if (!toast) return;
@@ -150,12 +191,14 @@ function App() {
         <p>正在连接校园作业分析服务…</p>
       </div>
     );
-  if (!user) return <Auth onDone={refresh} />;
+  if (!user) return <AuthPage onDone={refresh} />;
   const nav = user.is_school_admin
     ? adminNav
     : user.role === "teacher"
       ? teacherNav
-      : studentNav;
+      : user.role === "parent"
+        ? parentNav
+        : studentNav;
   return (
     <div className="rc4">
       <header className="rc4-header">
@@ -166,7 +209,11 @@ function App() {
             <small>
               {user.is_school_admin
                 ? "学校管理员"
-                : `${user.role === "teacher" ? "教师" : "学生"} · ${user.stage} · ${user.class_name}`}
+                : user.role === "teacher"
+                  ? `教师 · ${user.stage} · ${user.class_name}`
+                  : user.role === "parent"
+                    ? "家长"
+                    : `学生 · ${user.stage} · ${user.class_name}`}
             </small>
           </div>
           <span>{user.name.slice(0, 1)}</span>
@@ -211,6 +258,7 @@ function App() {
             <SchoolDashboard user={user} notify={setToast} />
           )}{" "}
           {view === "overview" && <Overview user={user} navigate={setView} />}{" "}
+          {view === "parent" && <ParentDashboard user={user} notify={setToast} />}{" "}
           {view === "teaching" && <TeachingAnalysis notify={setToast} />}{" "}
           {view === "assignments" && (
             <Assignments user={user} notify={setToast} />
@@ -223,7 +271,7 @@ function App() {
             <KnowledgeBase user={user} notify={setToast} />
           )}{" "}
           {view === "papers" && <Papers notify={setToast} />}{" "}
-          {view === "mistakes" && <Mistakes notify={setToast} />}{" "}
+          {view === "mistakes" && <StudentMistakes notify={setToast} />}{" "}
           {view === "settings" && (
             <AccountSettings user={user} refresh={refresh} notify={setToast} />
           )}
@@ -245,7 +293,7 @@ function Brand() {
         <BookOpen />
       </span>
       <div>
-        校园作业分析<small>SMART CAMPUS · v0.2.0-rc1</small>
+        校园作业分析<small>SMART CAMPUS · {VERSION_LABEL}</small>
       </div>
     </div>
   );
@@ -312,124 +360,6 @@ function Empty({ text }: { text: string }) {
     </div>
   );
 }
-function Auth({ onDone }: { onDone: () => void }) {
-  const [mode, setMode] = useState<"login" | "school">("login"),
-    [error, setError] = useState(""),
-    [busy, setBusy] = useState(false);
-  const submit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setBusy(true);
-    setError("");
-    const data = Object.fromEntries(new FormData(e.currentTarget));
-    try {
-      await api(
-        mode === "school" ? "/schools/register" : `/auth/${mode}`,
-        json("POST", data),
-      );
-      onDone();
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <div className="auth-page">
-      <section className="auth-story">
-        <Brand />
-        <div>
-          <p className="eyebrow">SCHOOL READY WORKFLOW</p>
-          <h1>
-            从真实作业开始，
-            <br />
-            把每一步学习看清楚。
-          </h1>
-          <p>
-            作业原件逐页
-            OCR，题目与知识点由教师复核。学校、教师、学生账户各自隔离。
-          </p>
-        </div>
-        <div className="auth-features">
-          <span>
-            <School />
-            学校注册
-          </span>
-          <span>
-            <BrainCircuit />
-            真实 OCR
-          </span>
-          <span>
-            <Library />
-            校本知识库
-          </span>
-        </div>
-      </section>
-      <section className="auth-form-wrap">
-        <form className="auth-form" onSubmit={submit}>
-          <div>
-            <span className="eyebrow">
-              {mode === "login" ? "WELCOME BACK" : "REGISTER SCHOOL"}
-            </span>
-            <h2>{mode === "login" ? "登录工作空间" : "注册学校"}</h2>
-            <p>
-              {mode === "school"
-                ? "创建学校空间与首位教师管理员账户。"
-                : "使用学校账户安全访问数据。"}
-            </p>
-          </div>
-          {mode === "login" && (
-            <p>教师和学生请联系学校领取账户，学段与班级由学校确认。</p>
-          )}
-          {mode !== "login" && (
-            <Field
-              name="name"
-              label={mode === "school" ? "管理员姓名" : "姓名"}
-              required
-            />
-          )}
-          {mode === "school" && (
-            <Field name="schoolName" label="学校名称" required />
-          )}
-          <Field name="email" label="邮箱" required type="email" />
-          <Field
-            name="password"
-            label="密码"
-            required
-            type="password"
-            minLength={8}
-            placeholder="至少 8 位"
-          />
-          {error && <p className="form-error">{error}</p>}
-          <Button disabled={busy} className="full">
-            {busy ? "正在处理…" : mode === "login" ? "登录" : "注册学校并进入"}
-          </Button>
-          <div className="auth-links">
-            <button
-              type="button"
-              className="switch-auth"
-              onClick={() => {
-                setMode("login");
-                setError("");
-              }}
-            >
-              已有账户？返回登录
-            </button>
-            <button
-              type="button"
-              className="switch-auth"
-              onClick={() => {
-                setMode("school");
-                setError("");
-              }}
-            >
-              注册新学校
-            </button>
-          </div>
-        </form>
-      </section>
-    </div>
-  );
-}
 function SchoolDashboard({
   user,
   notify,
@@ -472,14 +402,14 @@ function SchoolDashboard({
       <Title
         eyebrow="SCHOOL ADMINISTRATION"
         title={summary?.school?.name || "学校仪表盘"}
-        desc={`学校账户只管理组织与成员，不设置班级、学段或学科。学校编号：${user.school_id}`}
+        desc={`学校账户管理组织、成员与模型调用模式，不直接参与作业复核。学校编号：${user.school_id}`}
       />
       <div className="metric-grid">
         {[
           ["教师账户", summary?.teachers || 0, "人"],
           ["学生账户", summary?.students || 0, "人"],
+          ["家长账户", summary?.parents || 0, "人"],
           ["全校作业", summary?.assignments || 0, "份"],
-          ["学校空间", 1, "个"],
         ].map((item) => (
           <div className="metric" key={String(item[0])}>
             <span>{item[0]}</span>
@@ -490,6 +420,7 @@ function SchoolDashboard({
           </div>
         ))}
       </div>
+      <SchoolModelPanel notify={notify} />
       <section className="rc4-panel">
         <div className="detail-head">
           <h2>本校任务运行状态</h2>
@@ -558,7 +489,14 @@ function SchoolDashboard({
             <UserPlus size={19} /> 注册教师
           </h2>
           <Field name="name" label="教师姓名" required />
-          <Field name="email" label="登录邮箱" type="email" required />
+          <Field
+            name="username"
+            label="登录账号名"
+            required
+            minLength={2}
+            maxLength={32}
+            placeholder="2–32 位字母/数字/下划线/中文"
+          />
           <Field
             name="password"
             label="初始密码"
@@ -570,7 +508,7 @@ function SchoolDashboard({
             <Select name="stage" label="任教学段" options={stages} />
             <Field name="subject" label="任教学科" required />
           </div>
-          <Field name="className" label="默认班级" required />
+          <Field name="className" label="默认班级 / 班主任班级" required />
           <Button className="full">创建教师账户</Button>
         </form>
         <section className="rc4-panel">
@@ -584,7 +522,11 @@ function SchoolDashboard({
                   </span>
                   <div>
                     <strong>{teacherAccount.name}</strong>
-                    <small>{teacherAccount.email}</small>
+                    <small>
+                      {teacherAccount.username
+                        ? `账号名：${teacherAccount.username}`
+                        : teacherAccount.email}
+                    </small>
                     <p>
                       {teacherAccount.stage} · {teacherAccount.subject} ·{" "}
                       {teacherAccount.class_name}
@@ -601,6 +543,7 @@ function SchoolDashboard({
     </>
   );
 }
+
 function Overview({
   user,
   navigate,
@@ -744,11 +687,20 @@ function Assignments({
   const create = async (payload: {
     title: string;
     dueAt: string;
-    questions: DraftQuestion[];
+    gradingMode?: "bank" | "direct";
+    description?: string;
+    stage?: string;
+    subject?: string;
+    className?: string;
+    questions?: DraftQuestion[];
   }) => {
     await api("/assignments", json("POST", payload));
     setCreating(false);
-    notify("作业已发布。");
+    notify(
+      payload.gradingMode === "direct"
+        ? "已发布「无需原题 · AI 直接批改」作业，学生上传答卷后即可批改。"
+        : "作业已发布。",
+    );
     load();
   };
   const send = async () => {
@@ -811,7 +763,12 @@ function Assignments({
         }
       />
       {creating && (
-        <AssignmentForm knowledge={knowledge} onSave={create} notify={notify} />
+        <AssignmentForm
+          user={user}
+          knowledge={knowledge}
+          onSave={create}
+          notify={notify}
+        />
       )}
       <div className="two-col">
         <section className="rc4-panel">
@@ -938,15 +895,22 @@ function Assignments({
   );
 }
 function AssignmentForm({
+  user,
   knowledge,
   onSave,
   notify,
 }: {
+  user: User;
   knowledge: Knowledge[];
   onSave: (x: {
     title: string;
     dueAt: string;
-    questions: DraftQuestion[];
+    gradingMode?: "bank" | "direct";
+    description?: string;
+    stage?: string;
+    subject?: string;
+    className?: string;
+    questions?: DraftQuestion[];
   }) => Promise<void>;
   notify: (s: string) => void;
 }) {
@@ -956,10 +920,16 @@ function AssignmentForm({
     score: 0,
     knowledgeId: "",
   });
-  const [title, setTitle] = useState(""),
+  const [mode, setMode] = useState<"bank" | "direct">("bank"),
+    [title, setTitle] = useState(""),
     [dueAt, setDueAt] = useState(""),
+    [stage, setStage] = useState(user.stage || stages[0]),
+    [subject, setSubject] = useState(user.subject || ""),
+    [className, setClassName] = useState(user.class_name || ""),
+    [description, setDescription] = useState(""),
     [questions, setQuestions] = useState<DraftQuestion[]>([blank()]),
     [busy, setBusy] = useState(false),
+    [submitting, setSubmitting] = useState(false),
     [warnings, setWarnings] = useState<string[]>([]);
   const patch = (i: number, key: keyof DraftQuestion, value: string | number) =>
     setQuestions((list) =>
@@ -981,6 +951,7 @@ function AssignmentForm({
       setTitle(d.title);
       setQuestions(d.questions);
       setWarnings(d.warnings || []);
+      setMode("bank");
       notify(
         `已解析 ${d.pageCount} 页、${d.questions.length} 道题，请核对后发布。`,
       );
@@ -992,34 +963,88 @@ function AssignmentForm({
   };
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitting) return;
+    if (!title.trim()) return notify("请填写作业名称。");
+    if (mode === "direct") {
+      setSubmitting(true);
+      try {
+        await onSave({
+          title,
+          dueAt,
+          gradingMode: "direct",
+          description,
+          stage,
+          subject,
+          className,
+        });
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
     if (questions.some((q) => !q.prompt.trim()))
       return notify("每道题都必须有题干。");
     if (questions.some((q) => !q.standardAnswer.trim()))
       return notify("请补全标准答案或评分要点后再发布。");
     if (questions.some((q) => !q.knowledgeId))
       return notify("请为每道题确认知识点。");
-    await onSave({ title, dueAt, questions });
+    setSubmitting(true);
+    try {
+      await onSave({ title, dueAt, questions, stage, subject, className });
+    } finally {
+      setSubmitting(false);
+    }
   };
   return (
     <form className="rc4-panel assignment-form" onSubmit={submit}>
-      <div className="import-strip">
-        <div>
-          <FilePlus2 />
-          <span>
-            <strong>从文件一键生成</strong>
-            <small>图片、PDF 或 Word 将解析为可编辑草稿。</small>
-          </span>
-        </div>
-        <label className="btn btn-outline">
-          {busy ? "正在解析…" : "选择文件"}
-          <input
-            type="file"
-            accept="image/jpeg,image/png,image/webp,application/pdf,.docx,.doc,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            disabled={busy}
-            onChange={(e) => importFile(e.target.files?.[0])}
-          />
-        </label>
+      <div
+        className="field-row"
+        style={{
+          gap: 8,
+          marginBottom: 12,
+          gridTemplateColumns: "1fr 1fr",
+        }}
+      >
+        {[
+          ["bank", "按原题批改（先上传/录入题目）"],
+          ["direct", "无需原题 · AI 直接批改"],
+        ].map(([id, label]) => (
+          <button
+            type="button"
+            key={id}
+            className={mode === id ? "btn" : "btn btn-outline"}
+            onClick={() => setMode(id as "bank" | "direct")}
+          >
+            {label}
+          </button>
+        ))}
       </div>
+      {mode === "bank" ? (
+        <div className="import-strip">
+          <div>
+            <FilePlus2 />
+            <span>
+              <strong>从文件一键生成</strong>
+              <small>图片、PDF 或 Word 将解析为可编辑草稿。</small>
+            </span>
+          </div>
+          <label className="btn btn-outline">
+            {busy ? "正在解析…" : "选择文件"}
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp,application/pdf,.docx,.doc,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+              disabled={busy}
+              onChange={(e) => importFile(e.target.files?.[0])}
+            />
+          </label>
+        </div>
+      ) : (
+        <p className="panel-intro">
+          不用上传原题。发布后学生直接提交答卷，AI 会按卷面切题、给出参考答案与评分要点、逐题批改并说明判断逻辑；
+          下方「作业内容描述」可选填，用于告诉 AI 这次作业的范围、题量和重点（例如“第 3
+          章课后练习 1–10 题，重点考查串联电路计算”）。
+        </p>
+      )}
       {warnings.length > 0 && (
         <div className="warning-list">
           {warnings.map((w, i) => (
@@ -1041,71 +1066,109 @@ function AssignmentForm({
           onChange={(e) => setDueAt(e.target.value)}
         />
       </div>
-      {questions.map((q, i) => (
-        <div className="question-edit" key={i}>
-          <b>{i + 1}</b>
-          <label className="field">
-            <span>真实题干</span>
-            <textarea
-              rows={4}
-              required
-              value={q.prompt}
-              onChange={(e) => patch(i, "prompt", e.target.value)}
-            />
-          </label>
-          <label className="field">
-            <span>标准答案 / 评分要点</span>
-            <textarea
-              rows={4}
-              value={q.standardAnswer}
-              onChange={(e) => patch(i, "standardAnswer", e.target.value)}
-            />
-            {q.answerGenerated && <small>已由模型自动推导，请抽查</small>}
-          </label>
-          <label className="field">
-            <span>知识点</span>
-            <select
-              value={q.knowledgeId}
-              onChange={(e) => patch(i, "knowledgeId", e.target.value)}
-            >
-              <option value="">请选择</option>
-              {knowledge.map((k) => (
-                <option key={k.id} value={k.id}>
-                  {k.title}
-                </option>
-              ))}
-            </select>
-            {q.knowledgeTitle && !q.knowledgeId && (
-              <small>OCR 建议“{q.knowledgeTitle}”，校本库中未匹配</small>
-            )}
-            {q.knowledgeGenerated && q.knowledgeId && (
-              <small>新知识点已自动加入校本知识库</small>
-            )}
-          </label>
-          <Field
-            label="分值"
-            type="number"
-            min="0"
-            step="0.5"
-            value={q.score}
-            onChange={(e) => patch(i, "score", Number(e.target.value))}
+      <div className="field-row">
+        <label className="field">
+          <span>学段</span>
+          <select value={stage} onChange={(e) => setStage(e.target.value)}>
+            {stages.map((v) => (
+              <option key={v}>{v}</option>
+            ))}
+          </select>
+        </label>
+        <Field
+          label="学科"
+          value={subject}
+          onChange={(e) => setSubject(e.target.value)}
+        />
+        <Field
+          label="班级"
+          value={className}
+          onChange={(e) => setClassName(e.target.value)}
+        />
+      </div>
+      {mode === "direct" ? (
+        <label className="field">
+          <span>作业内容描述（非必填）</span>
+          <textarea
+            rows={4}
+            maxLength={2000}
+            placeholder="例如：第 3 章课后练习 1–10 题，重点考查串联电路计算；第 8 题是附加题。"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
           />
-        </div>
-      ))}
+        </label>
+      ) : (
+        questions.map((q, i) => (
+          <div className="question-edit" key={i}>
+            <b>{i + 1}</b>
+            <label className="field">
+              <span>真实题干</span>
+              <textarea
+                rows={4}
+                required
+                value={q.prompt}
+                onChange={(e) => patch(i, "prompt", e.target.value)}
+              />
+            </label>
+            <label className="field">
+              <span>标准答案 / 评分要点</span>
+              <textarea
+                rows={4}
+                value={q.standardAnswer}
+                onChange={(e) => patch(i, "standardAnswer", e.target.value)}
+              />
+              {q.answerGenerated && <small>已由模型自动推导，请抽查</small>}
+            </label>
+            <label className="field">
+              <span>知识点</span>
+              <select
+                value={q.knowledgeId}
+                onChange={(e) => patch(i, "knowledgeId", e.target.value)}
+              >
+                <option value="">请选择</option>
+                {knowledge.map((k) => (
+                  <option key={k.id} value={k.id}>
+                    {k.title}
+                  </option>
+                ))}
+              </select>
+              {q.knowledgeTitle && !q.knowledgeId && (
+                <small>OCR 建议“{q.knowledgeTitle}”，校本库中未匹配</small>
+              )}
+              {q.knowledgeGenerated && q.knowledgeId && (
+                <small>新知识点已自动加入校本知识库</small>
+              )}
+            </label>
+            <Field
+              label="分值"
+              type="number"
+              min="0"
+              step="0.5"
+              value={q.score}
+              onChange={(e) => patch(i, "score", Number(e.target.value))}
+            />
+          </div>
+        ))
+      )}
       <div className="form-actions">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => setQuestions((q) => [...q, blank()])}
-        >
-          <Plus />
-          增加题目
+        {mode === "bank" && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setQuestions((q) => [...q, blank()])}
+          >
+            <Plus />
+            增加题目
+          </Button>
+        )}
+        <Button disabled={submitting}>
+          {submitting ? "正在发布…" : "核对完成并发布"}
         </Button>
-        <Button>核对完成并发布</Button>
       </div>
     </form>
   );
 }
+
 function StudentsPage({
   user,
   notify,
@@ -1154,7 +1217,7 @@ function StudentsPage({
   };
   const template = () => {
     const csv =
-      "姓名,邮箱,初始密码,学段,班级\r\n张三,student@example.com,ChangeMe123!,高中,高二（1）班\r\n";
+      "姓名,账号名,初始密码,学段,班级\r\n张三,zhangsan,ChangeMe123!,高中,高二（1）班\r\n";
     const a = document.createElement("a");
     a.href = URL.createObjectURL(
       new Blob(["\ufeff" + csv], { type: "text/csv" }),
@@ -1176,7 +1239,14 @@ function StudentsPage({
             <UserPlus size={19} /> 注册单个学生
           </h2>
           <Field name="name" label="姓名" required />
-          <Field name="email" label="登录邮箱" type="email" required />
+          <Field
+            name="username"
+            label="账号名"
+            required
+            minLength={2}
+            maxLength={32}
+            placeholder="2–32 位字母/数字/下划线/中文"
+          />
           <Field
             name="password"
             label="初始密码"
@@ -1204,7 +1274,7 @@ function StudentsPage({
             <FileSpreadsheet size={19} /> 批量导入学生
           </h2>
           <p className="panel-intro">
-            表头：姓名、邮箱、初始密码、学段、班级。密码留空时自动生成，并仅在本次结果中显示。
+            表头：姓名、账号名、初始密码、学段、班级。账号名留空时自动生成，密码留空时自动生成，并仅在本次结果中显示。
           </p>
           <div className="import-actions">
             <Button type="button" variant="outline" onClick={template}>
@@ -1228,7 +1298,7 @@ function StudentsPage({
               </strong>
               {result.created.map((x: any) => (
                 <p key={x.id}>
-                  {x.name} · {x.email} · 初始密码{" "}
+                  {x.name} · 账号名 <code>{x.username}</code> · 初始密码{" "}
                   <code>{x.initialPassword}</code>
                 </p>
               ))}
@@ -1247,14 +1317,14 @@ function StudentsPage({
           <div className="data-table">
             <div>
               <b>姓名</b>
-              <b>邮箱</b>
+              <b>账号名</b>
               <b>学段</b>
               <b>班级</b>
             </div>
             {students.map((s) => (
               <div key={s.id}>
                 <span>{s.name}</span>
-                <span>{s.email}</span>
+                <span>{s.username || s.email || "—"}</span>
                 <span>{s.stage}</span>
                 <span>{s.class_name}</span>
               </div>
@@ -1272,9 +1342,28 @@ function Review({ notify }: { notify: (s: string) => void }) {
     [detail, setDetail] = useState<any>(null),
     [busy, setBusy] = useState<Record<string, string>>({}),
     [loading, setLoading] = useState(false),
-    [attentionOnly, setAttentionOnly] = useState(false);
+    [attentionOnly, setAttentionOnly] = useState(false),
+    [reviewMode, setReviewMode] = useState<"all" | "uncertain" | "none">(
+      "all",
+    ),
+    [confirmed, setConfirmed] = useState<Record<string, boolean>>({});
   const guard = useRef(createReviewGuard()).current;
   const listGeneration = useRef(0);
+  const modeRef = useRef<"all" | "uncertain" | "none">("all");
+  useEffect(() => {
+    api<{ mode: "all" | "uncertain" | "none" }>("/settings/review-mode")
+      .then((result) => {
+        modeRef.current = result.mode;
+        setReviewMode(result.mode);
+      })
+      .catch(() => undefined);
+  }, []);
+  const suspect = (item: ReviewItem) =>
+    item.suspect === true ||
+    (item.suspect === undefined &&
+      (!Number.isFinite(item.confidence) ||
+        Number(item.confidence) < 0.8 ||
+        Boolean(item.studentAnswer?.includes("无法辨认"))));
   const load = async () => {
     const generation = ++listGeneration.current;
     try {
@@ -1293,7 +1382,8 @@ function Review({ notify }: { notify: (s: string) => void }) {
   }, []);
   const select = async (id: string) => {
     const ticket = guard.select(id);
-    setAttentionOnly(false);
+    setAttentionOnly(modeRef.current === "uncertain");
+    setConfirmed({});
     setDetail(null);
     setLoading(true);
     try {
@@ -1367,7 +1457,8 @@ function Review({ notify }: { notify: (s: string) => void }) {
       finish(operation);
     }
   };
-  const update = (questionId: string, key: string, value: any) =>
+  const update = (questionId: string, key: string, value: any) => {
+    setConfirmed((state) => ({ ...state, [questionId]: true }));
     setDetail((d: any) => {
       if (!d || busy[d.id] || d.status !== "review") return d;
       const question = d.questions?.find((q: any) => q.id === questionId);
@@ -1388,6 +1479,7 @@ function Review({ notify }: { notify: (s: string) => void }) {
         },
       };
     });
+  };
   const approve = async () => {
     const draft = detail;
     if (!draft || draft.status !== "review") return;
@@ -1396,6 +1488,19 @@ function Review({ notify }: { notify: (s: string) => void }) {
       draft.analysis?.items || [],
     );
     if (error) return notify(error);
+    const rows = reviewRows(
+      draft.questions || [],
+      draft.analysis?.items || [],
+    ).rows;
+    if (reviewMode === "uncertain") {
+      const pending = rows.filter(
+        ({ item }) => suspect(item) && confirmed[item.questionId] !== true,
+      );
+      if (pending.length)
+        return notify(
+          `还有 ${pending.length} 道存疑题未核对：请逐题确认“我已核对”或直接修改判分。`,
+        );
+    }
     const operation = guard.startOperation(draft.id);
     if (!operation) return;
     setBusy((state) => ({ ...state, [draft.id]: "review" }));
@@ -1407,6 +1512,10 @@ function Review({ notify }: { notify: (s: string) => void }) {
           items: draft.analysis.items.map((item: ReviewItem) => ({
             ...item,
             score: Number(item.score),
+            confirmed:
+              !suspect(item) || confirmed[item.questionId] === true
+                ? true
+                : undefined,
           })),
         }),
       );
@@ -1426,12 +1535,22 @@ function Review({ notify }: { notify: (s: string) => void }) {
     detail?.questions || [],
     detail?.analysis?.items || [],
   );
+  const rows = review.rows.filter(
+    ({ item }) => !attentionOnly || suspect(item),
+  );
+  const suspectCount = review.rows.filter(({ item }) => suspect(item)).length;
+  const modeLabel =
+    reviewMode === "all"
+      ? "全部复核"
+      : reviewMode === "uncertain"
+        ? "仅存疑复核"
+        : "不复核";
   return (
     <>
       <Title
         eyebrow="OCR & REVIEW"
         title="识别与复核"
-        desc="图片和 PDF 都会逐页识别；低置信度内容必须由教师确认。"
+        desc={`当前复核方式：${modeLabel}。批改结果、参考答案与 AI 判断逻辑会同时展示；学生端不会直接看到答案。`}
       />
       <div className="review-layout">
         <section className="rc4-panel">
@@ -1447,6 +1566,7 @@ function Review({ notify }: { notify: (s: string) => void }) {
                     <small>
                       {statusName(x.status)}{" "}
                       {x.teacher_reviewed ? "· 已复核" : ""}
+                      {x.grading_mode === "direct" ? " · 无需原题直批" : ""}
                     </small>
                   </div>
                   <ChevronRight />
@@ -1467,9 +1587,19 @@ function Review({ notify }: { notify: (s: string) => void }) {
               <div className="detail-head">
                 <div>
                   <h2>{detail.student_name}</h2>
-                  <p>{statusName(detail.status)}</p>
+                  <p>
+                    {statusName(detail.status)}
+                    {detail.grading_mode === "direct"
+                      ? " · 无需原题 · AI 直接批改"
+                      : ""}
+                    {detail.status === "completed" && detail.score !== null
+                      ? ` · 得分 ${detail.score}`
+                      : ""}
+                  </p>
                 </div>
-                {(["uploaded", "failed"].includes(detail.status) ||
+                {(["uploaded", "failed", "completed"].includes(
+                  detail.status,
+                ) ||
                   (detail.status === "review" && !!review.error)) && (
                   <Button
                     disabled={!!busy[detail.id]}
@@ -1478,10 +1608,24 @@ function Review({ notify }: { notify: (s: string) => void }) {
                     <RefreshCw />
                     {busy[detail.id] === "recognize"
                       ? "逐页 OCR 中…"
-                      : "开始 OCR"}
+                      : detail.status === "completed"
+                        ? "重新识别（覆盖当前结果）"
+                        : "开始 OCR"}
                   </Button>
                 )}
               </div>
+              {reviewMode === "none" && detail.status === "review" && (
+                <p role="status">
+                  当前为「不复核」方式：AI
+                  批改结果已自动完成；若结果不完整或需要修改，请直接在此复核或重新识别。
+                </p>
+              )}
+              {detail.assignment_description && (
+                <p className="panel-intro">
+                  <strong>作业内容描述：</strong>
+                  {detail.assignment_description}
+                </p>
+              )}
               {detail.recognitionJob &&
                 (["queued", "recognizing", "failed"].includes(detail.status) ||
                   detail.recognitionJob.status === "failed") && (
@@ -1522,34 +1666,19 @@ function Review({ notify }: { notify: (s: string) => void }) {
               {detail.analysis && review.error && (
                 <p role="alert">{review.error}</p>
               )}
-              {detail.status === "review" && review.rows.length > 0 && (
+              {review.rows.length > 0 && (
                 <label className="check">
                   <input
                     type="checkbox"
                     checked={attentionOnly}
                     onChange={(e) => setAttentionOnly(e.target.checked)}
                   />
-                  仅显示需重点复核的题目（
-                  {
-                    review.rows.filter(
-                      ({ item }) =>
-                        !Number.isFinite(item.confidence) ||
-                        Number(item.confidence) < 0.8 ||
-                        item.studentAnswer?.includes("无法辨认"),
-                    ).length
-                  }{" "}
-                  题）
+                  仅显示需重点复核的存疑题（{suspectCount} 题）
                 </label>
               )}
-              {review.rows
-                .filter(
-                  ({ item }) =>
-                    !attentionOnly ||
-                    !Number.isFinite(item.confidence) ||
-                    Number(item.confidence) < 0.8 ||
-                    item.studentAnswer?.includes("无法辨认"),
-                )
-                .map(({ question, item: x }) => (
+              {rows.map(({ question, item: x }) => {
+                const isSuspect = suspect(x);
+                return (
                   <fieldset
                     className="review-item"
                     key={question.id}
@@ -1558,14 +1687,33 @@ function Review({ notify }: { notify: (s: string) => void }) {
                     <div>
                       <strong>
                         第 {question.number} 题 · 满分 {question.score}
+                        {x.isCorrect ? " · 判为正确" : " · 判为错误"}
+                        {isSuspect ? " · 存疑" : " · AI 高置信度"}
                       </strong>
-                      <span className={(x.confidence || 0) < 0.8 ? "low" : ""}>
-                        置信度 {Math.round((x.confidence || 0) * 100)}%
+                      <span
+                        className={isSuspect ? "low" : ""}
+                        title="AI 识别/判分置信度"
+                      >
+                        置信度{" "}
+                        {Number.isFinite(Number(x.confidence))
+                          ? `${Math.round(Number(x.confidence) * 100)}%`
+                          : "未提供"}
                       </span>
                     </div>
                     <p>{question.prompt}</p>
                     {question.standard_answer && (
                       <p>教师标准答案：{question.standard_answer}</p>
+                    )}
+                    <p>
+                      <b>AI 批改结果：</b>
+                      {x.isCorrect ? "正确" : "错误"} · 得分{" "}
+                      {Number.isFinite(Number(x.score)) ? x.score : "—"}
+                    </p>
+                    {x.reasoning && (
+                      <div className="auto-explanation">
+                        <strong>AI 判断逻辑</strong>
+                        <p>{x.reasoning}</p>
+                      </div>
                     )}
                     <label>
                       学生答案
@@ -1585,6 +1733,12 @@ function Review({ notify }: { notify: (s: string) => void }) {
                         }
                       />
                     </label>
+                    {x.explanation && x.explanation !== x.correction && (
+                      <p>
+                        <b>分步解析：</b>
+                        {x.explanation}
+                      </p>
+                    )}
                     <label className="check">
                       <input
                         type="checkbox"
@@ -1608,8 +1762,26 @@ function Review({ notify }: { notify: (s: string) => void }) {
                         }
                       />
                     </label>
+                    {reviewMode === "uncertain" &&
+                      isSuspect &&
+                      detail.status === "review" && (
+                        <label className="check">
+                          <input
+                            type="checkbox"
+                            checked={confirmed[question.id] === true}
+                            onChange={(e) =>
+                              setConfirmed((state) => ({
+                                ...state,
+                                [question.id]: e.target.checked,
+                              }))
+                            }
+                          />
+                          我已核对这道存疑题
+                        </label>
+                      )}
                   </fieldset>
-                ))}
+                );
+              })}
               {detail.status === "review" && (
                 <Button
                   className="full"
@@ -1618,7 +1790,9 @@ function Review({ notify }: { notify: (s: string) => void }) {
                 >
                   {busy[detail.id] === "review"
                     ? "正在保存复核…"
-                    : "确认复核并写入错题本"}
+                    : reviewMode === "uncertain"
+                      ? "确认存疑题并完成复核"
+                      : "确认复核并写入错题本"}
                 </Button>
               )}
             </>
@@ -1628,6 +1802,7 @@ function Review({ notify }: { notify: (s: string) => void }) {
     </>
   );
 }
+
 const statusName = (s: string) =>
   (
     ({
@@ -1796,164 +1971,6 @@ function Papers({ notify }: { notify: (s: string) => void }) {
     </>
   );
 }
-function Mistakes({ notify }: { notify: (message: string) => void }) {
-  const [items, setItems] = useState<any[]>([]);
-  const [answers, setAnswers] = useState<Record<string, string[]>>({});
-  const [results, setResults] = useState<Record<string, any>>({});
-  const [busy, setBusy] = useState("");
-  const load = () => api<any[]>("/mistakes").then(setItems);
-  useEffect(() => {
-    load();
-  }, []);
-  const generate = async (id: string) => {
-    setBusy(id);
-    try {
-      await api(`/mistakes/${id}/practice/generate`, { method: "POST" });
-      setAnswers((current) => ({ ...current, [id]: [] }));
-      setResults((current) => {
-        const next = { ...current };
-        delete next[id];
-        return next;
-      });
-      await load();
-      notify("已生成一组新的同类型练习。");
-    } catch (error) {
-      notify((error as Error).message);
-    } finally {
-      setBusy("");
-    }
-  };
-  const submit = async (id: string) => {
-    setBusy(id);
-    try {
-      const result = await api(
-        `/mistakes/${id}/practice/submit`,
-        json("POST", { answers: answers[id] || [] }),
-      );
-      setResults((current) => ({ ...current, [id]: result }));
-      await load();
-      notify(result.passed ? "练习已过关。" : "已完成批改，请继续订正。");
-    } catch (error) {
-      notify((error as Error).message);
-    } finally {
-      setBusy("");
-    }
-  };
-  const setAnswer = (id: string, index: number, value: string) =>
-    setAnswers((current) => {
-      const next = [...(current[id] || [])];
-      next[index] = value;
-      return { ...current, [id]: next };
-    });
-  return (
-    <>
-      <Title
-        eyebrow="MY REVIEW"
-        title="我的错题"
-        desc="仅显示教师已经复核并确认属于你的错题。"
-      />
-      {items.length ? (
-        items.map((x) => (
-          <section className="rc4-panel mistake-real" key={x.id}>
-            <div>
-              <strong>{x.knowledge_title || "自动归纳知识点"}</strong>
-              <span className={x.mastery ? "mastered" : "learning"}>
-                {x.mastery ? "已过关" : "待过关"}
-              </span>
-            </div>
-            <h2>{x.prompt}</h2>
-            <div className="answer-grid">
-              <p>
-                <b>我的答案</b>
-                {x.student_answer}
-              </p>
-              <p>
-                <b>教师订正</b>
-                {x.correction}
-              </p>
-            </div>
-            <div className="auto-explanation">
-              <strong>自动题目解析</strong>
-              <p>{x.explanation || x.reason || "等待生成解析"}</p>
-            </div>
-            {x.practiceQuestions?.length ? (
-              <div className="practice-set">
-                <div className="practice-heading">
-                  <strong>同类型过关练习</strong>
-                  <span>全部答对即过关</span>
-                </div>
-                {x.practiceQuestions.map((question: any, index: number) => (
-                  <label className="practice-question" key={index}>
-                    <span>
-                      {index + 1}. {question.prompt}
-                    </span>
-                    <input
-                      value={answers[x.id]?.[index] || ""}
-                      onChange={(event) =>
-                        setAnswer(x.id, index, event.target.value)
-                      }
-                      placeholder="填写答案"
-                    />
-                    {results[x.id]?.results?.[index] && (
-                      <small
-                        className={
-                          results[x.id].results[index].correct
-                            ? "correct"
-                            : "incorrect"
-                        }
-                      >
-                        {results[x.id].results[index].feedback}
-                      </small>
-                    )}
-                  </label>
-                ))}
-                <div className="form-actions">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={busy === x.id}
-                    onClick={() => generate(x.id)}
-                  >
-                    <RefreshCw /> 换一组同类题
-                  </Button>
-                  <Button
-                    type="button"
-                    disabled={busy === x.id}
-                    onClick={() => submit(x.id)}
-                  >
-                    {busy === x.id ? "自动批改中…" : "提交过关"}
-                  </Button>
-                </div>
-                {results[x.id] && (
-                  <p
-                    className={
-                      results[x.id].passed ? "pass-result" : "retry-result"
-                    }
-                  >
-                    {results[x.id].passed
-                      ? "本知识点已过关。"
-                      : "还有题目需要订正，完成后可以再次提交。"}
-                  </p>
-                )}
-              </div>
-            ) : (
-              <Button
-                type="button"
-                disabled={busy === x.id}
-                onClick={() => generate(x.id)}
-              >
-                <Sparkles />{" "}
-                {busy === x.id ? "正在生成…" : "生成同类型过关练习"}
-              </Button>
-            )}
-          </section>
-        ))
-      ) : (
-        <Empty text="暂时没有已复核错题。" />
-      )}
-    </>
-  );
-}
 function AccountSettings({
   user,
   refresh,
@@ -1963,58 +1980,30 @@ function AccountSettings({
   refresh: () => void;
   notify: (s: string) => void;
 }) {
-  const [providers, setProviders] = useState<Provider[]>([]),
-    [saved, setSaved] = useState<any>(null),
-    [providerBusy, setProviderBusy] = useState(false);
-  useEffect(() => {
-    api<Provider[]>("/providers").then(setProviders);
-    if (user.role === "teacher") api("/settings/provider").then(setSaved);
-  }, []);
   const profile = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     try {
-      await api(
-        "/me",
-        json("PATCH", Object.fromEntries(new FormData(e.currentTarget))),
-      );
+      const values = Object.fromEntries(new FormData(e.currentTarget));
+      await api("/me", json("PATCH", values));
       notify("账户设置已更新。");
       refresh();
     } catch (error) {
       notify((error as Error).message);
     }
   };
-  const provider = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const form = e.currentTarget;
-    setProviderBusy(true);
-    try {
-      const values = Object.fromEntries(new FormData(form));
-      const result = await api("/settings/provider", json("PUT", values));
-      setSaved(result);
-      notify(
-        user.is_school_admin
-          ? "全校默认 API Key 已加密保存。"
-          : "API Key 已在服务端加密保存。",
-      );
-      form.reset();
-    } catch (error) {
-      notify(`保存失败：${(error as Error).message}`);
-    } finally {
-      setProviderBusy(false);
-    }
-  };
+  const editableProfile = user.role === "teacher" && !user.is_school_admin;
   return (
     <>
       <Title
         eyebrow="ACCOUNT & SECURITY"
         title="设置"
-        desc="学段位于账户设置内；数据按学校与账户隔离。AI 教学分析与 OCR 共用同一个模型配置。"
+        desc="账号名注册与登录；模型凭证按学校选择的调用模式生效。审核方式、OAuth 授权与 API Key 都集中在这里。"
       />
       <div className="two-col">
         <form className="rc4-panel" onSubmit={profile}>
           <h2>账户信息</h2>
           <Field name="name" label="姓名" defaultValue={user.name} />
-          {!user.is_school_admin && (
+          {editableProfile && (
             <>
               <Select
                 name="stage"
@@ -2035,74 +2024,49 @@ function AccountSettings({
             </>
           )}
           <div className="readonly">
+            <span>账号名</span>
+            <code>{user.username || "（旧账号，可用邮箱登录）"}</code>
+          </div>
+          {user.email && (
+            <div className="readonly">
+              <span>邮箱（旧登录方式）</span>
+              <code>{user.email}</code>
+            </div>
+          )}
+          <div className="readonly">
             <span>学校编号</span>
             <code>{user.school_id}</code>
           </div>
           <Button className="full">保存设置</Button>
         </form>
-        {user.role === "teacher" ? (
-          <form className="rc4-panel" onSubmit={provider}>
-            <h2>模型与 OCR API</h2>
+        {user.role === "student" ? (
+          <section className="rc4-panel">
+            <h2>学生账户边界</h2>
             <p className="panel-intro">
-              {user.is_school_admin
-                ? "这里配置全校默认模型，未单独配置的教师会自动继承。AI 教学分析同样使用这里的模型。"
-                : "图片和 PDF OCR 请选择标记为“视觉”的厂商；AI 教学分析使用同一个模型，纯文本厂商也可用于分析。教师可覆盖学校默认配置。"}
+              学生只能看到匹配学校、学段和班级的作业；错题本以“先思考、再提示、重做后对照答案”的方式呈现，
+              不会直接给出答案。模型调用使用学校/班主任/家长在对应模式下配置的凭证。
             </p>
-            <label className="field">
-              <span>厂商</span>
-              <select name="provider" defaultValue={saved?.provider || "qwen"}>
-                {providers.map((p) => (
-                  <option value={p.id} key={p.id}>
-                    {p.name}
-                    {p.vision ? " · 视觉" : " · 文本"}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <Field name="model" label="模型名称（可选覆盖）" />
-            <Field name="endpoint" label="兼容接口地址（可选覆盖）" />
-            <Field
-              name="apiKey"
-              type="password"
-              label="API Key"
-              required
-              autoComplete="off"
-            />
-            <div className="provider-grid">
-              {providers.map((p) => (
-                <span className={p.vision ? "vision" : ""} key={p.id}>
-                  {p.name}
-                  <small>{p.vision ? "可用于 OCR" : "仅文本智能"}</small>
-                </span>
-              ))}
-            </div>
-            {saved?.provider && (
-              <p className="save-status">
-                已保存：
-                {providers.find((p) => p.id === saved.provider)?.name ||
-                  saved.provider}
-                {saved.model ? ` · ${saved.model}` : ""}
-              </p>
-            )}
-            <Button className="full" type="submit" disabled={providerBusy}>
-              <KeyRound />
-              {providerBusy ? "正在加密保存…" : "加密保存"}
-            </Button>
-          </form>
+          </section>
         ) : (
           <section className="rc4-panel">
-            <h2>{user.is_school_admin ? "学校账户边界" : "学生账户边界"}</h2>
+            <h2>模型凭证由谁配置</h2>
             <p className="panel-intro">
               {user.is_school_admin
-                ? "学校账户用于管理教师和学生，不参与任课、作业发布或 OCR 批改。"
-                : "学生只能看到匹配学校、学段和班级的作业，以及教师复核后写入自己账户的错题。"}
+                ? "你是学校管理员：全校统一模式下由你配置学校凭证；也可以在「学校仪表盘」切换为老师分开/家长单独模式。"
+                : user.role === "parent"
+                  ? "家长账号可在「孩子看板」查看已绑定孩子的数据；在「老师分开 + 家长单独」模式下，可在下方配置自己的 API Key 或 OAuth 连接。"
+                  : "你的模型凭证是否生效取决于学校选择的调用模式：全校统一模式使用学校管理员的凭证；老师分开模式使用你自己的凭证，学生与家长使用班主任的凭证。"}
             </p>
           </section>
         )}
       </div>
+      {(user.is_school_admin || user.role !== "student") && (
+        <ProviderSettings user={user} notify={notify} />
+      )}
     </>
   );
 }
+
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <App />

@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { DatabaseSync } from "node:sqlite";
 import net from "node:net";
+import { pathToFileURL } from "node:url";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -13,6 +14,10 @@ it("keeps login and authorized reads available while real Linux admission blocks
   const db = new DatabaseSync(path.join(dir, "smart-campus.sqlite"));
   db.exec(fs.readFileSync(path.join(root, "server/schema.sql"), "utf8"));
   const fixture = seedTeachingFixture(db);
+  // v0.2.1：老师分开模式才允许教师配置自己的模型凭证（与旧测试假设一致）。
+  db.prepare(
+    "INSERT INTO school_settings(school_id,model_mode,updated_at) VALUES(?,?,?) ON CONFLICT(school_id) DO UPDATE SET model_mode=excluded.model_mode,updated_at=excluded.updated_at",
+  ).run(fixture.schoolId, "teacher_class", new Date().toISOString());
   const mem = path.join(dir, "memory");
   fs.writeFileSync(mem, "MemTotal: 4194304 kB\nMemAvailable: 2097152 kB\n");
   const psi = path.join(dir, "psi");
@@ -32,7 +37,7 @@ it("keeps login and authorized reads available while real Linux admission blocks
   const base = `http://127.0.0.1:${port}`;
   const child = spawn(
     process.execPath,
-    ["--max-old-space-size=256", "--import", preload, "server/index.mjs"],
+    ["--max-old-space-size=256", "--import", pathToFileURL(preload).href, "server/index.mjs"],
     {
       cwd: root,
       stdio: "ignore",

@@ -3,10 +3,11 @@ const png = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
   "base64",
 );
-const login = async (page, email = "teacher@fixture.test") => {
+const login = async (page, account = "teacher@fixture.test") => {
   await page.goto("/");
-  await page.getByLabel("邮箱", { exact: true }).fill(email);
-  await page.getByLabel("密码", { exact: true }).fill("ChangeMe123!");
+  // v0.2.1 起登录入口接受账号名或旧账号邮箱。
+  await page.locator('input[name="account"]').fill(account);
+  await page.locator('input[name="password"]').fill("ChangeMe123!");
   await page.getByRole("button", { name: "登录", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "退出登录", exact: true }),
@@ -38,21 +39,28 @@ test("login and enrollment boundary are visible in the real UI", async ({
   page,
 }) => {
   await page.goto("/");
+  await expect(page.getByText("使用账号名或邮箱登录")).toBeVisible();
   await expect(
-    page.getByText("教师和学生请联系学校领取账户，学段与班级由学校确认。"),
+    page.getByRole("button", { name: "还没有账户？注册" }),
   ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "教师或学生加入学校" }),
-  ).toHaveCount(0);
   await login(page);
   await expect(page.locator(".account-chip")).toContainText("王老师");
+  // v0.2.1：四身份可自助注册，但仍必须提供有效学校代码与合规字段。
   expect(
     (
       await page.request.post("/api/auth/register", {
-        data: { role: "student", schoolCode: "anything", className: "other" },
+        data: {
+          role: "student",
+          schoolCode: "anything",
+          username: "browser_student",
+          password: "ChangeMe123!",
+          name: "浏览器学生",
+          stage: "初中",
+          className: "other",
+        },
       })
     ).status(),
-  ).toBe(403);
+  ).toBe(400);
   await page.screenshot({
     path: "test-results/teacher-login.png",
     fullPage: true,
@@ -100,7 +108,7 @@ test("two pages form one submission; OCR and manual scores save consistently", a
   const rows = page.locator("fieldset.review-item");
   await expect(rows).toHaveCount(8);
   await expect(rows.first()).toContainText("教师标准答案：");
-  const focus = page.getByLabel(/仅显示需重点复核的题目/);
+  const focus = page.getByLabel(/仅显示需重点复核的存疑题/);
   await focus.check();
   await expect(rows).toHaveCount(0); // mock confidence is 95%, so none need triage.
   await focus.uncheck();

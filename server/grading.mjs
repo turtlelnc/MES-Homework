@@ -31,6 +31,45 @@ export function normalizeReview(items, questions) {
   return { items: normalized, score };
 }
 
+// Direct grading ("no original questions") has no question-bank rows to join.
+// The review endpoint still validates the teacher-confirmed verdicts against the
+// parsed question snapshot, so the same invariants apply: one verdict per
+// question, unique questionId, and a bounded score consistent with the verdict.
+export function normalizeDirectReview(items, questions) {
+  const list = Array.isArray(questions) ? questions : [];
+  const byId = new Map(list.map((question) => [question.id, question]));
+  if (
+    !Array.isArray(items) ||
+    items.length !== list.length ||
+    new Set(items.map((item) => item?.questionId)).size !== list.length
+  )
+    throw new Error("复核题目必须与本作业一致且不重复");
+  const normalized = items.map((item) => {
+    const question = byId.get(item?.questionId);
+    if (!question || typeof item.isCorrect !== "boolean")
+      throw new Error("复核题目或正误标记无效");
+    const max = Number(question.score);
+    if (!Number.isFinite(max) || max < 0)
+      throw new Error("复核题目或正误标记无效");
+    const score =
+      item.score === undefined ? (item.isCorrect ? max : 0) : item.score;
+    if (
+      typeof score !== "number" ||
+      !Number.isFinite(score) ||
+      score < 0 ||
+      score > max ||
+      (item.isCorrect && score !== max) ||
+      (!item.isCorrect && max > 0 && score === max)
+    )
+      throw new Error("逐题得分须在满分范围内并与正误一致");
+    return { ...item, knowledgeId: question.knowledgeId || null, score };
+  });
+  const score =
+    Math.round(normalized.reduce((sum, item) => sum + item.score, 0) * 1e8) /
+    1e8;
+  return { items: normalized, score };
+}
+
 export const publicPractice = (questions) =>
   (Array.isArray(questions) ? questions : []).map((question) => ({
     prompt: String(question?.prompt || ""),
