@@ -41,38 +41,48 @@ Object.assign(process.env, {
   TRUST_PROXY_HOPS: "1",
 });
 dns.promises.lookup = async () => [{ address: "1.1.1.1", family: 4 }];
+let modelActive = 0,
+  modelPeakActive = 0;
 globalThis.fetch = async (_url, options) => {
   const request = JSON.parse(options.body);
+  if (request.stream !== false)
+    throw new Error("Load fixture requires explicit non-streaming responses");
   const content = request.messages[0].content;
   const text = Array.isArray(content) ? content[0].text : content;
   if (!text.startsWith("学校作业 OCR"))
     throw new Error("Unsupported mock: outbound traffic disabled");
-  await pause(Number(process.env.LOAD_MODEL_DELAY_MS || 2000), undefined, {
-    signal: options.signal,
-  });
-  const questions = JSON.parse(
-    text.split("教师已经录入的正式题目=")[1].split("。\n")[0],
-  );
-  return Response.json({
-    usage: { prompt_tokens: 1500, completion_tokens: 100 },
-    choices: [
-      {
-        message: {
-          content: JSON.stringify({
-            ocrText: "SYNTHETIC",
-            items: questions.map((q) => ({
-              questionId: q.id,
-              knowledgeId: q.knowledge_id,
-              studentAnswer: "synthetic",
-              isCorrect: true,
-              score: q.score,
-              confidence: 0.95,
-            })),
-          }),
+  modelActive++;
+  modelPeakActive = Math.max(modelPeakActive, modelActive);
+  try {
+    await pause(Number(process.env.LOAD_MODEL_DELAY_MS || 2000), undefined, {
+      signal: options.signal,
+    });
+    const questions = JSON.parse(
+      text.split("教师已经录入的正式题目=")[1].split("。\n")[0],
+    );
+    return Response.json({
+      usage: { prompt_tokens: 1500, completion_tokens: 100 },
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              ocrText: "SYNTHETIC",
+              items: questions.map((q) => ({
+                questionId: q.id,
+                knowledgeId: q.knowledge_id,
+                studentAnswer: "synthetic",
+                isCorrect: true,
+                score: q.score,
+                confidence: 0.95,
+              })),
+            }),
+          },
         },
-      },
-    ],
-  });
+      ],
+    });
+  } finally {
+    modelActive--;
+  }
 };
 const db = new DatabaseSync(path.join(data, "smart-campus.sqlite"));
 db.exec(
@@ -230,6 +240,8 @@ setInterval(async () => {
       rssMiB: process.memoryUsage.rss() / 1024 ** 2,
       lagP95Ms: delay.percentile(95) / 1e6,
       lagMaxMs: delay.max / 1e6,
+      modelActive,
+      modelPeakActive,
       cgroup: Object.fromEntries(files.map((f, i) => [f, values[i].trim()])),
       jobs,
     };

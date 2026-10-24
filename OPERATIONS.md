@@ -18,7 +18,7 @@
 - 重试采用至少一次执行语义：进程在收到模型结果后、保存前崩溃可能再次调用并计费；租约令牌阻止旧任务覆盖新结果。不能承诺外部模型恰好调用一次。
 - 任务不保存密钥或文件内容，只保存数据库引用。请为生产实例持续使用同一个私密 APP_SECRET。
 
-`.env.example` 中新增 MODEL_GLOBAL_CONCURRENCY、OCR_CONCURRENCY、OCR_MAX_PENDING、OCR_SCHOOL_MAX_PENDING、UPLOAD_TOTAL_MB。默认分别为 8、2、100、25、50。保留原账户/学校调用次数配额；这些限制不是按金额计费预算。环境变量需注入进程，例如 `node --env-file=.env server/index.mjs`。
+`.env.example` 的 MODEL_GLOBAL_CONCURRENCY、MODEL_SCHOOL_CONCURRENCY、MODEL_STAFF_CONCURRENCY、OCR_CONCURRENCY、OCR_USER_CONCURRENCY 默认均为 4；学生并发固定为 1。OCR_MAX_PENDING、OCR_SCHOOL_MAX_PENDING、UPLOAD_TOTAL_MB 默认分别为 100、25、50。MODEL_INLINE_BUDGET_MB 默认 96，限制所有在途内联图片的 Base64 字符数总量（最高可配置 256 MiB，不是精确 RSS 上限）。保留原账户/学校调用次数配额和金额预算。环境变量需注入进程，例如 `node --env-file=.env server/index.mjs`；旧 .env 中的 OCR_CONCURRENCY=1 和模型并发 2 会继续生效，升级时需同步修改这些设置。
 
 教师在复核页可筛选低于 80% 置信度、缺少置信度或包含“无法辨认”的题目。筛选只是查看辅助，不会批量确认任何评分。最终保存仍验证整份正式题目。
 

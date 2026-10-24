@@ -17,8 +17,9 @@ export function createModelBudget(db, { pressure } = {}) {
     staff: positiveLimit("MODEL_STAFF_HOURLY_LIMIT", 120),
     schoolHour: positiveLimit("MODEL_SCHOOL_HOURLY_LIMIT", 600),
     schoolDay: positiveLimit("MODEL_SCHOOL_DAILY_LIMIT", 3000),
-    globalConcurrency: positiveLimit("MODEL_GLOBAL_CONCURRENCY", 2),
-    concurrency: positiveLimit("MODEL_SCHOOL_CONCURRENCY", 2),
+    globalConcurrency: positiveLimit("MODEL_GLOBAL_CONCURRENCY", 4),
+    concurrency: positiveLimit("MODEL_SCHOOL_CONCURRENCY", 4),
+    staffConcurrency: positiveLimit("MODEL_STAFF_CONCURRENCY", 4),
   };
   return (userId) => {
     pressure?.assertMemory();
@@ -60,7 +61,8 @@ export function createModelBudget(db, { pressure } = {}) {
         )
         .get(now).n;
       if (
-        usage.user_active ||
+        usage.user_active >=
+          (user.role === "student" ? 1 : limits.staffConcurrency) ||
         usage.school_active >= limits.concurrency ||
         globalActive >=
           (pressure?.limit(limits.globalConcurrency) ??

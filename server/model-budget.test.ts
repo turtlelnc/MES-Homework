@@ -11,6 +11,32 @@ afterEach(() =>
     .forEach((dir) => fs.rmSync(dir, { recursive: true, force: true })),
 );
 describe("model reservations across SQLite connections", () => {
+  it("allows concurrent staff calls across connections but retains the global, school and student limits", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "parallel-budget-"));
+    dirs.push(dir);
+    const one = new DatabaseSync(path.join(dir, "db"));
+    one.exec(
+      "CREATE TABLE users(id TEXT,school_id TEXT,role TEXT); INSERT INTO users VALUES('t','s','teacher'),('v','s','teacher'),('x','other','student'); CREATE TABLE model_usage(id TEXT PRIMARY KEY,user_id TEXT,school_id TEXT,created_at INTEGER,finished_at INTEGER,lease_until INTEGER)",
+    );
+    const two = new DatabaseSync(path.join(dir, "db"));
+    try {
+      const reserve = createModelBudget(one),
+        other = createModelBudget(two);
+      const active = [reserve("t"), other("t"), reserve("t"), other("t")];
+      expect(() => reserve("t")).toThrow(/正在进行/);
+      expect(() => other("v")).toThrow(/正在进行/);
+      expect(() => other("x")).toThrow(/正在进行/);
+      active.pop()!();
+      const student = other("x");
+      expect(() => reserve("x")).toThrow(/正在进行/);
+      student();
+      active.forEach((release) => release());
+      other("v")();
+    } finally {
+      two.close();
+      one.close();
+    }
+  });
   it("shares active leases, persists usage and refuses expired lease renewal", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "budget-"));
     dirs.push(dir);

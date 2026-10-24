@@ -1,5 +1,7 @@
 # 4 核 / 4 GiB 混合负载测试
 
+对照同一教师 24 份作业的 1/2/4/8 并发，使用 `LOAD_MODE=grading LOAD_OCR_CONCURRENCY=4 node tools/ops/load-service.mjs /tmp/mes-grade-new-run`。该模式统一设置五项相关并发，背景每秒 100 次提交详情读取，全部完成即结束（最多 120 秒），另输出 grading.json。结果与升级配置见 [CONCURRENT_GRADING.md](CONCURRENT_GRADING.md)。
+
 压测工具只启动临时夹具，不读取生产 DATA_DIR，不调用付费 API，不改变生产配置。输出目录必须尚不存在，避免误把夹具写入已有数据。需要 Linux、本机 Docker socket、当前 Node 24 和已安装的项目依赖。工具从空 tar 创建本地最小测试镜像，把当前 Node、动态库和仓库只读挂载进容器，不下载第三方镜像。不要把该镜像当作部署镜像。
 
 ```sh

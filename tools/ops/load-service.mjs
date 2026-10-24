@@ -231,7 +231,14 @@ async function operation() {
   ];
 }
 const results = [];
-async function stage(label, rate, seconds, cap = 512, custom = operation) {
+async function stage(
+  label,
+  rate,
+  seconds,
+  cap = 512,
+  custom = operation,
+  stopWhen = () => false,
+) {
   const start = performance.now(),
     at = Date.now(),
     pending = new Set();
@@ -247,7 +254,7 @@ async function stage(label, rate, seconds, cap = 512, custom = operation) {
       byType: {},
     };
   let sent = 0;
-  while (performance.now() - start < seconds * 1000) {
+  while (performance.now() - start < seconds * 1000 && !stopWhen()) {
     const target = Math.floor(((performance.now() - start) * rate) / 1000);
     while (sent < target) {
       sent++;
@@ -314,6 +321,7 @@ async function stage(label, rate, seconds, cap = 512, custom = operation) {
     ),
     maxLagP95Ms: Math.round(Math.max(0, ...samples.map((s) => s.lagP95Ms))),
     maxLagMs: Math.round(Math.max(0, ...samples.map((s) => s.lagMaxMs))),
+    maxModelActive: Math.max(0, ...samples.map((s) => s.modelPeakActive || 0)),
     maxQueued: Math.max(
       0,
       ...samples.map((s) =>
@@ -355,6 +363,7 @@ async function stage(label, rate, seconds, cap = 512, custom = operation) {
           initialSubmissions: 10000,
           jpegBytes: jpeg.length,
           mockModelDelayMs: 2000,
+          ocrConcurrency: Number(process.env.LOAD_OCR_CONCURRENCY || 4),
           clientTimeoutMs: 5000,
           clientIPs: "distinct synthetic users behind a trusted proxy",
           transport:
@@ -369,6 +378,9 @@ async function stage(label, rate, seconds, cap = 512, custom = operation) {
   console.log(JSON.stringify(stats));
 }
 try {
+  const ocr = Number(process.env.LOAD_OCR_CONCURRENCY || 4);
+  if (!Number.isSafeInteger(ocr) || ocr < 1 || ocr > 16)
+    throw new Error("Load OCR concurrency must be 1..16");
   const mounts = [
     [root, "/app"],
     [process.execPath, "/node"],
@@ -403,6 +415,13 @@ try {
     "MES_DISPOSABLE_LOAD_TEST=1",
     "-e",
     "UV_THREADPOOL_SIZE=4",
+    ...[
+      "OCR_CONCURRENCY",
+      "OCR_USER_CONCURRENCY",
+      "MODEL_GLOBAL_CONCURRENCY",
+      "MODEL_SCHOOL_CONCURRENCY",
+      "MODEL_STAFF_CONCURRENCY",
+    ].flatMap((key) => ["-e", `${key}=${ocr}`]),
     image,
     "/node",
     "--max-old-space-size=1024",
@@ -445,104 +464,155 @@ try {
   if (setup.status !== 200)
     throw new Error("Mock provider setup failed: " + setup.body);
   await pause(1500);
-  const rates = (process.env.LOAD_RATES || "20,100,300,600,1200,2500,5000")
-    .split(",")
-    .map(Number);
-  const seconds = Number(process.env.LOAD_STAGE_SECONDS || 20);
-  if (
-    !rates.every((n) => Number.isFinite(n) && n > 0 && n <= 10000) ||
-    !Number.isFinite(seconds) ||
-    seconds < 1 ||
-    seconds > 300
-  )
-    throw new Error("Invalid bounded load configuration");
-  if (process.env.LOAD_FAULTS !== "0") {
-    const slow = [];
-    for (let i = 0; i < 16; i++) {
-      const s = manifest.students[i];
-      slow.push(
-        request(
-          `/api/assignments/${s.assignment}/submissions`,
-          s.cookie,
-          "POST",
-          multipart,
-          { "content-type": "multipart/form-data; boundary=load" },
-          true,
+  if (process.env.LOAD_MODE === "grading") {
+    const jobs = manifest.submissions.slice(0, 24),
+      completed = new Map();
+    const started = Date.now();
+    let cursor = 0;
+    for (const s of jobs) {
+      const response = await request(
+        `/api/submissions/${s.id}/recognition-jobs`,
+        s.cookie,
+        "POST",
+      );
+      if (response.status !== 202)
+        throw new Error("Grading benchmark enqueue failed");
+    }
+    await stage(
+      "grading-with-100-reads-per-second",
+      100,
+      120,
+      512,
+      async () => {
+        const s = jobs[cursor++ % jobs.length];
+        const response = await request(`/api/submissions/${s.id}`, s.cookie);
+        if (response.status === 200) {
+          const value = JSON.parse(response.body),
+            job = value.recognitionJob;
+          if (job?.status === "failed") throw new Error("Mock grading failed");
+          if (job?.status === "succeeded") {
+            if (value.teacher_reviewed !== 0 || value.status !== "review")
+              throw new Error("Grading bypassed teacher review");
+            completed.set(s.id, job.updatedAt);
+          }
+        }
+        return ["read", response];
+      },
+      () => completed.size === jobs.length,
+    );
+    if (completed.size !== jobs.length)
+      throw new Error("Grading benchmark did not finish in time");
+    const summary = {
+      jobs: jobs.length,
+      concurrency: ocr,
+      completed: completed.size,
+      elapsedMs: Math.max(...completed.values()) - started,
+    };
+    fs.writeFileSync(
+      path.join(output, "grading.json"),
+      JSON.stringify(summary, null, 2),
+    );
+    console.log(JSON.stringify(summary));
+  } else {
+    const rates = (process.env.LOAD_RATES || "20,100,300,600,1200,2500,5000")
+      .split(",")
+      .map(Number);
+    const seconds = Number(process.env.LOAD_STAGE_SECONDS || 20);
+    if (
+      !rates.every((n) => Number.isFinite(n) && n > 0 && n <= 10000) ||
+      !Number.isFinite(seconds) ||
+      seconds < 1 ||
+      seconds > 300
+    )
+      throw new Error("Invalid bounded load configuration");
+    if (process.env.LOAD_FAULTS !== "0") {
+      const slow = [];
+      for (let i = 0; i < 16; i++) {
+        const s = manifest.students[i];
+        slow.push(
+          request(
+            `/api/assignments/${s.assignment}/submissions`,
+            s.cookie,
+            "POST",
+            multipart,
+            { "content-type": "multipart/form-data; boundary=load" },
+            true,
+          ),
+        );
+      }
+      await stage("slow-uploads-plus-reads", 100, 10, 512, async () => [
+        "read",
+        await request("/api/assignments", random(manifest.students).cookie),
+      ]);
+      const slowResults = await Promise.all(slow);
+      fs.writeFileSync(
+        path.join(output, "slow-uploads.json"),
+        JSON.stringify(
+          slowResults.map(({ status, ms }) => ({ status, ms })),
+          null,
+          2,
         ),
       );
     }
-    await stage("slow-uploads-plus-reads", 100, 10, 512, async () => [
-      "read",
-      await request("/api/assignments", random(manifest.students).cookie),
-    ]);
-    const slowResults = await Promise.all(slow);
-    fs.writeFileSync(
-      path.join(output, "slow-uploads.json"),
-      JSON.stringify(
-        slowResults.map(({ status, ms }) => ({ status, ms })),
-        null,
-        2,
-      ),
-    );
-  }
-  for (const rate of rates) {
-    await stage(`mixed-${rate}`, rate, seconds, rate >= 2500 ? 1024 : 512);
-    await pause(2000);
-  }
-  await stage("recovery", 20, 15);
-  if (process.env.LOAD_FAULTS === "0") process.exitCode = 0;
-  else {
-    if (process.env.LOAD_FAULTS !== "quick") {
-      // Real touched anonymous pages, confined to this disposable 4 GiB cgroup.
-      // Leave the API room; this tests admission/recovery, not deliberate kernel OOM.
-      const stressScript = `const fs=require('fs');let blocks=[];const goal=Number(process.argv[1]);
+    for (const rate of rates) {
+      await stage(`mixed-${rate}`, rate, seconds, rate >= 2500 ? 1024 : 512);
+      await pause(2000);
+    }
+    await stage("recovery", 20, 15);
+    if (process.env.LOAD_FAULTS === "0") process.exitCode = 0;
+    else {
+      if (process.env.LOAD_FAULTS !== "quick") {
+        // Real touched anonymous pages, confined to this disposable 4 GiB cgroup.
+        // Leave the API room; this tests admission/recovery, not deliberate kernel OOM.
+        const stressScript = `const fs=require('fs');let blocks=[];const goal=Number(process.argv[1]);
   const used=()=>Number(fs.readFileSync('/sys/fs/cgroup/memory.current','utf8'))-Number(fs.readFileSync('/sys/fs/cgroup/memory.stat','utf8').match(/^inactive_file (\\d+)/m)?.[1]||0);
   while(used()<goal){blocks.push(Buffer.alloc(16*1024*1024,1));}console.log('allocated');setTimeout(()=>{},25000);`;
-      for (const mib of [3650, 3920]) {
-        const pressure = spawn(
-          "docker",
-          [
-            ...dockerArgs,
-            "exec",
-            name,
-            "/node",
-            "-e",
-            stressScript,
-            String(mib * 1024 ** 2),
-          ],
-          { env, stdio: ["ignore", "pipe", "pipe"] },
-        );
-        const ready = await Promise.race([
-          once(pressure.stdout, "data").then(() => true),
-          once(pressure, "exit").then(() => false),
-          pause(15000).then(() => false),
-        ]);
-        if (!ready)
-          throw new Error("Memory pressure helper did not become ready");
-        await pause(6000);
-        await stage(`memory-${mib}MiB-plus-mixed`, 100, 10);
-        if (pressure.exitCode === null) await once(pressure, "exit");
-        await pause(2000);
+        for (const mib of [3650, 3920]) {
+          const pressure = spawn(
+            "docker",
+            [
+              ...dockerArgs,
+              "exec",
+              name,
+              "/node",
+              "-e",
+              stressScript,
+              String(mib * 1024 ** 2),
+            ],
+            { env, stdio: ["ignore", "pipe", "pipe"] },
+          );
+          const ready = await Promise.race([
+            once(pressure.stdout, "data").then(() => true),
+            once(pressure, "exit").then(() => false),
+            pause(15000).then(() => false),
+          ]);
+          if (!ready)
+            throw new Error("Memory pressure helper did not become ready");
+          await pause(6000);
+          await stage(`memory-${mib}MiB-plus-mixed`, 100, 10);
+          if (pressure.exitCode === null) await once(pressure, "exit");
+          await pause(2000);
+        }
+        await stage("post-memory-recovery", 20, 75);
       }
-      await stage("post-memory-recovery", 20, 75);
+      // Competing SQLite writer: actual lock contention, not a disk-speed simulation.
+      const locker = spawn(
+        "docker",
+        [
+          ...dockerArgs,
+          "exec",
+          name,
+          "/node",
+          "-e",
+          `const {DatabaseSync}=require('node:sqlite');const d=new DatabaseSync('/run/load/data/smart-campus.sqlite');d.exec('BEGIN IMMEDIATE');console.log('locked');setTimeout(()=>{d.exec('ROLLBACK');d.close()},3000);`,
+        ],
+        { env, stdio: ["ignore", "pipe", "pipe"] },
+      );
+      await once(locker.stdout, "data");
+      await stage("sqlite-writer-lock-plus-mixed", 100, 10);
+      if (locker.exitCode === null) await once(locker, "exit");
+      await stage("post-lock-recovery", 20, 10);
     }
-    // Competing SQLite writer: actual lock contention, not a disk-speed simulation.
-    const locker = spawn(
-      "docker",
-      [
-        ...dockerArgs,
-        "exec",
-        name,
-        "/node",
-        "-e",
-        `const {DatabaseSync}=require('node:sqlite');const d=new DatabaseSync('/run/load/data/smart-campus.sqlite');d.exec('BEGIN IMMEDIATE');console.log('locked');setTimeout(()=>{d.exec('ROLLBACK');d.close()},3000);`,
-      ],
-      { env, stdio: ["ignore", "pipe", "pipe"] },
-    );
-    await once(locker.stdout, "data");
-    await stage("sqlite-writer-lock-plus-mixed", 100, 10);
-    if (locker.exitCode === null) await once(locker, "exit");
-    await stage("post-lock-recovery", 20, 10);
   }
 } finally {
   agent.destroy();

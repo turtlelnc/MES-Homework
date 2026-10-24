@@ -44,6 +44,7 @@ import {
   safeParse,
 } from "./analysis.mjs";
 import { createModelBudget, modelErrorStatus } from "./model-budget.mjs";
+import { createModelImages } from "./model-images.mjs";
 import { teachingContent } from "./teaching-content.mjs";
 import {
   normalizeReview,
@@ -319,6 +320,9 @@ function providerFor(userId, { vision = false } = {}) {
   return { config, preset };
 }
 
+const modelImages = createModelImages({
+  maxBytes: Math.min(positive("MODEL_INLINE_BUDGET_MB", 96), 256) * 1024 ** 2,
+});
 async function askModel(
   userId,
   prompt,
@@ -334,7 +338,7 @@ async function askModel(
   if (!preset) throw new Error("模型厂商无效");
   const endpoint = providerEndpoint(config.endpoint, preset);
   const release = reservation || reserveModel(userId);
-  let cost, remote;
+  let cost, remote, imageLease;
   try {
     // Reserve before DNS, image buffering, or outbound I/O. Revalidate DNS on
     // every request while bounding its lifetime and concurrent lookups too.
@@ -351,6 +355,7 @@ async function askModel(
       remote = await deepseekFiles.prepare(images, config, signal);
       imageBlocks = remote.blocks;
     } else {
+      imageLease = await modelImages.acquire(images, signal);
       let bytes = 0;
       imageBlocks = [];
       for (const image of images) {
@@ -367,6 +372,8 @@ async function askModel(
             "base64",
           );
         bytes += base64.length;
+        if (bytes > imageLease.maxBytes)
+          throw new Error("图片大小在读取期间发生变化，请重试");
         if (bytes > 44 * 1024 * 1024)
           throw new Error("内联图片合计过大，请减少页数或启用 Files API");
         imageBlocks.push({
@@ -407,6 +414,7 @@ async function askModel(
           model: config.model,
           response_format: { type: "json_object" },
           temperature: 0,
+          stream: false,
           max_tokens:
             cost?.maxTokens ||
             Math.min(positive("MODEL_MAX_OUTPUT_TOKENS", 8192), 32768),
@@ -437,6 +445,7 @@ async function askModel(
     return cleanModelJson(text);
   } finally {
     remote?.release();
+    imageLease?.release();
     cost?.close();
     release();
   }
@@ -1312,7 +1321,10 @@ const recognitionQueue = createRecognitionQueue(
       reservation();
     }
   },
-  { canStart: () => pressure.limit(1) > 0 },
+  {
+    canStart: () => pressure.limit(1) > 0,
+    availableConcurrency: () => pressure.limit(positive("OCR_CONCURRENCY", 4)),
+  },
 );
 app.post("/api/submissions/:id/recognition-jobs", auth, teacher, (req, res) => {
   const submission = db
@@ -1372,6 +1384,7 @@ app.get("/api/operations", auth, schoolAdmin, (req, res) => {
     resources: pressure.snapshot(),
     passwordWork: passwords.snapshot(),
     statementCache: statements.snapshot(),
+    modelImages: modelImages.snapshot(),
   });
 });
 app.post("/api/submissions/:id/recognize", auth, teacher, async (req, res) => {
