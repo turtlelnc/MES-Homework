@@ -111,7 +111,7 @@ const OAUTH_POLL_MAX_MS = 10000;
 const DEFAULT_FLOWS: Record<OAuthProviderId, readonly OAuthFlow[]> = {
   chatgpt: ["browser"],
   gemini: ["browser"],
-  workbuddy: ["device"],
+  workbuddy: ["browser", "device"],
 };
 
 function isOAuthFlow(value: unknown): value is OAuthFlow {
@@ -144,7 +144,7 @@ export function visibleOAuthProviders(
 /**
  * Resolve the login buttons to render. Server-declared flows win; payloads
  * from rc3 (no `flows`) fall back to chatgpt/gemini=browser,
- * workbuddy=device.
+ * workbuddy=browser+device.
  */
 export function oauthFlowsFor(
   card: Pick<OAuthCard, "id" | "flows">,

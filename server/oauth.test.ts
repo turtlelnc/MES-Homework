@@ -49,7 +49,7 @@ vi.mock("./oauth-workbuddy.mjs", () => ({
     name: "WorkBuddy",
     region: "cn",
     mainlandUnavailable: false,
-    flows: ["device"],
+    flows: ["browser", "device"],
     model: "workbuddy-chat",
     vision: false,
     description: "测试用 WorkBuddy OAuth 元数据",
@@ -293,7 +293,7 @@ describe("OAuth provider catalogue", () => {
     expect(gemini.flows).toEqual(["browser"]);
     expect(gemini.vision).toBe(true);
     const workbuddy = oauthProvider("workbuddy")!;
-    expect(workbuddy.flows).toEqual(["device"]);
+    expect(workbuddy.flows).toEqual(["browser", "device"]);
     expect(workbuddy.region).toBe("cn");
     expect(workbuddy.mainlandUnavailable).toBe(false);
     for (const removed of ["claude", "qwen", "qianwen", "deepseek", "unknown"])
@@ -1068,7 +1068,7 @@ describe("OAuth routes", () => {
     expect(byId.get("gemini").envHint).toContain("OAUTH_GEMINI_CLIENT_ID");
     expect(byId.get("workbuddy")).toMatchObject({
       configured: true,
-      flows: ["device"],
+      flows: ["browser", "device"],
       region: "cn",
     });
     expect(JSON.stringify(response.body)).not.toContain("secret");
@@ -1684,6 +1684,58 @@ describe("OAuth routes", () => {
     });
     expect(connection.account_label).toBe("王老师");
     expect(Number(connection.expires_at)).toBeGreaterThan(Date.now());
+  });
+
+  it("runs the workbuddy browser flow through the same official authorization", async () => {
+    const base = await makeApp({ workbuddyPollIntervalMs: 10 });
+    workbuddyMock.workbuddyStart.mockResolvedValue({
+      state: "wb-state-browser",
+      authUrl: "https://workbuddy.example.com/authorize",
+    });
+    workbuddyMock.workbuddyPoll.mockResolvedValue({
+      pending: false,
+      token: {
+        accessToken: "wb-browser-at",
+        refreshToken: "wb-browser-rt",
+        expiresIn: 3600,
+        domain: "dept-browser",
+      },
+    });
+    workbuddyMock.workbuddyAccount.mockResolvedValue({
+      uid: "uid-browser",
+      enterpriseId: "ent-browser",
+      nickname: "浏览器老师",
+    });
+    const started = await request(
+      base,
+      "/api/oauth/workbuddy/browser/start",
+      "t1",
+      "POST",
+      { region: "global" },
+    );
+    expect(started.status).toBe(200);
+    expect(started.body).toMatchObject({
+      mode: "browser",
+      url: "https://workbuddy.example.com/authorize",
+      region: "global",
+    });
+    expect(workbuddyMock.workbuddyStart).toHaveBeenCalledWith(
+      expect.objectContaining({ region: "global" }),
+    );
+    const connected = await waitForAttempt(
+      base,
+      "workbuddy",
+      started.body.attemptId,
+      "t1",
+      ["connected"],
+    );
+    expect(connected.body.status).toBe("connected");
+    const connection = getOAuthConnection(db, "t1", "workbuddy")!;
+    expect(oauthConnectionMeta(connection)).toMatchObject({
+      uid: "uid-browser",
+      region: "global",
+      flow: "browser",
+    });
   });
 
   it("defaults the workbuddy region and reports poll failures", async () => {

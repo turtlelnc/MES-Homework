@@ -3,6 +3,7 @@ import {
   Check,
   Copy,
   ExternalLink,
+  Globe,
   Loader2,
   ShieldAlert,
   Smartphone,
@@ -18,6 +19,7 @@ import {
   oauthProviderShortName,
   oauthWorkbuddyRegionLabel,
   type OAuthAttemptResponse,
+  type OAuthBrowserStartResponse,
   type OAuthCard,
   type OAuthDeviceStartResponse,
   type OAuthFlow,
@@ -255,6 +257,54 @@ export function OAuthLoginDialog({
     } catch (error) {
       if (controller.signal.aborted) return;
       setErrorText(`发起设备码登录失败：${(error as Error).message}`);
+      setStage("error");
+    } finally {
+      if (startAbort.current === controller) startAbort.current = null;
+    }
+  };
+
+  // WorkBuddy 浏览器登录：先选区域，再向服务端申请授权 URL；服务端在后台
+  // 轮询换取令牌，前端只需轮询 attempt 状态（与 ChatGPT 浏览器登录一致）。
+  const startWorkbuddyBrowser = async () => {
+    setErrorText("");
+    setStage("starting");
+    const controller = new AbortController();
+    startAbort.current = controller;
+    try {
+      const result = await api<OAuthBrowserStartResponse>(
+        `/oauth/${encodeURIComponent(card.id)}/browser/start`,
+        {
+          ...json("POST", { region }),
+          signal: controller.signal,
+        },
+      );
+      if (controller.signal.aborted) return;
+      if (!result.attemptId) throw new Error("服务端未返回登录尝试编号");
+      const url = result.url || result.authorizeUrl || "";
+      let popupBlocked = false;
+      if (url) {
+        const opened = window.open(url, "_blank");
+        if (opened) {
+          try {
+            opened.opener = null;
+          } catch {
+            // Cross-origin opener cleanup is best effort.
+          }
+        } else {
+          popupBlocked = true;
+        }
+      } else {
+        popupBlocked = true;
+      }
+      setAttempt({
+        attemptId: result.attemptId,
+        verificationUrl: url,
+        popupBlocked,
+      });
+      setStage("waiting");
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      setErrorText(`发起浏览器登录失败：${(error as Error).message}`);
       setStage("error");
     } finally {
       if (startAbort.current === controller) startAbort.current = null;
@@ -520,9 +570,15 @@ export function OAuthLoginDialog({
               <Button variant="outline" type="button" onClick={cancel}>
                 取消
               </Button>
-              <Button type="button" onClick={() => void startDevice()}>
-                <Smartphone size={16} /> 开始设备码登录
-              </Button>
+              {flow === "browser" ? (
+                <Button type="button" onClick={() => void startWorkbuddyBrowser()}>
+                  <Globe size={16} /> 开始浏览器登录
+                </Button>
+              ) : (
+                <Button type="button" onClick={() => void startDevice()}>
+                  <Smartphone size={16} /> 开始设备码登录
+                </Button>
+              )}
             </>
           ) : stage === "error" ? (
             <>

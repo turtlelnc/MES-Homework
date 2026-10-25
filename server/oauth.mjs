@@ -1421,7 +1421,7 @@ function startChatgptDevicePolling({ attempt, services }) {
         meta: {
           accountId: bundle.accountId || null,
           email: bundle.email || null,
-          flow: "device",
+          flow: attempt.flow || "device",
         },
         now: Date.now(),
       });
@@ -1487,7 +1487,7 @@ function startWorkbuddyDevicePolling({ attempt, services, timing }) {
           domain: cleanText(token.domain) || null,
           region: attempt.region,
           nickname: cleanText(account?.nickname) || null,
-          flow: "device",
+          flow: attempt.flow || "device",
         },
         now: Date.now(),
       });
@@ -1638,8 +1638,51 @@ export function registerOAuthRoutes(app, ctx) {
       const preset = resolvePreset(req, res);
       if (!preset) return undefined;
       if (!guardPermission(req, res)) return undefined;
-      if (preset.kind === "workbuddy")
-        return fail(res, 400, "WorkBuddy 仅支持设备码授权，请使用设备码连接");
+      if (preset.kind === "workbuddy") {
+        // WorkBuddy 的「浏览器登录」与「设备码登录」走同一套官方
+        // state -> 授权页 -> 轮询换取令牌流程；浏览器登录直接打开授权页，
+        // 服务端在后台轮询，完成后写连接。
+        const region =
+          normalizeWorkbuddyRegion(req.body?.region) ||
+          workbuddyRegion(process.env);
+        let started;
+        try {
+          started = await workbuddyStart({
+            region,
+            fetchImpl: fetchImpl || undefined,
+          });
+        } catch {
+          return fail(res, 502, "WorkBuddy 授权发起失败，请稍后重试");
+        }
+        const deviceState = cleanText(started?.state);
+        const verificationUrl = cleanText(started?.authUrl);
+        if (!deviceState || !verificationUrl)
+          return fail(res, 502, "WorkBuddy 授权返回数据不完整，请稍后重试");
+        if (!authorizeUrlIsSafe(verificationUrl))
+          return fail(res, 502, "WorkBuddy 授权链接无效，请稍后重试");
+        const attempt = store.create({
+          userId: req.user.id,
+          provider: "workbuddy",
+          flow: "browser",
+          ttlMs: timing.workbuddyTtlMs,
+        });
+        store.attach(attempt, {
+          deviceState,
+          region,
+          verificationUrl,
+          intervalMs: positiveNumber(timing.workbuddyPollIntervalMs, 3000),
+        });
+        attempt.fetchImpl = fetchImpl;
+        attempt.services = services;
+        startWorkbuddyDevicePolling({ attempt, services, timing });
+        return res.json({
+          attemptId: attempt.id,
+          mode: "browser",
+          url: verificationUrl,
+          verificationUrl,
+          region,
+        });
+      }
       const config = resolveConfiguredConfig(res, preset);
       if (!config) return undefined;
       if (preset.kind === "gemini") {

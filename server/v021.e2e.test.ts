@@ -649,7 +649,7 @@ describe("v0.2.1-rc4 (mock model only)", () => {
     });
     expect(byId.get("workbuddy")).toMatchObject({
       configured: true,
-      flows: ["device"],
+      flows: ["browser", "device"],
     });
     // Gemini 需要部署方配置 Google Cloud OAuth 客户端；e2e 环境未配置。
     expect(byId.get("gemini")).toMatchObject({
