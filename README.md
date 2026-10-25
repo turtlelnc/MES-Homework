@@ -81,7 +81,7 @@ OAuth 采用 Authorization Code + PKCE 与设备码（Device Code）两种流程
 
 - **ChatGPT**：内置 Codex 公共 PKCE 客户端，无需配置 Client ID；浏览器登录自动监听 `http://localhost:1455/auth/callback`，设备码登录显示 `https://auth.openai.com/codex/device` 与一次性用户码。
 - **Gemini**：在 Google Cloud 创建 OAuth 客户端（Desktop app），启用 Generative Language API，配置 `OAUTH_GEMINI_CLIENT_ID`、`OAUTH_GEMINI_CLIENT_SECRET`（scopes 见 `.env.example`）；未配置时显示「未配置」。
-- **WorkBuddy**：内置官方授权流程；`OAUTH_WORKBUDDY_REGION=cn|global` 选择国内版/国际版。
+- **WorkBuddy**：内置官方授权流程，支持「浏览器登录」（直接打开授权页）与「设备码登录」（显示授权链接），两者底层同一官方轮询流程；`OAUTH_WORKBUDDY_REGION=cn|global` 选择国内版/国际版。
 
 ChatGPT、Gemini 在中国大陆境内不可用，前端会在跳转前提示。OAuth 不影响的 API Key 方式继续可用。完整接口与安全约定见 [docs/oauth-flows.md](docs/oauth-flows.md)。
 

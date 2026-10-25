@@ -40,7 +40,7 @@ OAuth supports Authorization Code + PKCE and device-code flows; the UI shows "Br
 
 - **ChatGPT**: built-in public Codex PKCE client, no Client ID needed; browser login listens on `http://localhost:1455/auth/callback`, device login shows a one-time code for `https://auth.openai.com/codex/device`.
 - **Gemini**: create a Google Cloud OAuth client (Desktop app), enable the Generative Language API and set `OAUTH_GEMINI_CLIENT_ID` / `OAUTH_GEMINI_CLIENT_SECRET` (scopes are listed in `.env.example`); otherwise the card shows "not configured".
-- **WorkBuddy**: built-in official authorization flow; `OAUTH_WORKBUDDY_REGION=cn|global` selects the region.
+- **WorkBuddy**: built-in official authorization flow with both **Browser login** (opens the authorization page) and **Device login** (shows the authorization link); both use the same official polling flow. `OAUTH_WORKBUDDY_REGION=cn|global` selects the region.
 
 ChatGPT and Gemini are not available in mainland China; the UI warns before redirecting. The API Key path is unaffected. Full interface and security notes: [docs/oauth-flows.md](docs/oauth-flows.md).
 

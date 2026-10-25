@@ -64,7 +64,7 @@ describe("workbuddyMetadata / workbuddyRegion", () => {
       name: "WorkBuddy",
       region: "cn",
       mainlandUnavailable: false,
-      flows: ["device"],
+      flows: ["browser", "device"],
       model: "workbuddy-chat",
       vision: false,
       description:

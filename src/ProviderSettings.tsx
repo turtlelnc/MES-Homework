@@ -312,7 +312,9 @@ export function ProviderSettings({ user, notify }: Props) {
   // region choice first, so the dialog creates that attempt itself.
   const launchFlow = async (card: OAuthCard, flow: OAuthFlow) => {
     setPendingMainland(null);
-    if (flow === "device" && card.id === "workbuddy") {
+    if (card.id === "workbuddy") {
+      // WorkBuddy 的浏览器登录/设备码登录都需要先选国内版或国际版；
+      // 对话框在用户选择后自行发起 attempt。
       setSession({ card, flow, start: null });
       return;
     }

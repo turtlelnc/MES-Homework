@@ -9,7 +9,7 @@
 | --- | --- | --- | --- | --- | --- |
 | `chatgpt` | ChatGPT（Codex OAuth） | `browser` + `device` | `gpt-5.4` | 否 | 使用 OpenAI Codex 公共 PKCE 客户端；浏览器回调（localhost:1455）或设备码；走 ChatGPT Codex Responses API |
 | `gemini` | Gemini（Google） | `browser` | `gemini-2.5-flash` | 是 | 需部署方在 Google Cloud 创建 OAuth 客户端（Desktop app），通过环境变量配置 Client ID/Secret |
-| `workbuddy` | WorkBuddy | `device` | 由服务端目录决定 | 否 | 国内版（默认）/国际版；浏览器完成授权，服务端轮询换取令牌；走 WorkBuddy 上游 chat SSE |
+| `workbuddy` | WorkBuddy | `browser` + `device` | 由服务端目录决定 | 否 | 国内版（默认）/国际版；浏览器登录直接打开授权页，设备码登录显示授权链接（底层同一官方流程）；服务端轮询换取令牌，走 WorkBuddy 上游 chat SSE |
 
 已移除：`claude`、`qwen`、`qianwen`、`deepseek`（不再出现在 OAuth 界面，也不接受其授权请求；
 原有 API Key 方式不受影响）。
@@ -39,13 +39,14 @@
 }
 ```
 
-- `flows`：该 provider 支持 `browser`（新标签页打开授权页，回调后自动完成）、
-  `device`（显示设备码/授权页，服务端轮询完成）。
+- `flows`：该 provider 支持 `browser`（新标签页打开授权页，服务端轮询完成）与
+  `device`（显示设备码/授权页，服务端轮询完成）。WorkBuddy 的两种入口底层是同一套
+  官方 state → 授权页 → 轮询流程，浏览器登录只是直接打开授权页的交互。
 - `configured:false` 时 `envHint` 给出需要设置的环境变量名（目前只有 gemini 可能未配置）。
 
 ### `POST /api/oauth/:provider/browser/start`
 
-请求体：`{}`（chatgpt 浏览器流程会占用本机 1455 端口；gemini 使用配置里的回调基址）。
+请求体：`{}`；workbuddy 可传 `{ region: "cn" | "global" }`（chatgpt 浏览器流程会占用本机 1455 端口；gemini 使用配置里的回调基址）。
 
 返回：`{ attemptId, mode: "browser", url }`
 
