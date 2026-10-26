@@ -44,6 +44,7 @@ import {
   safeParse,
 } from "./analysis.mjs";
 import { createModelBudget, modelErrorStatus } from "./model-budget.mjs";
+import { createModelImages } from "./model-images.mjs";
 import { teachingContent } from "./teaching-content.mjs";
 import {
   normalizeReview,
@@ -371,6 +372,9 @@ function assertModelConfigured(user) {
   return owner;
 }
 
+const modelImages = createModelImages({
+  maxBytes: Math.min(positive("MODEL_INLINE_BUDGET_MB", 96), 256) * 1024 ** 2,
+});
 async function askModel(
   userOrId,
   prompt,
@@ -386,7 +390,7 @@ async function askModel(
       : userOrId;
   if (!owner) throw new Error("账户不存在");
   const release = reservation || reserveModel(owner.id);
-  let cost, remote;
+  let cost, remote, imageLease;
   try {
     // Resolve the effective credential owner (API Key or OAuth) before any
     // DNS, image buffering or outbound I/O.
@@ -394,6 +398,8 @@ async function askModel(
     release.renew();
     let text;
     if (credential.kind === "oauth") {
+      imageLease = await modelImages.acquire(images, signal);
+      let bytes = 0;
       const oauthImages = [];
       for (const image of images) {
         signal.throwIfAborted();
@@ -403,6 +409,9 @@ async function askModel(
           (await fs.promises.readFile(image.filePath, { signal })).toString(
             "base64",
           );
+        bytes += base64.length;
+        if (bytes > imageLease.maxBytes)
+          throw new Error("图片大小在读取期间发生变化，请重试");
         oauthImages.push({ ...image, base64 });
       }
       text = await oauthChatText({
@@ -430,10 +439,12 @@ async function askModel(
         config.provider === "deepseek" &&
         process.env.DEEPSEEK_FILES_ENABLED === "1"
       ) {
-        if (!costBudget.enabled) throw new Error("Files API 需要先配置费用预算");
+        if (!costBudget.enabled)
+          throw new Error("Files API 需要先配置费用预算");
         remote = await deepseekFiles.prepare(images, config, signal);
         imageBlocks = remote.blocks;
       } else {
+        imageLease = await modelImages.acquire(images, signal);
         let bytes = 0;
         imageBlocks = [];
         for (const image of images) {
@@ -450,6 +461,8 @@ async function askModel(
               "base64",
             );
           bytes += base64.length;
+          if (bytes > imageLease.maxBytes)
+            throw new Error("图片大小在读取期间发生变化，请重试");
           if (bytes > 44 * 1024 * 1024)
             throw new Error("内联图片合计过大，请减少页数或启用 Files API");
           imageBlocks.push({
@@ -490,6 +503,7 @@ async function askModel(
             model: config.model,
             response_format: { type: "json_object" },
             temperature: 0,
+            stream: false,
             max_tokens:
               cost?.maxTokens ||
               Math.min(positive("MODEL_MAX_OUTPUT_TOKENS", 8192), 32768),
@@ -521,6 +535,7 @@ async function askModel(
     return cleanModelJson(text);
   } finally {
     remote?.release();
+    imageLease?.release();
     cost?.close();
     release();
   }
@@ -947,12 +962,7 @@ app.post(
         )
         .all(req.user.school_id, req.user.stage, req.user.subject);
       const prompt = `你是学校作业数字化助手。请忠实解析这份教师上传的作业原件，并整理为可直接发布的草稿。\n教师设置：学段=${req.user.stage}，学科=${req.user.subject}，班级=${req.user.class_name}。\n${word ? `Word 文档已提取文字：\n${word.text}\n` : "图片/PDF 已按页面附在消息中。"}\n现有校本知识库=${JSON.stringify(knowledge)}。\n规则：1. 只能提取原件中实际出现的题目，按原顺序，不得补题或改题；2. 无法辨认的部分写[无法辨认]；3. 原件没有答案时，根据题目自行推导标准答案与简明评分要点，并在 answerGenerated 标记 true；4. 优先使用现有知识点；没有匹配项时生成一个符合该学段教材的简洁知识点名称，并在 knowledgeGenerated 标记 true；5. 原件未标分值时，根据题型和难度给出合理分值。\n只返回 JSON：{"title":"原件标题或文件名","questions":[{"prompt":"完整题干","standardAnswer":"答案与评分要点","score":10,"knowledgeTitle":"知识点","answerGenerated":true,"knowledgeGenerated":false}],"warnings":["确实需要教师注意的识别问题"]}`;
-      const parsed = await callModel(
-        req.user,
-        prompt,
-        images,
-        signal,
-      );
+      const parsed = await callModel(req.user, prompt, images, signal);
       if (!Array.isArray(parsed.questions) || !parsed.questions.length)
         throw new Error("未从文件中识别到题目，请检查图片清晰度或模型配置");
       const knowledgeMap = new Map(
@@ -1008,7 +1018,9 @@ app.post("/api/assignments", auth, teacher, (req, res) => {
   const x = req.body;
   const gradingMode = x.gradingMode === "direct" ? "direct" : "bank";
   const description =
-    typeof x.description === "string" ? x.description.trim().slice(0, 2000) : "";
+    typeof x.description === "string"
+      ? x.description.trim().slice(0, 2000)
+      : "";
   if (!x.title || typeof x.title !== "string" || !x.title.trim())
     return res.status(400).json({ error: "请填写作业名称" });
   if (gradingMode === "direct") {
@@ -1529,10 +1541,9 @@ function prepareRecognition(user, result) {
     try {
       reviewed = normalizeDirectReview(normalized.items, questions);
     } catch (error) {
-      throw Object.assign(
-        new Error("模型返回的批改结果格式无效，请重新识别"),
-        { status: 502 },
-      );
+      throw Object.assign(new Error("模型返回的批改结果格式无效，请重新识别"), {
+        status: 502,
+      });
     }
     const analysis = {
       ocrText: normalized.ocrText,
@@ -1682,6 +1693,7 @@ const recognitionQueue = createRecognitionQueue(
   },
   {
     canStart: () => pressure.limit(1) > 0,
+    availableConcurrency: () => pressure.limit(positive("OCR_CONCURRENCY", 4)),
     publish(job, prepared) {
       persistRecognition(job, prepared);
     },
@@ -1748,6 +1760,7 @@ app.get("/api/operations", auth, schoolAdmin, (req, res) => {
     resources: pressure.snapshot(),
     passwordWork: passwords.snapshot(),
     statementCache: statements.snapshot(),
+    modelImages: modelImages.snapshot(),
   });
 });
 // Synchronous legacy endpoint kept for older clients; it shares the queue's

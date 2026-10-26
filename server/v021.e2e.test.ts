@@ -84,6 +84,7 @@ async function start() {
       PORT: String(port),
       HOST: "127.0.0.1",
       NODE_ENV: "test",
+      SYSTEM_PRESSURE_ENABLED: "0",
       APP_SECRET: "v021-e2e-test-only-secret-32-characters",
       OAUTH_CHATGPT_CLIENT_ID: "test-client-id",
       OAUTH_CHATGPT_CLIENT_SECRET: "test-client-secret",
@@ -157,7 +158,9 @@ beforeAll(async () => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), "mes-v021-"));
   fs.writeFileSync(
     path.join(dir, "mock.mjs"),
-    `import fs from 'node:fs';
+    `import fs from 'node:fs';import dns from 'node:dns';
+    // All provider requests are mocked; keep endpoint checks local too.
+    dns.promises.lookup=async()=>[{address:'1.1.1.1',family:4}];
     globalThis.fetch = async (url, options) => {
       const body = String(options?.body || "");
       fs.appendFileSync(${JSON.stringify(modelLog())}, body.replace(/\\n/g,' ')+'\\n');

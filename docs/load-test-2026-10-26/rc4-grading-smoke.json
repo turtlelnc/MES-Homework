@@ -1,0 +1,108 @@
+{
+  "config": {
+    "cpu": 4,
+    "memoryGiB": 4,
+    "swapGiB": 0,
+    "students": 10000,
+    "teachers": 100,
+    "initialSubmissions": 10000,
+    "jpegBytes": 1492984,
+    "mockModelDelayMs": 2000,
+    "ocrConcurrency": 4,
+    "clientTimeoutMs": 5000,
+    "clientIPs": "distinct synthetic users behind a trusted proxy",
+    "transport": "Unix relay to real loopback TCP HTTP; relay shares service cgroup"
+  },
+  "stages": [
+    {
+      "label": "grading-with-100-reads-per-second",
+      "offeredRps": 100,
+      "durationSeconds": 120,
+      "cap": 512,
+      "scheduled": 1248,
+      "clientSkipped": 0,
+      "peakInflight": 5,
+      "byType": {
+        "read": {
+          "count": 1248,
+          "statuses": {
+            "200": 1248
+          },
+          "successful": 1248,
+          "successOver2s": 0,
+          "maxMs": 40,
+          "bytes": 5608836,
+          "p95Ms": 5,
+          "successP95Ms": 5,
+          "successP99Ms": 16,
+          "successRps": 99.8
+        }
+      },
+      "elapsedSeconds": 12.5,
+      "resources": {
+        "maxRssMiB": 199,
+        "maxCgroupMiB": 212,
+        "maxLagP95Ms": 27,
+        "maxLagMs": 52,
+        "maxModelActive": 4,
+        "maxQueued": 24,
+        "maxQueueAgeSeconds": 10,
+        "lastCgroup": {
+          "memory.current": "193273856",
+          "memory.peak": "233582592",
+          "memory.events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+          "cpu.stat": "usage_usec 3676813\nuser_usec 3056708\nsystem_usec 620105\nnice_usec 0\nnr_periods 146\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0",
+          "memory.swap.current": "0"
+        }
+      },
+      "operations": {
+        "resources": {
+          "version": 1,
+          "updatedAt": 1792988218209,
+          "sampledAt": 1792988213800,
+          "level": "normal",
+          "reasons": [],
+          "rssMiB": 172,
+          "systemSupported": true,
+          "availableMiB": 3926,
+          "budgetMiB": 4096
+        },
+        "passwordWork": {
+          "active": 0,
+          "pending": 0,
+          "concurrency": 2,
+          "maxPending": 16
+        },
+        "modelUsage": {
+          "callsLastDay": 24,
+          "callsLastHour": 24,
+          "active": 0
+        },
+        "jobs": [
+          {
+            "status": "succeeded",
+            "count": 24,
+            "oldest": 1792988205656
+          }
+        ]
+      }
+    }
+  ],
+  "grading": {
+    "jobs": 24,
+    "concurrency": 4,
+    "completed": 24,
+    "elapsedMs": 12380
+  },
+  "observedLimits": {
+    "node": "v24.19.0",
+    "platform": "linux",
+    "arch": "x64",
+    "cpuMax": "400000 100000",
+    "memoryMax": "4294967296",
+    "swapMax": "0"
+  },
+  "date": "2026-10-26",
+  "baselineCommit": "c699c31f",
+  "purpose": "Functional revalidation of refreshed PR #12 on v0.2.1-rc4; mock model only; not a renewed full capacity benchmark."
+}
