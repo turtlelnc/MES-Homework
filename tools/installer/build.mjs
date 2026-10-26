@@ -141,7 +141,7 @@ function windows() {
     <RemoveFolder Id="RemoveMenu" On="uninstall" /><RegistryValue Root="HKLM" Key="Software\\MESHomework" Name="Installed" Type="integer" Value="1" KeyPath="yes" />
   </Component></Directory></StandardDirectory>
   <StandardDirectory Id="CommonAppDataFolder"><Directory Id="SERVERDATA" Name="MESHomework"><Component Id="ServerDataPermissions" Guid="${guid("server-data")}" Permanent="yes">
-    <CreateFolder><PermissionEx Id="ServerDataAcl" Sddl="D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;LS)" /></CreateFolder>
+    <CreateFolder><PermissionEx Id="ServerDataAcl" Sddl="O:SYG:SYD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICIIO;FA;;;LS)(A;;0x1201bf;;;LS)" /></CreateFolder>
   </Component></Directory></StandardDirectory>
   <DirectoryRef Id="INSTALLFOLDER"><Component Id="ServerService" Guid="${guid("service-" + process.arch)}">
     <File Id="ServiceMarker" Source="${xml(path.join(work, "service-mode.txt"))}" Name="service-mode.txt" KeyPath="yes" />

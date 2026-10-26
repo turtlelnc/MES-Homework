@@ -38,7 +38,7 @@ Windows 使用 WiX 5.0.2 的标准中文 MSI 界面（MIT 许可页、功能选�
 
 服务器配置与每用户本机数据独立，默认仍只监听 127.0.0.1。公开提供服务前需要 HTTPS 反向代理、正确 APP_ORIGIN/可信代理配置及管理员明确设置；安装不自动开放防火墙或把数据暴露到网络。
 
-- Windows MSI 的“Windows server service”是默认不选择的可选功能；管理员可在功能树选择，或静默安装指定 `ADDLOCAL=Application,Server`。服务名称 `MESHomework`，账户 `NT AUTHORITY\LocalService`，使用实际 ProgramData 下的 MESHomework，ACL 仅允许 SYSTEM、Administrators、LocalService。使用 Windows 服务管理器或管理员 PowerShell 的 Start/Stop-Service 管理。服务异常退出由 SCM 重启；应用及子进程在 Job Object 中统一回收，内存硬预算取实际物理内存的 75%（明确分配策略）。
+- Windows MSI 的“Windows server service”是默认不选择的可选功能；管理员可在功能树选择，或静默安装指定 `ADDLOCAL=Application,Server`。服务名称 `MESHomework`，账户 `NT AUTHORITY\LocalService`，使用实际 ProgramData 下的 MESHomework，ACL 仅允许 SYSTEM、Administrators、LocalService；目录根由 SYSTEM 拥有，LocalService 可以管理内容但不能替换目录根或改写其 ACL。使用 Windows 服务管理器或管理员 PowerShell 的 Start/Stop-Service 管理。服务异常退出由 SCM 重启；应用及子进程在 Job Object 中统一回收，内存硬预算取实际物理内存的 75%（明确分配策略）。
 - Linux 安装 mes-homework.service，首次安装默认不启动/不启用；管理员执行 `sudo systemctl enable --now mes-homework`。专用账户 mes-homework，配置 `/etc/mes-homework/environment`（root:mes-homework，0640），数据 `/var/lib/mes-homework/data`。升级时若服务原本运行，则先停后重启；卸载停止服务，保留配置、数据及账户。MemoryHigh/Max=60%/75% 为显式策略，程序继续读取实际资源计算预算。
 - macOS 可执行 `"/Applications/MES Homework.app/Contents/MacOS/MESHomework" --install-agent`，注册当前用户的 LaunchAgent，在用户登录后后台运行服务器模式。数据为 `~/Library/Application Support/MESHomeworkServer`。这是用户登录服务，不是无需登录的系统 LaunchDaemon。停止并取消自启：`launchctl bootout "gui/$(id -u)/org.mes-homework.server"`，再移除该用户的 `~/Library/LaunchAgents/org.mes-homework.server.plist`。卸载 App 前应先取消 Agent。需要常驻系统服务的管理员可按实际服务账户另行配置 LaunchDaemon，包不会以 root 启动 Web 服务。
 
