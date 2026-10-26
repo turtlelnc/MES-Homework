@@ -3,6 +3,7 @@ import { DatabaseSync } from "node:sqlite";
 import fs from "node:fs";
 import { createRecognitionQueue, publicJob } from "./recognition-queue.mjs";
 import { seedTeachingFixture } from "./analysis.fixture.mjs";
+import { setTimeout as pause } from "node:timers/promises";
 let db: DatabaseSync, f: any, submission: any, user: any;
 beforeEach(() => {
   db = new DatabaseSync(":memory:");
@@ -15,7 +16,162 @@ beforeEach(() => {
 });
 afterEach(() => db.close());
 const result = { ocrText: "mock", items: [] };
+const addSubmission = (id: string) => {
+  db.prepare(
+    "INSERT INTO submissions(id,assignment_id,student_name,file_path,file_type,status,created_at) VALUES(?,?,?,?,?,?,?)",
+  ).run(
+    id,
+    f.assignmentId,
+    "synthetic",
+    "/unused.jpg",
+    "image/jpeg",
+    "uploaded",
+    new Date().toISOString(),
+  );
+  return db.prepare("SELECT * FROM submissions WHERE id=?").get(id);
+};
 describe("durable recognition", () => {
+  it("keeps concurrent publication and post-commit hooks bound to the correct submission", async () => {
+    const finish = new Map<string, (value: any) => void>();
+    const published: string[] = [];
+    const queue = createRecognitionQueue(
+      db,
+      (job) => new Promise((resolve) => finish.set(job.submission_id, resolve)),
+      {
+        concurrency: 2,
+        userConcurrency: 2,
+        publish(job, value) {
+          db.prepare(
+            "UPDATE submissions SET ocr_text=?,status='review' WHERE id=?",
+          ).run(value.ocrText, job.submission_id);
+        },
+        afterPublish(job, value) {
+          expect(
+            db
+              .prepare("SELECT status FROM recognition_jobs WHERE id=?")
+              .get(job.id)!.status,
+          ).toBe("succeeded");
+          expect(
+            db
+              .prepare("SELECT ocr_text FROM submissions WHERE id=?")
+              .get(job.submission_id)!.ocr_text,
+          ).toBe(value.ocrText);
+          published.push(job.submission_id);
+        },
+      },
+    );
+    queue.enqueue(addSubmission("hook-0"), user);
+    queue.enqueue(addSubmission("hook-1"), user);
+    const pending = queue.tick();
+    finish.get("hook-1")!({ ocrText: "second result" });
+    finish.get("hook-0")!({ ocrText: "first result" });
+    await pending;
+    queue.stop();
+    expect(published).toEqual(["hook-1", "hook-0"]);
+    expect(
+      db.prepare("SELECT ocr_text FROM submissions WHERE id='hook-0'").get()!
+        .ocr_text,
+    ).toBe("first result");
+    expect(
+      db.prepare("SELECT COUNT(*) n FROM recognition_sources").get()!.n,
+    ).toBe(0);
+  });
+  it("reduces new claims under pressure without cancelling work already running", async () => {
+    let capacity = 1;
+    const finish: Array<(r: any) => void> = [];
+    const queue = createRecognitionQueue(
+      db,
+      () => new Promise((resolve) => finish.push(resolve)),
+      {
+        concurrency: 4,
+        userConcurrency: 4,
+        availableConcurrency: () => capacity,
+      },
+    );
+    for (let i = 0; i < 4; i++)
+      queue.enqueue(addSubmission(`pressure-capacity-${i}`), user);
+    const first = queue.tick();
+    expect(finish).toHaveLength(1);
+    capacity = 0;
+    expect(await queue.tick()).toBe(0);
+    expect(finish).toHaveLength(1);
+    capacity = 4;
+    const rest = queue.tick();
+    expect(finish).toHaveLength(4);
+    finish.forEach((resolve) => resolve(result));
+    await Promise.all([first, rest]);
+    queue.stop();
+    expect(
+      Number(
+        db
+          .prepare(
+            "SELECT COUNT(*) n FROM recognition_jobs WHERE status='succeeded'",
+          )
+          .get()!.n,
+      ),
+    ).toBe(4);
+  });
+  it("refills a fast slot without waiting for another slow job, while respecting per-user capacity", async () => {
+    const calls: string[] = [];
+    const finish = new Map<string, (r: any) => void>();
+    const queue = createRecognitionQueue(
+      db,
+      (job, { signal }) =>
+        new Promise((resolve, reject) => {
+          calls.push(job.submission_id);
+          finish.set(job.submission_id, resolve);
+          signal.addEventListener("abort", () => reject(signal.reason), {
+            once: true,
+          });
+        }),
+      { concurrency: 4, userConcurrency: 2 },
+    );
+    for (let i = 0; i < 4; i++)
+      queue.enqueue(addSubmission(`parallel-${i}`), user);
+    const until = async (check: () => boolean) => {
+      for (let i = 0; i < 100 && !check(); i++) await pause(10);
+      expect(check()).toBe(true);
+    };
+    queue.start();
+    try {
+      await until(() => calls.length === 2);
+      await pause(30);
+      expect(calls).toHaveLength(2);
+      const fast = calls[1];
+      finish.get(fast)!(result);
+      await until(() => calls.length === 3);
+      expect(
+        db.prepare("SELECT status FROM submissions WHERE id=?").get(calls[0])!
+          .status,
+      ).toBe("queued");
+      expect(
+        db
+          .prepare("SELECT teacher_reviewed,status FROM submissions WHERE id=?")
+          .get(fast),
+      ).toMatchObject({ teacher_reviewed: 0, status: "review" });
+      expect(
+        Number(
+          db
+            .prepare(
+              "SELECT COUNT(*) n FROM recognition_jobs WHERE status='running'",
+            )
+            .get()!.n,
+        ),
+      ).toBe(2);
+    } finally {
+      queue.stop();
+      await until(
+        () =>
+          Number(
+            db
+              .prepare(
+                "SELECT COUNT(*) n FROM recognition_jobs WHERE status='running'",
+              )
+              .get()!.n,
+          ) === 0,
+      );
+    }
+  });
   it("deduplicates, invalidates approval atomically and publishes only to review", async () => {
     const queue = createRecognitionQueue(db, async () => result);
     const job = queue.enqueue(submission, user);

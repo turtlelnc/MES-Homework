@@ -17,6 +17,7 @@
   - 复核与批改：`review.mjs`（全部/仅存疑/不复核+存疑判定）、`grading.mjs`、`direct-grading.mjs`（无原题直批）、`mistakes-guide.mjs`（引导式错题本）。
   - OAuth 模型链接：`oauth.mjs`（provider 注册、attempt 路由、存储与模型调度），provider 协议模块 `oauth-chatgpt.mjs`（Codex OAuth 浏览器回调 + 设备码 + Responses API）与 `oauth-workbuddy.mjs`（浏览器/设备码轮询 + chat SSE）。
   - 模型调用模式/凭证路由：`model-access.mjs`；API Key 厂商预设：`providers.mjs`。
+  - 有界并发批改：`recognition-queue.mjs` 默认 4 并发，同一教师可并行处理不同答卷，完成即补位；`model-budget.mjs` 保留全局/学校/账户额度，学生最多 1 个在途；`model-images.mjs` 对 API Key/OAuth 内联图片预留共享 Base64 预算（默认 96 MiB）。API Key 请求显式非流式，OAuth 的 SSE/Responses 协议仍由 provider 模块处理。配置与压测方法见 `CONCURRENT_GRADING.md` / `LOAD_TESTING.md`。
   - 文档解析：`document.mjs` / `word.mjs`；备份/运维：`tools/ops/`、`server/backup*.mjs`。
 - **桌面版一键部署器（C++17）**：`tools/deployer/`。
   - `src/core/` 纯逻辑（SHA-256、ZIP 解压、manifest、安装状态、服务文本、部署引擎、自检）；`src/platform/` 是唯一允许直接调用 OS API 的层；`src/ui/` 为 ImGui 自绘界面；`src/app.cpp` 状态机；`src/main.cpp` 入口/窗口。

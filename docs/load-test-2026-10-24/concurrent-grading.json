@@ -1,0 +1,474 @@
+{
+  "dateUTC": "2026-10-24",
+  "scenario": "24 distinct submissions owned by one teacher; mock model 2s; 100 reads/second; same concurrent-grading code at each setting",
+  "runs": [
+    {
+      "config": {
+        "cpu": 4,
+        "memoryGiB": 4,
+        "swapGiB": 0,
+        "students": 10000,
+        "teachers": 100,
+        "initialSubmissions": 10000,
+        "jpegBytes": 1493284,
+        "mockModelDelayMs": 2000,
+        "ocrConcurrency": 1,
+        "clientTimeoutMs": 5000,
+        "clientIPs": "distinct synthetic users behind a trusted proxy",
+        "transport": "Unix relay to real loopback TCP HTTP; relay shares service cgroup"
+      },
+      "stages": [
+        {
+          "label": "grading-with-100-reads-per-second",
+          "offeredRps": 100,
+          "durationSeconds": 120,
+          "cap": 512,
+          "scheduled": 4921,
+          "clientSkipped": 0,
+          "peakInflight": 33,
+          "byType": {
+            "read": {
+              "count": 4921,
+              "statuses": {
+                "200": 4921
+              },
+              "successful": 4921,
+              "successOver2s": 0,
+              "maxMs": 323,
+              "bytes": 18360102,
+              "p95Ms": 16,
+              "successP95Ms": 16,
+              "successP99Ms": 76,
+              "successRps": 100
+            }
+          },
+          "elapsedSeconds": 49.22,
+          "resources": {
+            "maxRssMiB": 152,
+            "maxCgroupMiB": 165,
+            "maxLagP95Ms": 79,
+            "maxLagMs": 307,
+            "maxModelActive": 1,
+            "maxQueued": 24,
+            "maxQueueAgeSeconds": 46,
+            "lastCgroup": {
+              "memory.current": "173326336",
+              "memory.peak": "180768768",
+              "memory.events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+              "cpu.stat": "usage_usec 10761075\nuser_usec 8762417\nsystem_usec 1998658\nnice_usec 0\nnr_periods 506\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0",
+              "memory.swap.current": "0"
+            }
+          },
+          "operations": {
+            "resources": {
+              "version": 1,
+              "updatedAt": 1792856093398,
+              "sampledAt": 1792856092332,
+              "level": "normal",
+              "reasons": [],
+              "rssMiB": 145,
+              "systemSupported": true,
+              "availableMiB": 3931,
+              "budgetMiB": 4096
+            },
+            "passwordWork": {
+              "active": 0,
+              "pending": 0,
+              "concurrency": 2,
+              "maxPending": 16
+            },
+            "modelUsage": {
+              "callsLastDay": 24,
+              "callsLastHour": 24,
+              "active": 0
+            },
+            "jobs": [
+              {
+                "status": "succeeded",
+                "count": 24,
+                "oldest": 1792856044082
+              }
+            ]
+          }
+        }
+      ],
+      "grading": {
+        "jobs": 24,
+        "concurrency": 1,
+        "completed": 24,
+        "elapsedMs": 49069
+      },
+      "observedLimits": {
+        "node": "v24.19.0",
+        "platform": "linux",
+        "arch": "x64",
+        "cpuMax": "400000 100000",
+        "memoryMax": "4294967296",
+        "swapMax": "0"
+      },
+      "containerStateBeforeCleanup": {
+        "Status": "running",
+        "Running": true,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "ExitCode": 0,
+        "Error": "",
+        "StartedAt": "2026-10-24T15:34:01.332503931Z",
+        "FinishedAt": "0001-01-01T00:00:00Z"
+      }
+    },
+    {
+      "config": {
+        "cpu": 4,
+        "memoryGiB": 4,
+        "swapGiB": 0,
+        "students": 10000,
+        "teachers": 100,
+        "initialSubmissions": 10000,
+        "jpegBytes": 1493478,
+        "mockModelDelayMs": 2000,
+        "ocrConcurrency": 2,
+        "clientTimeoutMs": 5000,
+        "clientIPs": "distinct synthetic users behind a trusted proxy",
+        "transport": "Unix relay to real loopback TCP HTTP; relay shares service cgroup"
+      },
+      "stages": [
+        {
+          "label": "grading-with-100-reads-per-second",
+          "offeredRps": 100,
+          "durationSeconds": 120,
+          "cap": 512,
+          "scheduled": 2472,
+          "clientSkipped": 0,
+          "peakInflight": 5,
+          "byType": {
+            "read": {
+              "count": 2472,
+              "statuses": {
+                "200": 2472
+              },
+              "successful": 2472,
+              "successOver2s": 0,
+              "maxMs": 46,
+              "bytes": 9072384,
+              "p95Ms": 3,
+              "successP95Ms": 3,
+              "successP99Ms": 10,
+              "successRps": 99.9
+            }
+          },
+          "elapsedSeconds": 24.74,
+          "resources": {
+            "maxRssMiB": 165,
+            "maxCgroupMiB": 177,
+            "maxLagP95Ms": 25,
+            "maxLagMs": 47,
+            "maxModelActive": 2,
+            "maxQueued": 24,
+            "maxQueueAgeSeconds": 22,
+            "lastCgroup": {
+              "memory.current": "185307136",
+              "memory.peak": "191418368",
+              "memory.events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+              "cpu.stat": "usage_usec 4757055\nuser_usec 3862088\nsystem_usec 894966\nnice_usec 0\nnr_periods 263\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0",
+              "memory.swap.current": "0"
+            }
+          },
+          "operations": {
+            "resources": {
+              "version": 1,
+              "updatedAt": 1792856154213,
+              "sampledAt": 1792856152584,
+              "level": "normal",
+              "reasons": [],
+              "rssMiB": 168,
+              "systemSupported": true,
+              "availableMiB": 3921,
+              "budgetMiB": 4096
+            },
+            "passwordWork": {
+              "active": 0,
+              "pending": 0,
+              "concurrency": 2,
+              "maxPending": 16
+            },
+            "modelUsage": {
+              "callsLastDay": 24,
+              "callsLastHour": 24,
+              "active": 0
+            },
+            "jobs": [
+              {
+                "status": "succeeded",
+                "count": 24,
+                "oldest": 1792856129377
+              }
+            ]
+          }
+        }
+      ],
+      "grading": {
+        "jobs": 24,
+        "concurrency": 2,
+        "completed": 24,
+        "elapsedMs": 24602
+      },
+      "observedLimits": {
+        "node": "v24.19.0",
+        "platform": "linux",
+        "arch": "x64",
+        "cpuMax": "400000 100000",
+        "memoryMax": "4294967296",
+        "swapMax": "0"
+      },
+      "containerStateBeforeCleanup": {
+        "Status": "running",
+        "Running": true,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "ExitCode": 0,
+        "Error": "",
+        "StartedAt": "2026-10-24T15:35:26.654180488Z",
+        "FinishedAt": "0001-01-01T00:00:00Z"
+      }
+    },
+    {
+      "config": {
+        "cpu": 4,
+        "memoryGiB": 4,
+        "swapGiB": 0,
+        "students": 10000,
+        "teachers": 100,
+        "initialSubmissions": 10000,
+        "jpegBytes": 1492938,
+        "mockModelDelayMs": 2000,
+        "ocrConcurrency": 4,
+        "clientTimeoutMs": 5000,
+        "clientIPs": "distinct synthetic users behind a trusted proxy",
+        "transport": "Unix relay to real loopback TCP HTTP; relay shares service cgroup"
+      },
+      "stages": [
+        {
+          "label": "grading-with-100-reads-per-second",
+          "offeredRps": 100,
+          "durationSeconds": 120,
+          "cap": 512,
+          "scheduled": 1272,
+          "clientSkipped": 0,
+          "peakInflight": 9,
+          "byType": {
+            "read": {
+              "count": 1272,
+              "statuses": {
+                "200": 1272
+              },
+              "successful": 1272,
+              "successOver2s": 0,
+              "maxMs": 87,
+              "bytes": 4514484,
+              "p95Ms": 5,
+              "successP95Ms": 5,
+              "successP99Ms": 39,
+              "successRps": 99.9
+            }
+          },
+          "elapsedSeconds": 12.73,
+          "resources": {
+            "maxRssMiB": 208,
+            "maxCgroupMiB": 220,
+            "maxLagP95Ms": 50,
+            "maxLagMs": 66,
+            "maxModelActive": 4,
+            "maxQueued": 24,
+            "maxQueueAgeSeconds": 10,
+            "lastCgroup": {
+              "memory.current": "229908480",
+              "memory.peak": "263495680",
+              "memory.events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+              "cpu.stat": "usage_usec 3656375\nuser_usec 2794650\nsystem_usec 861725\nnice_usec 0\nnr_periods 142\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0",
+              "memory.swap.current": "0"
+            }
+          },
+          "operations": {
+            "resources": {
+              "version": 1,
+              "updatedAt": 1792856170774,
+              "sampledAt": 1792856166195,
+              "level": "normal",
+              "reasons": [],
+              "rssMiB": 209,
+              "systemSupported": true,
+              "availableMiB": 3886,
+              "budgetMiB": 4096
+            },
+            "passwordWork": {
+              "active": 0,
+              "pending": 0,
+              "concurrency": 2,
+              "maxPending": 16
+            },
+            "modelUsage": {
+              "callsLastDay": 24,
+              "callsLastHour": 24,
+              "active": 0
+            },
+            "jobs": [
+              {
+                "status": "succeeded",
+                "count": 24,
+                "oldest": 1792856157953
+              }
+            ]
+          }
+        }
+      ],
+      "grading": {
+        "jobs": 24,
+        "concurrency": 4,
+        "completed": 24,
+        "elapsedMs": 12708
+      },
+      "observedLimits": {
+        "node": "v24.19.0",
+        "platform": "linux",
+        "arch": "x64",
+        "cpuMax": "400000 100000",
+        "memoryMax": "4294967296",
+        "swapMax": "0"
+      },
+      "containerStateBeforeCleanup": {
+        "Status": "running",
+        "Running": true,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "ExitCode": 0,
+        "Error": "",
+        "StartedAt": "2026-10-24T15:35:55.176591182Z",
+        "FinishedAt": "0001-01-01T00:00:00Z"
+      }
+    },
+    {
+      "config": {
+        "cpu": 4,
+        "memoryGiB": 4,
+        "swapGiB": 0,
+        "students": 10000,
+        "teachers": 100,
+        "initialSubmissions": 10000,
+        "jpegBytes": 1492909,
+        "mockModelDelayMs": 2000,
+        "ocrConcurrency": 8,
+        "clientTimeoutMs": 5000,
+        "clientIPs": "distinct synthetic users behind a trusted proxy",
+        "transport": "Unix relay to real loopback TCP HTTP; relay shares service cgroup"
+      },
+      "stages": [
+        {
+          "label": "grading-with-100-reads-per-second",
+          "offeredRps": 100,
+          "durationSeconds": 120,
+          "cap": 512,
+          "scheduled": 720,
+          "clientSkipped": 0,
+          "peakInflight": 28,
+          "byType": {
+            "read": {
+              "count": 720,
+              "statuses": {
+                "200": 720
+              },
+              "successful": 720,
+              "successOver2s": 0,
+              "maxMs": 248,
+              "bytes": 2371096,
+              "p95Ms": 132,
+              "successP95Ms": 132,
+              "successP99Ms": 217,
+              "successRps": 99.9
+            }
+          },
+          "elapsedSeconds": 7.21,
+          "resources": {
+            "maxRssMiB": 203,
+            "maxCgroupMiB": 215,
+            "maxLagP95Ms": 137,
+            "maxLagMs": 402,
+            "maxModelActive": 8,
+            "maxQueued": 24,
+            "maxQueueAgeSeconds": 4,
+            "lastCgroup": {
+              "memory.current": "225275904",
+              "memory.peak": "282443776",
+              "memory.events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+              "cpu.stat": "usage_usec 4281608\nuser_usec 3274491\nsystem_usec 1007117\nnice_usec 0\nnr_periods 85\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0",
+              "memory.swap.current": "0"
+            }
+          },
+          "operations": {
+            "resources": {
+              "version": 1,
+              "updatedAt": 1792856181590,
+              "sampledAt": 1792856177568,
+              "level": "normal",
+              "reasons": [],
+              "rssMiB": 203,
+              "systemSupported": true,
+              "availableMiB": 3892,
+              "budgetMiB": 4096
+            },
+            "passwordWork": {
+              "active": 0,
+              "pending": 0,
+              "concurrency": 2,
+              "maxPending": 16
+            },
+            "modelUsage": {
+              "callsLastDay": 24,
+              "callsLastHour": 24,
+              "active": 0
+            },
+            "jobs": [
+              {
+                "status": "succeeded",
+                "count": 24,
+                "oldest": 1792856174279
+              }
+            ]
+          }
+        }
+      ],
+      "grading": {
+        "jobs": 24,
+        "concurrency": 8,
+        "completed": 24,
+        "elapsedMs": 7238
+      },
+      "observedLimits": {
+        "node": "v24.19.0",
+        "platform": "linux",
+        "arch": "x64",
+        "cpuMax": "400000 100000",
+        "memoryMax": "4294967296",
+        "swapMax": "0"
+      },
+      "containerStateBeforeCleanup": {
+        "Status": "running",
+        "Running": true,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "ExitCode": 0,
+        "Error": "",
+        "StartedAt": "2026-10-24T15:36:11.561298125Z",
+        "FinishedAt": "0001-01-01T00:00:00Z"
+      }
+    }
+  ]
+}

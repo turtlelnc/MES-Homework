@@ -24,7 +24,8 @@ export function createRecognitionQueue(
   db,
   execute,
   {
-    concurrency = positiveLimit("OCR_CONCURRENCY", 1),
+    concurrency = positiveLimit("OCR_CONCURRENCY", 4),
+    userConcurrency = positiveLimit("OCR_USER_CONCURRENCY", 4),
     maxPending = positiveLimit("OCR_MAX_PENDING", 100),
     schoolPending = positiveLimit("OCR_SCHOOL_MAX_PENDING", 25),
     maxAttempts = 3,
@@ -32,6 +33,7 @@ export function createRecognitionQueue(
     retryMs = 5000,
     now = Date.now,
     canStart = () => true,
+    availableConcurrency = () => concurrency,
     // Optional hooks let the API layer persist richer results (per-submission
     // question lists, automatic review) without teaching the queue about them.
     publish = null,
@@ -40,6 +42,7 @@ export function createRecognitionQueue(
 ) {
   let stopped = false;
   const controllers = new Set();
+  const inFlight = new Set();
   const active = (id) =>
     db
       .prepare(
@@ -141,15 +144,15 @@ export function createRecognitionQueue(
         )
         .get().n;
       const job =
-        count < concurrency &&
+        count < Math.min(concurrency, availableConcurrency()) &&
         db
           .prepare(
             `SELECT j.* FROM recognition_jobs j
         WHERE j.status='queued' AND j.available_at<=?
-          AND NOT EXISTS(SELECT 1 FROM recognition_jobs r WHERE r.user_id=j.user_id AND r.status='running')
-        ORDER BY j.available_at,j.created_at,j.id LIMIT 1`,
+          AND (SELECT COUNT(*) FROM recognition_jobs r WHERE r.user_id=j.user_id AND r.status='running') < ?
+        ORDER BY (SELECT COUNT(*) FROM recognition_jobs r WHERE r.user_id=j.user_id AND r.status='running'), j.available_at,j.created_at,j.id LIMIT 1`,
           )
-          .get(time);
+          .get(time, userConcurrency);
       if (job) {
         job.token = randomUUID();
         db.prepare(
@@ -194,7 +197,11 @@ export function createRecognitionQueue(
         else
           db.prepare(
             "UPDATE submissions SET status='review',teacher_reviewed=0,score=NULL,ocr_text=?,analysis_json=? WHERE id=?",
-          ).run(result.ocrText || "", JSON.stringify(result), job.submission_id);
+          ).run(
+            result.ocrText || "",
+            JSON.stringify(result),
+            job.submission_id,
+          );
         db.prepare(
           "UPDATE recognition_jobs SET status='succeeded',token=NULL,lease_until=NULL,error=NULL,error_status=NULL,updated_at=? WHERE id=?",
         ).run(now(), job.id);
@@ -276,33 +283,54 @@ export function createRecognitionQueue(
       controllers.delete(controller);
     }
   }
-  // Awaitable for deterministic tests; production scheduler does not overlap ticks.
-  async function tick() {
+  // Claim synchronously; asynchronous jobs have independent completion paths.
+  function dispatch() {
     if (stopped) return;
     recover();
-    if (!canStart()) return 0;
+    if (!canStart()) return [];
     const running = [];
     for (let i = 0; i < concurrency; i++) {
+      if (inFlight.size >= Math.min(concurrency, availableConcurrency())) break;
       const job = claim();
       if (!job) break;
-      running.push(run(job));
+      const task = run(job);
+      inFlight.add(task);
+      const finished = () => {
+        inFlight.delete(task);
+        if (started && !stopped) schedule(0);
+      };
+      task.then(finished, finished);
+      running.push(task);
     }
+    return running;
+  }
+  // Awaitable batch for deterministic callers. Production never waits for the
+  // slowest job before refilling a slot that has already finished.
+  async function tick() {
+    const running = dispatch() || [];
     await Promise.all(running);
     return running.length;
   }
-  let scheduler;
-  function start() {
-    if (scheduler || stopped) return;
-    const next = async () => {
-      let claimed = 0;
+  let scheduler,
+    started = false;
+  function schedule(ms) {
+    clearTimeout(scheduler);
+    scheduler = setTimeout(() => {
       try {
-        claimed = await tick();
+        for (const task of dispatch() || [])
+          task.catch(() =>
+            console.error("Recognition worker failed; lease recovery retained"),
+          );
       } catch {
         console.error("Recognition scheduler failed; retrying on next tick");
       }
-      if (!stopped) scheduler = setTimeout(next, claimed ? 500 : 2000);
-    };
-    scheduler = setTimeout(next, 0);
+      if (!stopped) schedule(inFlight.size ? 500 : 2000);
+    }, ms);
+  }
+  function start() {
+    if (started || stopped) return;
+    started = true;
+    schedule(0);
   }
   return {
     enqueue,
@@ -317,4 +345,3 @@ export function createRecognitionQueue(
     },
   };
 }
-

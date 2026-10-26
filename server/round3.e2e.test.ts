@@ -373,13 +373,14 @@ describe("third-round security and consistency regressions (mock model only)", (
       )
       .get(submissionId);
     const now = Date.now();
-    db.prepare("INSERT INTO model_usage VALUES(?,?,?,?,NULL,?)").run(
-      "busy-ocr",
-      fixture.teacherId,
-      fixture.schoolId,
-      now,
-      now + 95000,
-    );
+    for (let i = 0; i < 4; i++)
+      db.prepare("INSERT INTO model_usage VALUES(?,?,?,?,NULL,?)").run(
+        `busy-ocr-${i}`,
+        fixture.teacherId,
+        fixture.schoolId,
+        now,
+        now + 95000,
+      );
     const count = calls();
     const busyResponse = await request(
       `/api/submissions/${submissionId}/recognize`,
