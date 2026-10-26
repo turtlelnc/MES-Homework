@@ -6,7 +6,7 @@
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat)](LICENSE)
 [![Security](https://img.shields.io/badge/security-P0%2FP1%20fixed-success?style=flat)](SECURITY_REVIEW.md)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey?style=flat)](tools/deployer/README.md)
-[![Deployer](https://img.shields.io/badge/deployer-desktop%20GUI-0A84FF?style=flat)](tools/deployer/README.md)
+[![Installer](https://img.shields.io/badge/installer-MSI%20%7C%20DEB%20%7C%20RPM%20%7C%20PKG-0A84FF?style=flat)](tools/installer/README.md)
 [![Editions](https://img.shields.io/badge/editions-local%20%7C%20server-555555?style=flat)](tools/deployer/README.md)
 [![Node](https://img.shields.io/badge/node-%E2%89%A524-339933?style=flat&logo=nodedotjs&logoColor=white)](package.json)
 [![](https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness)
@@ -156,28 +156,13 @@ B3组 校园作业分析器
 - AI批改作业无需再上传原题再批改，新增老师简单描述做作业内容的输入框（非必填）
 - 学生端的错题本应是引导学生思考并巩固，而不是直接放答案。
 
-## 一键部署（桌面应用，无依赖）
+## 原生安装包
 
-![桌面版一键部署器](docs/screenshots-v0.2.1/deployer-welcome.png)
+Windows 使用常规 **MSI**，Linux 使用 **DEB/RPM**，macOS Apple Silicon 使用 **PKG**。安装后从系统应用入口打开 MES Homework，在默认浏览器使用 WebGUI；不再使用旧 C++/ImGui 自绘部署向导。
 
-v0.2.1-rc4 起使用 **C++ 桌面版一键部署器**（GLFW + Dear ImGui + miniz，单文件、无外部运行时依赖，
-Apple 风格界面 + 轻量毛玻璃）。启动后选择 **本地版**（本机使用，自动打开浏览器）或
-**服务器版**（局域网/学校服务器，可选开机自启与防火墙放行），向导完成下载运行时 → SHA-256 校验 →
-解压 → 写入配置 → 启动/注册服务 → 健康检查。
+支持 Windows x64/ARM64、Linux x64/ARM64 和 macOS ARM64。旧发行中的 x86 文件只是部署器，Node 24 没有配套的 32 位应用运行时，不作为完整应用支持。包内携带 Node 与生产依赖，数据/密钥独立于程序安装目录，升级及卸载默认保留。
 
-支持 Windows 10/11（x64/x86/arm64）、Debian/RHEL 系与银河麒麟（x64/x86/arm64）以及
-macOS Apple Silicon。部署器**不需要**目标机预先安装 Node.js、npm、Git 或 VC++ 运行库：
-应用运行时包与 Node 二进制随 GitHub Release 下载（也支持离线 zip）。
-
-从 [GitHub Releases](https://github.com/turtlelnc/MES-Homework/releases) 的 `v0.2.1-rc4`
-下载对应平台的单文件部署器（如 `mes-deployer-windows-x64.exe`），双击即可；也可从源码构建：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File tools/deployer/build.ps1
-# 产物：dist-deployer/mes-deployer.exe
-```
-
-Linux/macOS 构建、运行时包结构、离线安装与安全说明见 [tools/deployer/README.md](tools/deployer/README.md)。
+下载对应原生安装资产；在 PR 中可从 Native installers 工作流的 `native-installers-verified` artifact 获取已验证安装包。证书尚未配置，MSI/PKG 未签名/未公证，系统可能提示未知发布者。服务器模式、数据迁移、安装/停止/卸载和构建验证详见 [原生安装包说明](tools/installer/README.md)。旧版迁移请先备份，保留原 APP_SECRET 与 DATA_DIR，不要直接打开空的新目录后误认为旧数据被删除。
 
 ## 本地或服务器运行
 

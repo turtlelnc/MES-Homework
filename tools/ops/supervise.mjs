@@ -24,7 +24,8 @@ export function supervise(
   const terminate = () => {
     if (stopping) return;
     stopping = true;
-    child.kill("SIGTERM");
+    if (child.connected) child.send({ type: "shutdown" }, () => {});
+    else child.kill("SIGTERM");
     force = setTimeout(() => child.kill("SIGKILL"), graceMs);
   };
   let stalled = false;
@@ -43,11 +44,20 @@ export function supervise(
   };
   process.once("SIGTERM", stop);
   process.once("SIGINT", stop);
+  const message = (value) => {
+    if (value?.type === "shutdown") stop();
+  };
+  if (process.send) {
+    process.on("message", message);
+    process.once("disconnect", stop);
+  }
   child.once("exit", (code) => {
     clearInterval(timer);
     clearTimeout(force);
     process.off("SIGTERM", stop);
     process.off("SIGINT", stop);
+    process.off("message", message);
+    process.off("disconnect", stop);
     onExit(stalled ? 1 : (code ?? (stopping ? 0 : 1)));
   });
   child.once("error", () => {

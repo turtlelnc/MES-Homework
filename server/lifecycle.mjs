@@ -43,5 +43,10 @@ export function installLifecycle(server, stop) {
   process.once("SIGTERM", shutdown);
   process.once("SIGINT", shutdown);
   // If its supervisor dies, the API must not remain as an unmonitored orphan.
-  if (process.send) process.once("disconnect", shutdown);
+  if (process.send) {
+    process.once("disconnect", shutdown);
+    process.on("message", (message) => {
+      if (message?.type === "shutdown") shutdown();
+    });
+  }
 }
