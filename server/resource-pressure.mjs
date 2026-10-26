@@ -1,3 +1,4 @@
+import { runtimeProfile } from "./runtime-profile.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { monitorEventLoopDelay } from "node:perf_hooks";
@@ -21,11 +22,7 @@ export function createResourcePressure(
     publish = true,
   } = {},
 ) {
-  const configured = Number(process.env.SERVICE_RSS_SOFT_MB);
-  const rssLimit =
-    (Number.isSafeInteger(configured) && configured > 0 ? configured : 1536) *
-    1024 *
-    1024;
+  const rssLimit = runtimeProfile().rssMiB * 1024 ** 2;
   const delay = lag ? null : monitorEventLoopDelay({ resolution: 20 });
   delay?.enable();
   let sample = { supported: false },
@@ -56,6 +53,11 @@ export function createResourcePressure(
           : []),
       ],
       rssMiB: Math.round(rss() / 1024 ** 2),
+      diskFreeMiB:
+        disk === undefined
+          ? null
+          : Math.floor(Math.max(0, disk - diskDebt) / 1024 ** 2),
+      diskReserveMiB: Math.ceil(diskReserve / 1024 ** 2),
       systemSupported: sample.supported,
       availableMiB: sample.supported
         ? Math.round(sample.availableBytes / 1024 ** 2)
@@ -115,7 +117,8 @@ export function createResourcePressure(
       });
     return systemPending;
   }
-  let diskDebt = 0;
+  let diskDebt = 0,
+    diskReserve = 0;
   let disk,
     checkedAt = 0,
     pending,
@@ -128,6 +131,12 @@ export function createResourcePressure(
       .then(
         (value) => {
           disk = value.bavail * value.bsize;
+          diskReserve = process.env.DISK_MIN_FREE_MB
+            ? Number(process.env.DISK_MIN_FREE_MB) * 1024 ** 2
+            : Math.max(
+                value.bsize,
+                Math.floor(((value.blocks || value.bavail) * value.bsize) / 20),
+              );
           diskDebt -= debtAtStart;
           checkedAt = now();
         },
@@ -149,7 +158,7 @@ export function createResourcePressure(
     assertMemory();
     if (disk === undefined || now() - checkedAt > 15000)
       throw uploadError("存储暂不可用，请稍后重试", 503);
-    if (disk - diskDebt < reservedBytes + 128 * 1024 * 1024)
+    if (disk - diskDebt <= reservedBytes + diskReserve)
       throw uploadError("服务器可用空间不足，暂不能接收文件", 507);
   }
   const ready = Promise.all([refresh(), refreshSystem()]);

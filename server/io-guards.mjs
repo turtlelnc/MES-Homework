@@ -1,12 +1,17 @@
 // Bound both response buffering and the lifetime of upstream connections.
 export const ioError = (message, code = "IO_TIMEOUT") =>
   Object.assign(new Error(message), { code, status: 502 });
+export const databaseBusy = (error) =>
+  ["SQLITE_BUSY", "SQLITE_LOCKED"].includes(error?.code) ||
+  (Number.isInteger(error?.errcode) && [5, 6].includes(error.errcode & 255));
 export const storageStatus = (error) =>
-  error?.code === "ENOSPC" || error?.code === "EDQUOT"
-    ? 507
-    : ["EIO", "EROFS", "EMFILE", "ENFILE"].includes(error?.code)
-      ? 503
-      : null;
+  databaseBusy(error)
+    ? 503
+    : error?.code === "ENOSPC" || error?.code === "EDQUOT"
+      ? 507
+      : ["EIO", "EROFS", "EMFILE", "ENFILE"].includes(error?.code)
+        ? 503
+        : null;
 
 export function abortable(promise, signal) {
   if (!signal) return promise;

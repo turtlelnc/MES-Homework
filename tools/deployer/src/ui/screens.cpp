@@ -254,10 +254,10 @@ void drawInstalledStrip(AppState& state, const Rect& rect) {
   const float dotEnd = ImGui::GetCursorScreenPos().x;
   label(fMedium(), ImVec2(dotEnd, cy - sp(19.0f)), c.text,
         state.serviceRunning ? "已安装 · 运行中" : "已安装 · 已停止");
-  const float versionW = measure(fSmall(), "v0.2.1-rc3").x + sp(20.0f);
+  const float versionW = measure(fSmall(), core::kVersion).x + sp(20.0f);
   setCursor(dotEnd + measure(fMedium(), "已安装 · 运行中").x + sp(12.0f),
             cy - sp(20.0f));
-  badge(state.installed ? state.installState.version.c_str() : "v0.2.1-rc3",
+  badge(state.installed ? state.installState.version.c_str() : core::kVersion,
         withAlpha(c.accent, 0.12f), c.accent);
   (void)versionW;
   if (state.previewData) {
@@ -512,11 +512,11 @@ void drawConfigurePage(AppState& state) {
     setCursor(fieldX, y);
     std::string portText = std::to_string(state.options.port);
     setLayoutWidth(fieldW);
-    if (textField("configure-port", &portText, "8787", sp(120.0f), true)) {
+    if (textField("configure-port", &portText, "端口", sp(120.0f), true)) {
       const long parsed = std::strtol(portText.c_str(), nullptr, 10);
       if (parsed >= 1 && parsed <= 65535) state.options.port = static_cast<int>(parsed);
     }
-    const std::string hintText = "默认 8787 · " +
+    const std::string hintText = std::string("当前端口 ")+std::to_string(state.options.port)+" · " +
                                  std::string(state.edition == core::Edition::Local
                                                  ? "本地版仅本机可访问"
                                                  : "服务器版局域网可访问");
@@ -568,7 +568,8 @@ void drawConfigurePage(AppState& state) {
   y += sp(24.0f);
   int sourceIndex = state.options.payloadZip.empty() ? 0 : 1;
   {
-    static const char* sourceLabels[] = {"自动下载 v0.2.1-rc3", "选择本地 zip"};
+    const std::string downloadLabel=std::string("自动下载 ")+state.options.releaseTag;
+    const char* sourceLabels[] = {downloadLabel.c_str(), "选择本地 zip"};
     rowLabel(y, "来源");
     setCursor(fieldX, y + sp(2.0f));
     setLayoutWidth(fieldW);
@@ -600,7 +601,7 @@ void drawConfigurePage(AppState& state) {
     y += sp(46.0f);
   } else {
     label(fSmall(), ImVec2(leftInner.min.x, y), c.textTertiary,
-          "将从 GitHub Releases 自动下载 v0.2.1-rc3（约 43 MB）并校验 SHA-256。");
+          std::string("将读取 GitHub Releases 清单 ")+state.options.releaseTag+"，按真实清单大小下载并校验 SHA-256。");
   }
 
   // 底部安装前检查提示
@@ -1501,7 +1502,7 @@ void drawTopBar(AppState& state) {
   const float rightLimit = display.x - sp(112.0f);
   // 版本小标签
   {
-    const std::string items[] = {"离线可用", "v0.2.1-rc3", "build 26102403"};
+    const std::string items[] = {"离线安装需完整运行时包", core::kVersion, std::string("build ") + core::kBuild};
     float totalW = 0.0f;
     for (const std::string& item : items)
       totalW += measure(fSmall(), item).x + sp(20.0f) + sp(8.0f);
@@ -1546,7 +1547,7 @@ void drawFooter(AppState& state) {
   const float afterDot = ImGui::GetCursorScreenPos().x;
   const std::string platformText =
       state.platform.osLabel + " · " + state.platform.archLabel +
-      "    部署器 v0.2.1-rc3 · build 26102403";
+      std::string("    部署器 ") + core::kVersion + " · build " + core::kBuild;
   label(fSmall(), ImVec2(afterDot, cy - sp(6.0f)), c.textSecondary, platformText);
   if (state.demoMode) {
     setCursor(afterDot + measure(fSmall(), platformText).x + sp(16.0f),

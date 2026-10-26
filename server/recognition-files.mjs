@@ -1,3 +1,4 @@
+import { runtimeProfile } from "./runtime-profile.mjs";
 import { fork } from "node:child_process";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -10,7 +11,7 @@ export function recognitionFiles(
   signal,
   {
     entry = new URL("./recognition-files-worker.mjs", import.meta.url),
-    rssMB = 512,
+    rssMB = runtimeProfile().parserRssMiB,
     intervalMs = 250,
     admission = () => {},
   } = {},
@@ -48,7 +49,7 @@ export function recognitionFiles(
       entry instanceof URL ? fileURLToPath(entry) : entry,
       [],
       {
-        execArgv: ["--max-old-space-size=256"],
+        execArgv: [`--max-old-space-size=${runtimeProfile().parserHeapMiB}`],
         stdio: ["ignore", "ignore", "ignore", "ipc"],
       },
     );

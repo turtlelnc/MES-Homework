@@ -1,0 +1,10 @@
+{
+  "version": "v0.2.1-rc4",
+  "build": "26102501",
+  "platform": "linux",
+  "arch": "x64",
+  "asset": "mes-homework-app-linux-x64.zip",
+  "sha256": "93b75372530b3a01d531c790b8dd835c4da0c1b9cbeeb2ff603a072a5c60c15c",
+  "size": 143881206,
+  "nodeVersion": "v24.19.0"
+}

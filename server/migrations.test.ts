@@ -1,3 +1,4 @@
+import os from "node:os";
 import { describe, expect, it } from "vitest";
 import { DatabaseSync } from "node:sqlite";
 import fs from "node:fs";
@@ -5,6 +6,112 @@ import path from "node:path";
 
 const root = path.resolve(import.meta.dirname, "..");
 const schemaSql = fs.readFileSync(path.join(root, "server/schema.sql"), "utf8");
+it("rolls back the complete upgrade on a malformed schema and restores foreign-key enforcement", async () => {
+  const { migrateDatabase, schemaDifferences } =
+    await import("./migrations.mjs");
+  const db = legacyDatabase();
+  try {
+    const before = JSON.stringify(
+      db.prepare("SELECT name,sql FROM sqlite_master ORDER BY name").all(),
+    );
+    expect(() =>
+      migrateDatabase(db, { schemaSql: schemaSql + "\nTHIS IS NOT SQL;" }),
+    ).toThrow();
+    expect(
+      JSON.stringify(
+        db.prepare("SELECT name,sql FROM sqlite_master ORDER BY name").all(),
+      ),
+    ).toBe(before);
+    expect(db.prepare("PRAGMA foreign_keys").get()!.foreign_keys).toBe(1);
+    migrateDatabase(db, { schemaSql });
+    expect(schemaDifferences(db, schemaSql)).toEqual([]);
+    db.exec("DROP INDEX idx_users_school");
+    expect(schemaDifferences(db, schemaSql)).toContain(
+      "index:idx_users_school",
+    );
+    migrateDatabase(db, { schemaSql });
+    expect(schemaDifferences(db, schemaSql)).toEqual([]);
+  } finally {
+    db.close();
+  }
+});
+
+it("does not silently discard deployment-specific checks while aligning a release table", async () => {
+  const { migrateDatabase } = await import("./migrations.mjs");
+  const db = new DatabaseSync(":memory:");
+  const customized = schemaSql.replace(
+    "score REAL NOT NULL DEFAULT 0,FOREIGN KEY(assignment_id) REFERENCES assignments(id) ON DELETE CASCADE",
+    "score REAL NOT NULL DEFAULT 0 CHECK(score >= 0 AND length(prompt) > 0)",
+  );
+  try {
+    db.exec(customized);
+    expect(() => migrateDatabase(db, { schemaSql })).toThrow("未识别 CHECK");
+    expect(
+      db.prepare("SELECT sql FROM sqlite_master WHERE name='questions'").get()!
+        .sql,
+    ).toContain("length(prompt)");
+    expect(db.prepare("PRAGMA foreign_keys").get()!.foreign_keys).toBe(1);
+  } finally {
+    db.close();
+  }
+});
+
+it("preserves custom indexes and triggers across legacy user rebuilding", async () => {
+  const { migrateDatabase } = await import("./migrations.mjs");
+  const db = legacyDatabase();
+  try {
+    db.exec(
+      "CREATE INDEX deployment_user_name ON users(name); CREATE TRIGGER deployment_user_trigger AFTER UPDATE OF name ON users BEGIN SELECT 1; END",
+    );
+    migrateDatabase(db, { schemaSql });
+    expect(
+      db
+        .prepare(
+          "SELECT count(*) n FROM sqlite_master WHERE name IN ('deployment_user_name','deployment_user_trigger')",
+        )
+        .get()!.n,
+    ).toBe(2);
+  } finally {
+    db.close();
+  }
+});
+it("rolls back legacy rebuilding rather than dropping unknown user columns", async () => {
+  const { migrateDatabase } = await import("./migrations.mjs");
+  const db = legacyDatabase();
+  try {
+    db.exec(
+      "ALTER TABLE users ADD COLUMN deployment_note TEXT DEFAULT 'retained'",
+    );
+    expect(() => migrateDatabase(db, { schemaSql })).toThrow("未识别字段");
+    expect(
+      db.prepare("SELECT deployment_note FROM users LIMIT 1").get()!
+        .deployment_note,
+    ).toBe("retained");
+  } finally {
+    db.close();
+  }
+});
+
+it("restores foreign keys even when the upgrade cannot acquire its initial write lock", async () => {
+  const { migrateDatabase } = await import("./migrations.mjs");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mes-migration-lock-"));
+  const file = path.join(dir, "data.sqlite");
+  const writer = new DatabaseSync(file),
+    reader = new DatabaseSync(file);
+  try {
+    writer.exec(schemaSql);
+    reader.exec("PRAGMA foreign_keys=ON; PRAGMA busy_timeout=0");
+    writer.exec("BEGIN IMMEDIATE");
+    expect(() => migrateDatabase(reader, { schemaSql })).toThrow();
+    expect(reader.isTransaction).toBe(false);
+    expect(reader.prepare("PRAGMA foreign_keys").get()!.foreign_keys).toBe(1);
+  } finally {
+    if (writer.isTransaction) writer.exec("ROLLBACK");
+    reader.close();
+    writer.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 // v0.2.0 的旧库结构（用户/错题表与当前版本不兼容，必须原地升级）。
 const legacySchema = `
@@ -25,7 +132,11 @@ function legacyDatabase() {
   const db = new DatabaseSync(":memory:");
   db.exec(legacySchema);
   const time = new Date().toISOString();
-  db.prepare("INSERT INTO schools VALUES(?,?,?)").run("school-1", "老学校", time);
+  db.prepare("INSERT INTO schools VALUES(?,?,?)").run(
+    "school-1",
+    "老学校",
+    time,
+  );
   const insertUser = db.prepare(
     "INSERT INTO users(id,school_id,role,name,email,password_hash,salt,stage,subject,class_name,created_at,is_school_admin) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
   );
@@ -130,9 +241,7 @@ function legacyDatabase() {
     6,
     time,
   );
-  db.prepare(
-    "INSERT INTO mistakes VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-  ).run(
+  db.prepare("INSERT INTO mistakes VALUES(?,?,?,?,?,?,?,?,?,?,?,?)").run(
     "m-1",
     "s-1",
     "u-student",
@@ -160,15 +269,15 @@ describe("v0.2.1 schema migrations", () => {
     expect(users.every((user) => typeof user.username === "string")).toBe(true);
     expect(new Set(users.map((user) => user.username)).size).toBe(4);
     expect(users.every((user) => user.review_mode === "all")).toBe(true);
-    expect(users.every((user) => user.model_auth_mode === "api_key")).toBe(true);
+    expect(users.every((user) => user.model_auth_mode === "api_key")).toBe(
+      true,
+    );
     // legacy emails still work for login and are preserved
     expect(users.find((user) => user.id === "u-teacher").email).toBe(
       "wang@old.test",
     );
     // sessions survive the table rebuild
-    expect(
-      db.prepare("SELECT COUNT(*) n FROM sessions").get().n,
-    ).toBe(1);
+    expect(db.prepare("SELECT COUNT(*) n FROM sessions").get().n).toBe(1);
     // parent role is accepted by the rebuilt CHECK constraint
     db.prepare(
       "INSERT INTO users(id,school_id,role,name,username,email,password_hash,salt,stage,subject,class_name,created_at,is_school_admin) VALUES(?,?,?,?,?,NULL,?,?,?,?,?,?,0)",
@@ -195,9 +304,19 @@ describe("v0.2.1 schema migrations", () => {
     // direct-grading mistakes need a nullable question_id
     db.prepare(
       "INSERT INTO mistakes(id,submission_id,student_id,question_id,knowledge_id,reason,student_answer,correction,created_at) VALUES(?,?,?,NULL,NULL,?,?,?,?)",
-    ).run("m-direct", "s-1", "u-student", "粗心", "8", "7", new Date().toISOString());
+    ).run(
+      "m-direct",
+      "s-1",
+      "u-student",
+      "粗心",
+      "8",
+      "7",
+      new Date().toISOString(),
+    );
 
-    const assignment = db.prepare("SELECT * FROM assignments WHERE id='a-1'").get();
+    const assignment = db
+      .prepare("SELECT * FROM assignments WHERE id='a-1'")
+      .get();
     expect(assignment.description).toBe("");
     expect(assignment.grading_mode).toBe("bank");
     expect(
@@ -217,7 +336,9 @@ describe("v0.2.1 schema migrations", () => {
     ])
       expect(
         db
-          .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?")
+          .prepare(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+          )
           .get(table),
         table,
       ).toBeTruthy();
@@ -229,15 +350,11 @@ describe("v0.2.1 schema migrations", () => {
     const db = new DatabaseSync(":memory:");
     migrateDatabase(db, { schemaSql });
     const before = JSON.stringify(
-      db
-        .prepare("SELECT name,sql FROM sqlite_master ORDER BY name")
-        .all(),
+      db.prepare("SELECT name,sql FROM sqlite_master ORDER BY name").all(),
     );
     migrateDatabase(db, { schemaSql });
     const after = JSON.stringify(
-      db
-        .prepare("SELECT name,sql FROM sqlite_master ORDER BY name")
-        .all(),
+      db.prepare("SELECT name,sql FROM sqlite_master ORDER BY name").all(),
     );
     expect(after).toBe(before);
     db.close();
@@ -305,15 +422,11 @@ describe("v0.2.1-rc4 oauth meta_json migration", () => {
     const db = rc3OauthDatabase();
     migrateDatabase(db, { schemaSql });
     const before = JSON.stringify(
-      db
-        .prepare("SELECT name,sql FROM sqlite_master ORDER BY name")
-        .all(),
+      db.prepare("SELECT name,sql FROM sqlite_master ORDER BY name").all(),
     );
     migrateDatabase(db, { schemaSql });
     const after = JSON.stringify(
-      db
-        .prepare("SELECT name,sql FROM sqlite_master ORDER BY name")
-        .all(),
+      db.prepare("SELECT name,sql FROM sqlite_master ORDER BY name").all(),
     );
     expect(after).toBe(before);
     db.close();

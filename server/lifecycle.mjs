@@ -1,5 +1,5 @@
 import http from "node:http";
-import { positive } from "./upload-admission.mjs";
+import { runtimeProfile } from "./runtime-profile.mjs";
 
 export function createHttpServer(app) {
   const server = http.createServer(
@@ -13,7 +13,7 @@ export function createHttpServer(app) {
     },
     app,
   );
-  server.maxConnections = positive("HTTP_MAX_CONNECTIONS", 512);
+  server.maxConnections = runtimeProfile().httpConnections;
   server.maxRequestsPerSocket = 100;
   return server;
 }

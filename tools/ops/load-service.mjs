@@ -347,6 +347,7 @@ async function stage(
       passwordWork: o.passwordWork,
       modelUsage: o.modelUsage,
       jobs: o.jobs,
+      runtime: o.runtime,
     };
   }
   results.push(stats);
@@ -363,7 +364,7 @@ async function stage(
           initialSubmissions: 10000,
           jpegBytes: jpeg.length,
           mockModelDelayMs: 2000,
-          ocrConcurrency: Number(process.env.LOAD_OCR_CONCURRENCY || 4),
+          ocrConcurrency: process.env.LOAD_OCR_CONCURRENCY || "4",
           clientTimeoutMs: 5000,
           clientIPs: "distinct synthetic users behind a trusted proxy",
           transport:
@@ -378,8 +379,11 @@ async function stage(
   console.log(JSON.stringify(stats));
 }
 try {
-  const ocr = Number(process.env.LOAD_OCR_CONCURRENCY || 4);
-  if (!Number.isSafeInteger(ocr) || ocr < 1 || ocr > 16)
+  const ocr =
+    process.env.LOAD_OCR_CONCURRENCY === "auto"
+      ? null
+      : Number(process.env.LOAD_OCR_CONCURRENCY || 4);
+  if (ocr !== null && (!Number.isSafeInteger(ocr) || ocr < 1 || ocr > 16))
     throw new Error("Load OCR concurrency must be 1..16");
   const mounts = [
     [root, "/app"],
@@ -421,7 +425,7 @@ try {
       "MODEL_GLOBAL_CONCURRENCY",
       "MODEL_SCHOOL_CONCURRENCY",
       "MODEL_STAFF_CONCURRENCY",
-    ].flatMap((key) => ["-e", `${key}=${ocr}`]),
+    ].flatMap((key) => (ocr === null ? [] : ["-e", `${key}=${ocr}`])),
     image,
     "/node",
     "--max-old-space-size=1024",
@@ -464,7 +468,13 @@ try {
   if (setup.status !== 200)
     throw new Error("Mock provider setup failed: " + setup.body);
   await pause(1500);
-  if (process.env.LOAD_MODE === "grading") {
+  if (process.env.LOAD_MODE === "roster") {
+    for (const rate of [10, 25, 50]) {
+      await stage(`full-school-roster-${rate}`, rate, 10, 128, async () => [
+        "roster", await request("/api/students", manifest.admin),
+      ]);
+    }
+  } else if (process.env.LOAD_MODE === "grading") {
     const jobs = manifest.submissions.slice(0, 24),
       completed = new Map();
     const started = Date.now();

@@ -14,7 +14,7 @@ namespace {
 
 constexpr size_t kMaxLogLines = 500;
 
-core::ProgressState demoProgress() {
+core::ProgressState demoProgress(const core::PlatformInfo& platform) {
   core::ProgressState progress;
   progress.running = true;
   progress.percent = 46;
@@ -25,56 +25,38 @@ core::ProgressState demoProgress() {
     const char* detail;
     core::StepState state;
   } steps[] = {
-      {"platform", "检查系统兼容性", "Windows · x64", core::StepState::Done},
-      {"download", "获取安装包", "已下载 42.8 MB", core::StepState::Done},
-      {"verify", "校验安装包", "SHA-256 校验通过", core::StepState::Done},
-      {"extract", "解压应用文件", "正在写入 128 个文件", core::StepState::Running},
+      {"platform", "检查系统兼容性", "当前运行环境", core::StepState::Done},
+      {"download", "获取安装包", "演示下载步骤（未下载真实文件）", core::StepState::Done},
+      {"verify", "校验安装包", "演示校验步骤", core::StepState::Done},
+      {"extract", "解压应用文件", "演示解压步骤（未写入真实文件）", core::StepState::Running},
       {"config", "写入配置", "生成 .env 与启动脚本", core::StepState::Pending},
       {"service", "安装系统服务", "创建开机启动项", core::StepState::Pending},
       {"start", "启动应用", "等待本地服务就绪", core::StepState::Pending},
-      {"health", "健康检查", "检查 http://127.0.0.1:8787", core::StepState::Pending},
+      {"health", "健康检查", "读取实际配置的健康检查地址", core::StepState::Pending},
   };
   for (const auto& step : steps) {
     core::Step item;
     item.id = step.id;
     item.title = step.title;
-    item.detail = step.detail;
+    item.detail = std::string(step.id)=="platform" ? platform.osLabel+" · "+platform.archLabel : step.detail;
     item.state = step.state;
     progress.steps.push_back(item);
   }
   return progress;
 }
 
-std::deque<LogLine> demoLogs() {
-  std::deque<LogLine> logs;
-  const struct {
-    const char* level;
-    const char* text;
-  } lines[] = {
-      {"info", "部署器 v0.2.1-rc3 (build 26102403) 启动"},
-      {"step", "检查系统兼容性：Windows 11 · x64"},
-      {"ok", "系统兼容性检查通过（磁盘剩余 86.4 GB）"},
-      {"step", "获取安装包：mes-homework-app-windows-x64.zip"},
-      {"info", "下载地址：GitHub Releases · v0.2.1-rc3"},
-      {"ok", "下载完成，共 42.8 MB（耗时 3.2s）"},
-      {"step", "校验安装包完整性"},
-      {"ok", "SHA-256 校验通过：9f2c…a71e"},
-      {"step", "解压应用文件到安装目录"},
-      {"info", "runtime/node.exe 已就绪"},
-      {"info", "app/server/index.mjs 已写入"},
-      {"warn", "已跳过防火墙规则（本地版无需放行）"},
-      {"step", "写入配置：.env / 启动脚本"},
-      {"ok", "APP_SECRET 已生成并写入配置文件"},
-  };
-  for (const auto& line : lines) logs.push_back(LogLine{line.level, line.text});
-  return logs;
+std::deque<LogLine> demoLogs(const core::PlatformInfo& platform) {
+  return {{"info",std::string("演示模式 · 部署器 ")+core::kVersion+" (build "+core::kBuild+")"},
+          {"info",platform.osLabel+" · "+platform.archLabel},
+          {"info","仅预览操作流程：不显示虚构的磁盘容量、下载速度或校验结果。"},
+          {"step","实际安装时将读取清单、下载文件、验证 SHA-256 并记录真实结果。"}};
 }
 
 void setDemoPreview(AppState& state) {
   state.previewData = true;
-  state.uiProgress = demoProgress();
+  state.uiProgress = demoProgress(state.platform);
   state.progress = state.uiProgress;
-  state.uiLogs = demoLogs();
+  state.uiLogs = demoLogs(state.platform);
   state.logs = state.uiLogs;
   state.uiResult = core::DeploymentResult{};
   state.uiResult.ok = true;
@@ -153,7 +135,6 @@ void appInit(AppState& state, bool demoMode) {
   state.options = core::Options{};
   state.edition = core::Edition::Local;
   state.options.edition = state.edition;
-  state.options.port = 8787;
   state.options.releaseTag = core::kReleaseTag;
   state.options.openBrowser = true;
   state.options.installDir = normalizePath(core::defaultInstallDir(state.edition));

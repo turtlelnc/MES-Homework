@@ -1,3 +1,5 @@
+import { databaseBusy } from "./io-guards.mjs";
+import { runtimeProfile } from "./runtime-profile.mjs";
 import { randomUUID } from "node:crypto";
 
 const positiveLimit = (name, fallback) => {
@@ -6,7 +8,11 @@ const positiveLimit = (name, fallback) => {
 };
 
 export function modelErrorStatus(error) {
-  return [409, 429, 503].includes(error?.status) ? error.status : 502;
+  return databaseBusy(error)
+    ? 503
+    : [409, 429, 503].includes(error?.status)
+      ? error.status
+      : 502;
 }
 
 // Reserve before contacting a provider. SQLite makes quotas and active leases
@@ -17,9 +23,9 @@ export function createModelBudget(db, { pressure } = {}) {
     staff: positiveLimit("MODEL_STAFF_HOURLY_LIMIT", 120),
     schoolHour: positiveLimit("MODEL_SCHOOL_HOURLY_LIMIT", 600),
     schoolDay: positiveLimit("MODEL_SCHOOL_DAILY_LIMIT", 3000),
-    globalConcurrency: positiveLimit("MODEL_GLOBAL_CONCURRENCY", 4),
-    concurrency: positiveLimit("MODEL_SCHOOL_CONCURRENCY", 4),
-    staffConcurrency: positiveLimit("MODEL_STAFF_CONCURRENCY", 4),
+    globalConcurrency: runtimeProfile().modelConcurrency,
+    concurrency: runtimeProfile().schoolConcurrency,
+    staffConcurrency: runtimeProfile().staffConcurrency,
   };
   return (userId) => {
     pressure?.assertMemory();

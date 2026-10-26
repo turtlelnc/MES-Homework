@@ -25,8 +25,14 @@ option(MES_DEPLOYER_TESTING "Build deployer unit tests" ON)
 set(MES_DEPLOYER_DEPS_DIR "" CACHE PATH
   "Optional pre-downloaded dependency source root (glfw/, imgui/, miniz/). Empty = fetch from GitHub.")
 
-set(MES_VERSION_STRING "v0.2.1-rc4" CACHE STRING "Release version")
-set(MES_BUILD_STRING "26102501" CACHE STRING "Release build number")
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../../server/version.mjs" MES_RELEASE_SOURCE)
+string(REGEX MATCH "APP_VERSION = \"([^\"]+)\"" _version_match "${MES_RELEASE_SOURCE}")
+set(MES_VERSION_STRING "${CMAKE_MATCH_1}")
+string(REGEX MATCH "BUILD_NUMBER = \"([^\"]+)\"" _build_match "${MES_RELEASE_SOURCE}")
+set(MES_BUILD_STRING "${CMAKE_MATCH_1}")
+if(NOT MES_VERSION_STRING OR NOT MES_BUILD_STRING)
+  message(FATAL_ERROR "Cannot read release identity from server/version.mjs")
+endif()
 
 # ---------------------------------------------------------------- dependencies
 include(FetchContent)

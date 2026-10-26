@@ -11,10 +11,10 @@
 namespace mes::core {
 
 #ifndef MES_VERSION_STRING
-#define MES_VERSION_STRING "v0.2.1-rc3"
+#error "MES_VERSION_STRING must come from the build configuration"
 #endif
 #ifndef MES_BUILD_STRING
-#define MES_BUILD_STRING "26102403"
+#error "MES_BUILD_STRING must come from the build configuration"
 #endif
 
 extern const char* const kVersion;
@@ -85,7 +85,7 @@ std::string defaultInstallDir(Edition edition);
 std::string defaultDataDir(const Options& options);
 std::string validateOptions(const Options& options);  // 返回错误文案，合法返回空串
 std::string generateSecret();
-std::string envFileContent(const Options& options, const std::string& secret);
+std::string envFileContent(const Options& options, const std::string& secret, const std::string& existing = "");
 std::string stateFilePath();
 std::string logFilePath(const Options& options);
 

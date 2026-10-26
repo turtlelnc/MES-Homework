@@ -17,7 +17,7 @@
   - 复核与批改：`review.mjs`（全部/仅存疑/不复核+存疑判定）、`grading.mjs`、`direct-grading.mjs`（无原题直批）、`mistakes-guide.mjs`（引导式错题本）。
   - OAuth 模型链接：`oauth.mjs`（provider 注册、attempt 路由、存储与模型调度），provider 协议模块 `oauth-chatgpt.mjs`（Codex OAuth 浏览器回调 + 设备码 + Responses API）与 `oauth-workbuddy.mjs`（浏览器/设备码轮询 + chat SSE）。
   - 模型调用模式/凭证路由：`model-access.mjs`；API Key 厂商预设：`providers.mjs`。
-  - 有界并发批改：`recognition-queue.mjs` 默认 4 并发，同一教师可并行处理不同答卷，完成即补位；`model-budget.mjs` 保留全局/学校/账户额度，学生最多 1 个在途；`model-images.mjs` 对 API Key/OAuth 内联图片预留共享 Base64 预算（默认 96 MiB）。API Key 请求显式非流式，OAuth 的 SSE/Responses 协议仍由 provider 模块处理。配置与压测方法见 `CONCURRENT_GRADING.md` / `LOAD_TESTING.md`。
+  - 有界并发批改：`recognition-queue.mjs` 按 `runtime-profile.mjs` 探测的实际 CPU/cgroup/内存预算计算并发，同一教师可并行处理不同答卷，完成即补位；`model-budget.mjs` 保留全局/学校/账户额度，学生最多 1 个在途；`model-images.mjs` 对 API Key/OAuth 内联图片预留共享 Base64 预算（默认有效内存的 1/32，受堆预算约束）。API Key 请求显式非流式，OAuth 的 SSE/Responses 协议仍由 provider 模块处理。配置与压测方法见 `CONCURRENT_GRADING.md` / `LOAD_TESTING.md`。
   - 文档解析：`document.mjs` / `word.mjs`；备份/运维：`tools/ops/`、`server/backup*.mjs`。
 - **桌面版一键部署器（C++17）**：`tools/deployer/`。
   - `src/core/` 纯逻辑（SHA-256、ZIP 解压、manifest、安装状态、服务文本、部署引擎、自检）；`src/platform/` 是唯一允许直接调用 OS API 的层；`src/ui/` 为 ImGui 自绘界面；`src/app.cpp` 状态机；`src/main.cpp` 入口/窗口。
@@ -44,7 +44,7 @@
   - 通用：`cmake -S tools/deployer -B tools/deployer/build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build tools/deployer/build`；离线构建可用 `-DMES_DEPLOYER_DEPS_DIR=<glfw,imgui,miniz 源码目录>`。
   - 测试：`ctest --test-dir tools/deployer/build --output-on-failure`、`mes-deployer --self-test`、`mes-deployer-test`。
   - 发布：`.github/workflows/deployer-release.yml`（push 分支构建产物；tag 发布 Release）；不要手工提交 `dist-deployer/`、`tools/deployer/build*/`。
-- **版本更新清单**（发布前逐项同步）：`package.json`、`package-lock.json`、`server/version.mjs`、`src/version.ts`、`server/version.test.ts`、README/README.EN 版本行与徽章、`tools/deployer/CMakeLists.txt` 的 `MES_VERSION_STRING`/`MES_BUILD_STRING`、部署器 README/打包脚本默认值、`docs/releases/<版本>.md`、`.github/workflows/deployer-release.yml` 的版本/构建号与 notes 路径。
+- **版本更新清单**（发布前逐项同步）：`package.json`、`package-lock.json`、`server/version.mjs`、`src/version.ts`、`server/version.test.ts`、README/README.EN 版本行与徽章、`tools/deployer/CMakeLists.txt` 读取的版本来源、部署器 README/打包脚本默认值、`docs/releases/<版本>.md`、`.github/workflows/deployer-release.yml` 的版本/构建号与 notes 路径。
 - 已知本机（Windows）全量 `npm test` 会有一部分历史遗留环境限制失败（backup fsync EPERM、`/proc` cgroup、Linux admission 等），属于上游/平台差异，Ubuntu CI 会覆盖；不要把这类失败归因于本次功能改动。
 
 ## Coding Style & Naming Conventions
@@ -88,3 +88,14 @@
 - 部署器两个版本：本地版（127.0.0.1，自动开浏览器）与服务器版（局域网、可选开机自启/防火墙）；平台限制：官方 Node.js 24 无 32 位运行时（x86 系统仅可运行部署器，应用需 64 位），Linux glibc ≥ 2.31，macOS 仅 Apple Silicon。
 - OAuth 真实可用性：ChatGPT Codex OAuth/WorkBuddy 上游未在仓库内用真实账号验证；Gemini 需要部署方在 Google Cloud 创建 OAuth 客户端并配置 `OAUTH_GEMINI_CLIENT_ID/SECRET`；中国大陆境内无法使用 ChatGPT/Gemini。
 - 部署与运维细节见 `README.md`、`tools/deployer/README.md`、`docs/oauth-flows.md`、`OPERATIONS.md`、`SECURITY_REVIEW.md`。
+
+## 发布前审核维护约定
+
+- 环境容量统一由 `runtime-profile.mjs`、`storage-profile.mjs` 探测；不能把压测机器配置或供应商报价当成程序默认事实。分配比例、超时、业务配额属于显式策略，见 `RUNTIME_CONFIGURATION.md`。
+- `/api/capabilities` 从数据库约束和部署配置提供学段、注册策略；前端不得另猜默认值。作业详情、复核历史、已存试卷均有真实 API 入口。
+- 数据库启动迁移必须整体事务回滚，并对比新库的字段、默认值、外键、CHECK、索引；不允许忽略迁移错误后继续服务。
+- 运行时包包含 `shared` 和 `tools/ops`；部署器优先启动监督器，加载 `.env`，升级保留额外配置。CMake/打包版本从 `server/version.mjs` 读取。
+- 金额预算启用时，任何视觉模型都必须显式配置保守 `imageTokens`；不得猜测 DeepSeek 图像计费参数。Anthropic 使用原生 Messages 协议。
+- `node tools/ops/audit-contracts.mjs <报告路径>` 输出路由/前端引用和常量清单；静态引用覆盖不能替代授权与浏览器测试。见 `PRE_RELEASE_AUDIT.md`。
+
+- 打包前 `verify-app-runtime.mjs` 必须用组装目录实际启动临时服务，验证 health/版本和环境配置，避免源码测试掩盖漏装 shared 等运行依赖。

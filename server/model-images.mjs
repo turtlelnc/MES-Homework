@@ -1,8 +1,11 @@
+import { runtimeProfile } from "./runtime-profile.mjs";
 import fs from "node:fs";
 
 // Account for Base64 characters before allocating file buffers/JSON strings.
 // This is a work budget, not an exact measurement of V8/RSS memory.
-export function createModelImages({ maxBytes = 96 * 1024 ** 2 } = {}) {
+export function createModelImages({
+  maxBytes = runtimeProfile().inlineMiB * 1024 ** 2,
+} = {}) {
   let activeBytes = 0;
   const singleLimit = 44 * 1024 ** 2;
   return {

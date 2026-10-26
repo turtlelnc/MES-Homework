@@ -12,7 +12,7 @@ namespace mes::core {
 
 const char* const kVersion = MES_VERSION_STRING;
 const char* const kBuild = MES_BUILD_STRING;
-const char* const kReleaseTag = "v0.2.1-rc3";
+const char* const kReleaseTag = MES_VERSION_STRING;
 const char* const kRepoSlug = "turtlelnc/MES-Homework";
 
 namespace {
@@ -77,8 +77,10 @@ const char* currentOsSlug() {
   return "windows";
 #elif defined(__APPLE__)
   return "macos";
-#else
+#elif defined(__linux__)
   return "linux";
+#else
+  return "unknown";
 #endif
 }
 
@@ -87,8 +89,10 @@ const char* currentArchSlug() {
   return "x64";
 #elif defined(__aarch64__) || defined(_M_ARM64)
   return "arm64";
-#else
+#elif defined(__i386__) || defined(_M_IX86)
   return "x86";
+#else
+  return "unknown";
 #endif
 }
 
@@ -103,19 +107,22 @@ PlatformInfo detectPlatform() {
     else if (info.os == "macos")
       info.osLabel = "macOS";
     else
-      info.osLabel = "Linux";
+      info.osLabel = info.os == "linux" ? "Linux" : "未识别的系统";
   }
   if (info.arch == "x64")
     info.archLabel = "64 位（x64）";
   else if (info.arch == "arm64")
     info.archLabel = "ARM 64 位（arm64）";
   else
-    info.archLabel = "32 位（x86）";
-  info.appRuntimeSupported = info.arch != "x86";
+    info.archLabel = info.arch == "x86" ? "32 位（x86）" : "未识别的架构";
+  info.appRuntimeSupported = (info.arch == "x64" || info.arch == "arm64") &&
+      (info.os == "windows" || info.os == "linux" ||
+       (info.os == "macos" && info.arch == "arm64"));
   if (!info.appRuntimeSupported) {
-    info.runtimeNote =
-        "当前是 32 位系统：官方 Node.js 24 已不再提供 32 位运行时，应用无法运行。"
-        "部署器本身可以启动，但请改用 64 位 Windows/Linux/macOS 设备或服务器。";
+    info.runtimeNote = info.arch == "x86"
+        ? "当前是 32 位系统：官方 Node.js 24 已不再提供 32 位运行时，应用无法运行。"
+          "请改用受支持的 64 位设备或服务器。"
+        : "当前系统/架构没有本项目的应用运行时包，不能推测为其他平台。";
   } else {
     info.runtimeNote = "系统架构受支持，将安装自带 Node.js 24 运行时。";
   }
@@ -198,7 +205,7 @@ std::string generateSecret() {
   return secret;
 }
 
-std::string envFileContent(const Options& options, const std::string& secret) {
+std::string envFileContent(const Options& options, const std::string& secret, const std::string& existing) {
   std::string content;
   content += "# 校园作业分析 · 由桌面部署器自动生成，请勿提交到版本库\n";
   content += "APP_SECRET=" + envValue(secret, false) + "\n";
@@ -207,6 +214,18 @@ std::string envFileContent(const Options& options, const std::string& secret) {
   content += "NODE_ENV=" +
              std::string(options.production ? "production" : "development") + "\n";
   content += "DATA_DIR=" + envValue(dataDirOf(options), true) + "\n";
+  size_t position = 0;
+  while (position < existing.size()) {
+    size_t end = existing.find('\n', position);
+    if (end == std::string::npos) end = existing.size();
+    const std::string line = existing.substr(position, end - position);
+    std::string key = trimText(line.substr(0, line.find('=')));
+    if (key.rfind("export ", 0) == 0) key = trimText(key.substr(7));
+    if (key != "APP_SECRET" && key != "PORT" && key != "HOST" &&
+        key != "NODE_ENV" && key != "DATA_DIR")
+      content += line + "\n";
+    position = end + 1;
+  }
   return content;
 }
 
@@ -328,6 +347,11 @@ std::string appDirOf(const Options& options) {
 
 std::string serverEntryOf(const Options& options) {
   return mes::platform::joinPath(appDirOf(options), "server/index.mjs");
+}
+
+std::string launchEntryOf(const Options& options) {
+  const std::string supervisor=mes::platform::joinPath(appDirOf(options),"tools/ops/supervise.mjs");
+  return mes::platform::fileExists(supervisor)?supervisor:serverEntryOf(options);
 }
 
 std::string logsDirOf(const Options& options) {

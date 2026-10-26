@@ -13,7 +13,11 @@ const setup = () => {
   vi.stubEnv(
     "MODEL_COST_RATES_JSON",
     JSON.stringify({
-      "deepseek/deepseek-flash": { input: 1000000, output: 2000000 },
+      "deepseek/deepseek-flash": {
+        input: 1000000,
+        output: 2000000,
+        imageTokens: 1024,
+      },
     }),
   );
   return {
@@ -38,6 +42,24 @@ it("reserves before dispatch, reconciles usage, and charges retries independentl
     expect(cost.summary(f.schoolId).exposureMicroCny).toBeGreaterThan(2200);
     expect(cost.summary(f.schoolId).uncertain).toBe(1);
     expect(db.prepare("SELECT COUNT(*) n FROM model_costs").get()!.n).toBe(2);
+  } finally {
+    db.close();
+  }
+});
+it("does not invent DeepSeek image token limits from a model name", () => {
+  const { db, f, config } = setup();
+  try {
+    vi.stubEnv(
+      "MODEL_COST_RATES_JSON",
+      JSON.stringify({
+        "deepseek/deepseek-flash": { input: 1000000, output: 2000000 },
+      }),
+    );
+    const budget = createCostBudget(db);
+    expect(() => budget.reserve(f.teacherId, config, "prompt", 1)).toThrow(
+      /单图 token 上界/,
+    );
+    expect(db.prepare("SELECT COUNT(*) n FROM model_costs").get()!.n).toBe(0);
   } finally {
     db.close();
   }

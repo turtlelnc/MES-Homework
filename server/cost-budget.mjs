@@ -96,10 +96,7 @@ export function createCostBudget(db) {
       )
         throw fail("管理员尚未配置此模型的费用上界，暂不能调用");
       // Conservative byte-level bound for text plus framing; no cache discount assumed.
-      const imageTokens =
-        config.provider === "deepseek" && config.model === "deepseek-flash"
-          ? 1024
-          : rates.imageTokens;
+      const imageTokens = rates.imageTokens;
       if (
         imageCount &&
         (!Number.isSafeInteger(imageTokens) ||

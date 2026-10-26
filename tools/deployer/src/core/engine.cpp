@@ -699,12 +699,14 @@ class DeploymentRunner {
     if (secret.empty()) secret = generateSecret();
     if (secret.empty())
       return fail("无法生成安全密钥（系统随机数不可用），请检查系统权限后重试。");
-    const std::string envContent = envFileContent(effective_, secret);
+    std::string previousEnvironment;
+    mes::platform::readFile(envFileOf(effective_),previousEnvironment);
+    const std::string envContent = envFileContent(effective_, secret, previousEnvironment);
     if (!mes::platform::writeFile(envFileOf(effective_), envContent))
       return fail("无法写入配置文件：" + envFileOf(effective_));
     if (!secretGenerated)
       log("info", "已沿用现有 APP_SECRET（保持已登录用户的会话有效）");
-    log("info", "APP_SECRET：" + maskSecret(secret));
+    log("info", "APP_SECRET 已安全写入（不显示内容）");
     if (effective_.payloadDir.empty()) {
 #if defined(_WIN32)
       const std::string startScript = windowsStartScript(effective_);
@@ -809,11 +811,11 @@ class DeploymentRunner {
           return fail("端口 " + std::to_string(effective_.port) +
                       " 上仍有实例未停止，请先手动停止旧应用后重试。");
       }
-      const std::string entry =
-          mes::platform::joinPath(appDir_, "server/index.mjs");
+      const std::string supervisor=mes::platform::joinPath(appDir_,"tools/ops/supervise.mjs");
+      const std::string entry = mes::platform::fileExists(supervisor)?supervisor:mes::platform::joinPath(appDir_, "server/index.mjs");
       std::string spawnError;
       process_ = mes::platform::spawnProcess(
-          {nodeExe_, entry}, appDir_, buildEnvPairs(effective_, secret_),
+          {nodeExe_, "--env-file="+envFileOf(effective_), entry}, appDir_, buildEnvPairs(effective_, secret_),
           serverLogOf(effective_), spawnError, true);
       if (!process_)
         return fail("启动应用进程失败：" + spawnError +
@@ -1261,7 +1263,7 @@ bool startInstalled(const Options& options, std::string& error) {
     }
     std::string spawnError;
     std::unique_ptr<mes::platform::Process> process =
-        mes::platform::spawnProcess({node, entry}, appDir,
+        mes::platform::spawnProcess({node, "--env-file="+envFileOf(effective), mes::platform::fileExists(mes::platform::joinPath(appDir,"tools/ops/supervise.mjs"))?mes::platform::joinPath(appDir,"tools/ops/supervise.mjs"):entry}, appDir,
                                     buildEnvPairs(effective, secret),
                                     serverLogOf(effective), spawnError, true);
     if (!process) {

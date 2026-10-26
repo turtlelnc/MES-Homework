@@ -1,0 +1,20 @@
+{
+  "health": {
+    "ok": true,
+    "version": "v0.2.1-rc4",
+    "build": "26102501",
+    "versionLabel": "v0.2.1-rc4 (build26102501)",
+    "storage": "SQLite + local filesystem"
+  },
+  "capabilities": {
+    "stages": [
+      "小学",
+      "初中",
+      "高中"
+    ],
+    "publicRegistration": false
+  },
+  "supervised": true,
+  "node": "v24.19.0",
+  "source": "actual extracted archive; test dependencies not pruned; no upstream calls"
+}

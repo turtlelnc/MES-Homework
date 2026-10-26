@@ -9,13 +9,17 @@ describe("rc4 provider presets", () => {
     expect(providers.minimax.vision).toBe(false);
   });
 
-  it("removes the university stage from the application", async () => {
-    const fs = await import("node:fs/promises");
-    const source = await fs.readFile(
-      new URL("../src/main.tsx", import.meta.url),
-      "utf8",
-    );
-    expect(source).toContain('const stages = ["小学", "初中", "高中"]');
-    expect(source).not.toContain('"大学"');
+  it("serves registration stages from the actual database constraint", async () => {
+    const { DatabaseSync } = await import("node:sqlite");
+    const { applicationCapabilities } = await import("./capabilities.mjs");
+    const db = new DatabaseSync(":memory:");
+    try {
+      db.exec("CREATE TABLE users(stage TEXT CHECK(stage IN('小学','高中')))");
+      expect(
+        applicationCapabilities(db, { ALLOW_PUBLIC_REGISTRATION: "0" }),
+      ).toEqual({ stages: ["小学", "高中"], publicRegistration: false });
+    } finally {
+      db.close();
+    }
   });
 });

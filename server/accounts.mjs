@@ -1,3 +1,4 @@
+import { applicationCapabilities } from "./capabilities.mjs";
 // v0.2.1 账号模块：4 身份注册、账号名/邮箱登录、管理员建号。
 // 路由注册必须发生在 index.mjs 旧 auth / schools / teachers / students 路由之前，
 // 并且由 Lead 删除旧路由，避免 Express 先注册的旧处理器抢先响应。
@@ -11,7 +12,7 @@ import { validPassword } from "./security.mjs";
 
 const PUBLIC_ROLES = ["school", "teacher", "student", "parent"];
 const ACCOUNT_ROLES = ["teacher", "student", "parent"];
-const STAGES = ["小学", "初中", "高中"];
+const stagesFor = (ctx) => applicationCapabilities(ctx.db).stages;
 const RELATIONS = ["父亲", "母亲", "其他监护人"];
 const DEFAULT_RELATION = "家长";
 const USERNAME_PATTERN = /^[a-z0-9_\u4e00-\u9fa5]+$/;
@@ -104,8 +105,8 @@ async function verifyPassword(ctx, password, user) {
     return (
       provided.length === expected.length && timingSafeEqual(provided, expected)
     );
-  } catch {
-    return false;
+  } catch (error) {
+    throw Object.assign(error, { status: error.status || 503 });
   }
 }
 
@@ -147,7 +148,7 @@ export async function insertUser(ctx, fields) {
   if (role !== "parent" && x.stage !== undefined && x.stage !== null) {
     stage = trimmed(x.stage);
     if (stage) {
-      if (!STAGES.includes(stage)) throw new Error("学段无效");
+      if (!stagesFor(ctx).includes(stage)) throw new Error("学段无效");
     } else {
       stage = null;
     }
@@ -233,7 +234,7 @@ async function registerSchool(ctx, payload) {
 
 async function registerTeacher(ctx, payload, school, common) {
   const stage = trimmed(payload.stage);
-  if (!STAGES.includes(stage)) throw new Error("请选择有效学段");
+  if (!stagesFor(ctx).includes(stage)) throw new Error("请选择有效学段");
   const subject = trimmed(payload.subject);
   const className = trimmed(payload.className ?? payload.class_name);
   if (!subject || !className) throw new Error("请填写学科和班级");
@@ -258,7 +259,7 @@ async function registerTeacher(ctx, payload, school, common) {
 
 async function registerStudent(ctx, payload, school, common) {
   const stage = trimmed(payload.stage);
-  if (!STAGES.includes(stage)) throw new Error("请选择有效学段");
+  if (!stagesFor(ctx).includes(stage)) throw new Error("请选择有效学段");
   const className = trimmed(payload.className ?? payload.class_name);
   if (!className) throw new Error("请填写班级");
   const created = await insertUser(ctx, {
@@ -382,9 +383,17 @@ export function registerAccountsRoutes(app, ctx) {
   const db = ctx.db;
   const { auth, schoolAdmin, schoolStaff } = ctx;
   const fail = (res, error, fallback) => {
-    const status = Number(error?.status) || 400;
+    const busy =
+      error?.errcode === 5 ||
+      error?.errcode === 6 ||
+      error?.code === "SQLITE_BUSY" ||
+      error?.code === "SQLITE_LOCKED";
+    const status = busy ? 503 : Number(error?.status) || 400;
+    if (status === 503) res.set("Retry-After", "5");
     res.status(status).json({
-      error: uniqueMessage(error) || error?.message || fallback,
+      error: busy
+        ? "数据库繁忙，请稍后重试"
+        : uniqueMessage(error) || error?.message || fallback,
     });
   };
 
@@ -477,7 +486,7 @@ export function registerAccountsRoutes(app, ctx) {
       if (!policyFor(ctx)(x.password))
         return res.status(400).json({ error: "初始密码至少 8 位" });
       const stage = trimmed(x.stage);
-      if (!STAGES.includes(stage))
+      if (!stagesFor(ctx).includes(stage))
         return res.status(400).json({ error: "学段无效" });
       const subject = trimmed(x.subject);
       const className = trimmed(x.className ?? x.class_name);
@@ -522,7 +531,7 @@ export function registerAccountsRoutes(app, ctx) {
       if (!policyFor(ctx)(x.password))
         return res.status(400).json({ error: "初始密码至少 8 位" });
       const stage = trimmed(x.stage) || req.user.stage;
-      if (!STAGES.includes(stage))
+      if (!stagesFor(ctx).includes(stage))
         return res.status(400).json({ error: "学段无效" });
       const className =
         trimmed(x.className ?? x.class_name) || req.user.class_name || "";

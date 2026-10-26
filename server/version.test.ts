@@ -31,7 +31,7 @@ describe("release identity", () => {
       path.join(root, "tools/deployer/CMakeLists.txt"),
       "utf8",
     );
-    expect(deployer).toContain('"v0.2.1-rc4"');
-    expect(deployer).toContain('"26102501"');
+    expect(deployer).toContain("server/version.mjs");
+    expect(deployer).toContain("MES_RELEASE_SOURCE");
   });
 });

@@ -1,0 +1,1219 @@
+{
+  "config": {
+    "cpu": 4,
+    "memoryGiB": 4,
+    "swapGiB": 0,
+    "students": 10000,
+    "teachers": 100,
+    "initialSubmissions": 10000,
+    "jpegBytes": 1492742,
+    "mockModelDelayMs": 2000,
+    "ocrConcurrency": "auto",
+    "clientTimeoutMs": 5000,
+    "clientIPs": "distinct synthetic users behind a trusted proxy",
+    "transport": "Unix relay to real loopback TCP HTTP; relay shares service cgroup"
+  },
+  "stages": [
+    {
+      "label": "slow-uploads-plus-reads",
+      "offeredRps": 100,
+      "durationSeconds": 10,
+      "cap": 512,
+      "scheduled": 999,
+      "clientSkipped": 0,
+      "peakInflight": 2,
+      "byType": {
+        "read": {
+          "count": 999,
+          "statuses": {
+            "200": 999
+          },
+          "successful": 999,
+          "successOver2s": 0,
+          "maxMs": 17,
+          "bytes": 376427,
+          "p95Ms": 2,
+          "successP95Ms": 2,
+          "successP99Ms": 4,
+          "successRps": 99.8
+        }
+      },
+      "elapsedSeconds": 10.01,
+      "resources": {
+        "maxRssMiB": 101,
+        "maxCgroupMiB": 114,
+        "maxLagP95Ms": 37,
+        "maxLagMs": 126,
+        "maxModelActive": 0,
+        "maxQueued": 0,
+        "maxQueueAgeSeconds": 0,
+        "lastCgroup": {
+          "memory.current": "119173120",
+          "memory.peak": "119177216",
+          "memory.events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+          "cpu.stat": "usage_usec 2429122\nuser_usec 2131377\nsystem_usec 297744\nnice_usec 0\nnr_periods 116\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0",
+          "memory.swap.current": "0"
+        }
+      },
+      "operations": {
+        "resources": {
+          "version": 1,
+          "updatedAt": 1792993366615,
+          "sampledAt": 1792993364730,
+          "level": "normal",
+          "reasons": [],
+          "rssMiB": 101,
+          "diskFreeMiB": 14007,
+          "diskReserveMiB": 853,
+          "systemSupported": true,
+          "availableMiB": 3982,
+          "budgetMiB": 4096
+        },
+        "passwordWork": {
+          "active": 0,
+          "pending": 0,
+          "concurrency": 3,
+          "maxPending": 16
+        },
+        "modelUsage": {
+          "callsLastDay": 0,
+          "callsLastHour": 0,
+          "active": 0
+        },
+        "jobs": [],
+        "runtime": {
+          "memoryBytes": 4294967296,
+          "availableBytes": 4209315840,
+          "cpuCapacity": 4,
+          "cpuWorkers": 4,
+          "sources": [
+            "os",
+            "node.constrainedMemory",
+            "cgroup"
+          ],
+          "detectedAt": 1792993354728,
+          "memoryMiB": 4096,
+          "heapMiB": 1024,
+          "rssMiB": 2048,
+          "inlineMiB": 128,
+          "httpActive": 32,
+          "jsonConcurrency": 16,
+          "httpConnections": 128,
+          "modelConcurrency": 4,
+          "ocrConcurrency": 4,
+          "schoolConcurrency": 4,
+          "staffConcurrency": 4,
+          "ocrUserConcurrency": 4,
+          "uploadConcurrency": 2,
+          "hashConcurrency": 3,
+          "parserHeapMiB": 256,
+          "parserRssMiB": 512,
+          "v8HeapLimitMiB": 1216,
+          "allocationPolicy": {
+            "heapFraction": 0.25,
+            "rssFraction": 0.5,
+            "inlineFraction": 0.03125,
+            "parserHeapFraction": 0.0625,
+            "parserRssFraction": 0.125
+          }
+        }
+      }
+    },
+    {
+      "label": "mixed-300",
+      "offeredRps": 300,
+      "durationSeconds": 20,
+      "cap": 512,
+      "scheduled": 5998,
+      "clientSkipped": 0,
+      "peakInflight": 90,
+      "byType": {
+        "read": {
+          "count": 4200,
+          "statuses": {
+            "200": 4200
+          },
+          "successful": 4200,
+          "successOver2s": 0,
+          "maxMs": 383,
+          "bytes": 26492040,
+          "p95Ms": 40,
+          "successP95Ms": 40,
+          "successP99Ms": 152,
+          "successRps": 209.9
+        },
+        "upload": {
+          "count": 600,
+          "statuses": {
+            "200": 170,
+            "429": 320,
+            "ECONNRESET": 103,
+            "EPIPE": 7
+          },
+          "successful": 170,
+          "successOver2s": 0,
+          "maxMs": 399,
+          "bytes": 30710,
+          "p95Ms": 83,
+          "successP95Ms": 174,
+          "successP99Ms": 241,
+          "successRps": 8.5
+        },
+        "enqueue": {
+          "count": 600,
+          "statuses": {
+            "202": 57,
+            "429": 543
+          },
+          "successful": 57,
+          "successOver2s": 0,
+          "maxMs": 256,
+          "bytes": 38547,
+          "p95Ms": 79,
+          "successP95Ms": 87,
+          "successP99Ms": 105,
+          "successRps": 2.8
+        },
+        "login": {
+          "count": 300,
+          "statuses": {
+            "200": 300
+          },
+          "successful": 300,
+          "successOver2s": 0,
+          "maxMs": 671,
+          "bytes": 3300,
+          "p95Ms": 298,
+          "successP95Ms": 298,
+          "successP99Ms": 577,
+          "successRps": 15
+        },
+        "write": {
+          "count": 298,
+          "statuses": {
+            "200": 298
+          },
+          "successful": 298,
+          "successOver2s": 0,
+          "maxMs": 256,
+          "bytes": 3278,
+          "p95Ms": 56,
+          "successP95Ms": 56,
+          "successP99Ms": 134,
+          "successRps": 14.9
+        }
+      },
+      "elapsedSeconds": 20.01,
+      "resources": {
+        "maxRssMiB": 308,
+        "maxCgroupMiB": 610,
+        "maxLagP95Ms": 91,
+        "maxLagMs": 111,
+        "maxModelActive": 4,
+        "maxQueued": 25,
+        "maxQueueAgeSeconds": 19,
+        "lastCgroup": {
+          "memory.current": "639229952",
+          "memory.peak": "649674752",
+          "memory.events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+          "cpu.stat": "usage_usec 33793278\nuser_usec 30782179\nsystem_usec 3011099\nnice_usec 0\nnr_periods 316\nnr_throttled 1\nthrottled_usec 1712\nnr_bursts 0\nburst_usec 0",
+          "memory.swap.current": "0"
+        }
+      },
+      "operations": {
+        "resources": {
+          "version": 1,
+          "updatedAt": 1792993386637,
+          "sampledAt": 1792993384731,
+          "level": "normal",
+          "reasons": [],
+          "rssMiB": 308,
+          "diskFreeMiB": 13765,
+          "diskReserveMiB": 853,
+          "systemSupported": true,
+          "availableMiB": 3498,
+          "budgetMiB": 4096
+        },
+        "passwordWork": {
+          "active": 0,
+          "pending": 0,
+          "concurrency": 3,
+          "maxPending": 16
+        },
+        "modelUsage": {
+          "callsLastDay": 36,
+          "callsLastHour": 36,
+          "active": 4
+        },
+        "jobs": [
+          {
+            "status": "queued",
+            "count": 21,
+            "oldest": 1792993367283
+          },
+          {
+            "status": "running",
+            "count": 4,
+            "oldest": 1792993367279
+          },
+          {
+            "status": "succeeded",
+            "count": 32,
+            "oldest": 1792993366921
+          }
+        ],
+        "runtime": {
+          "memoryBytes": 4294967296,
+          "availableBytes": 4209315840,
+          "cpuCapacity": 4,
+          "cpuWorkers": 4,
+          "sources": [
+            "os",
+            "node.constrainedMemory",
+            "cgroup"
+          ],
+          "detectedAt": 1792993354728,
+          "memoryMiB": 4096,
+          "heapMiB": 1024,
+          "rssMiB": 2048,
+          "inlineMiB": 128,
+          "httpActive": 32,
+          "jsonConcurrency": 16,
+          "httpConnections": 128,
+          "modelConcurrency": 4,
+          "ocrConcurrency": 4,
+          "schoolConcurrency": 4,
+          "staffConcurrency": 4,
+          "ocrUserConcurrency": 4,
+          "uploadConcurrency": 2,
+          "hashConcurrency": 3,
+          "parserHeapMiB": 256,
+          "parserRssMiB": 512,
+          "v8HeapLimitMiB": 1216,
+          "allocationPolicy": {
+            "heapFraction": 0.25,
+            "rssFraction": 0.5,
+            "inlineFraction": 0.03125,
+            "parserHeapFraction": 0.0625,
+            "parserRssFraction": 0.125
+          }
+        }
+      }
+    },
+    {
+      "label": "mixed-600",
+      "offeredRps": 600,
+      "durationSeconds": 20,
+      "cap": 512,
+      "scheduled": 11995,
+      "clientSkipped": 1345,
+      "peakInflight": 512,
+      "byType": {
+        "write": {
+          "count": 532,
+          "statuses": {
+            "200": 509,
+            "timeout": 23
+          },
+          "successful": 509,
+          "successOver2s": 47,
+          "maxMs": 5009,
+          "bytes": 5599,
+          "p95Ms": 4949,
+          "successP95Ms": 3721,
+          "successP99Ms": 4755,
+          "successRps": 25.4
+        },
+        "read": {
+          "count": 7468,
+          "statuses": {
+            "200": 7092,
+            "timeout": 376
+          },
+          "successful": 7092,
+          "successOver2s": 418,
+          "maxMs": 5232,
+          "bytes": 45196559,
+          "p95Ms": 4999,
+          "successP95Ms": 3066,
+          "successP99Ms": 4346,
+          "successRps": 354.2
+        },
+        "upload": {
+          "count": 1060,
+          "statuses": {
+            "200": 70,
+            "429": 821,
+            "ECONNRESET": 122,
+            "EPIPE": 2,
+            "timeout": 45
+          },
+          "successful": 70,
+          "successOver2s": 5,
+          "maxMs": 5009,
+          "bytes": 49864,
+          "p95Ms": 3843,
+          "successP95Ms": 4101,
+          "successP99Ms": 4403,
+          "successRps": 3.5
+        },
+        "enqueue": {
+          "count": 1060,
+          "statuses": {
+            "202": 24,
+            "429": 997,
+            "timeout": 39
+          },
+          "successful": 24,
+          "successOver2s": 0,
+          "maxMs": 5009,
+          "bytes": 53112,
+          "p95Ms": 4169,
+          "successP95Ms": 183,
+          "successP99Ms": 419,
+          "successRps": 1.2
+        },
+        "login": {
+          "count": 530,
+          "statuses": {
+            "200": 494,
+            "503": 9,
+            "timeout": 27
+          },
+          "successful": 494,
+          "successOver2s": 27,
+          "maxMs": 5016,
+          "bytes": 5812,
+          "p95Ms": 5000,
+          "successP95Ms": 2020,
+          "successP99Ms": 4147,
+          "successRps": 24.7
+        }
+      },
+      "elapsedSeconds": 20.02,
+      "resources": {
+        "maxRssMiB": 335,
+        "maxCgroupMiB": 759,
+        "maxLagP95Ms": 333,
+        "maxLagMs": 333,
+        "maxModelActive": 4,
+        "maxQueued": 24,
+        "maxQueueAgeSeconds": 34,
+        "lastCgroup": {
+          "memory.current": "784592896",
+          "memory.peak": "815116288",
+          "memory.events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+          "cpu.stat": "usage_usec 95334947\nuser_usec 87737653\nsystem_usec 7597293\nnice_usec 0\nnr_periods 534\nnr_throttled 7\nthrottled_usec 58250\nnr_bursts 0\nburst_usec 0",
+          "memory.swap.current": "0"
+        }
+      },
+      "operations": {
+        "resources": {
+          "version": 1,
+          "updatedAt": 1792993408669,
+          "sampledAt": 1792993404950,
+          "level": "limited",
+          "reasons": [
+            "recovery_wait"
+          ],
+          "rssMiB": 313,
+          "diskFreeMiB": 13665,
+          "diskReserveMiB": 853,
+          "systemSupported": true,
+          "availableMiB": 3371,
+          "budgetMiB": 4096
+        },
+        "passwordWork": {
+          "active": 0,
+          "pending": 0,
+          "concurrency": 3,
+          "maxPending": 16
+        },
+        "modelUsage": {
+          "callsLastDay": 58,
+          "callsLastHour": 58,
+          "active": 1
+        },
+        "jobs": [
+          {
+            "status": "queued",
+            "count": 24,
+            "oldest": 1792993388807
+          },
+          {
+            "status": "running",
+            "count": 1,
+            "oldest": 1792993388805
+          },
+          {
+            "status": "succeeded",
+            "count": 57,
+            "oldest": 1792993366921
+          }
+        ],
+        "runtime": {
+          "memoryBytes": 4294967296,
+          "availableBytes": 4209315840,
+          "cpuCapacity": 4,
+          "cpuWorkers": 4,
+          "sources": [
+            "os",
+            "node.constrainedMemory",
+            "cgroup"
+          ],
+          "detectedAt": 1792993354728,
+          "memoryMiB": 4096,
+          "heapMiB": 1024,
+          "rssMiB": 2048,
+          "inlineMiB": 128,
+          "httpActive": 32,
+          "jsonConcurrency": 16,
+          "httpConnections": 128,
+          "modelConcurrency": 4,
+          "ocrConcurrency": 4,
+          "schoolConcurrency": 4,
+          "staffConcurrency": 4,
+          "ocrUserConcurrency": 4,
+          "uploadConcurrency": 2,
+          "hashConcurrency": 3,
+          "parserHeapMiB": 256,
+          "parserRssMiB": 512,
+          "v8HeapLimitMiB": 1216,
+          "allocationPolicy": {
+            "heapFraction": 0.25,
+            "rssFraction": 0.5,
+            "inlineFraction": 0.03125,
+            "parserHeapFraction": 0.0625,
+            "parserRssFraction": 0.125
+          }
+        }
+      }
+    },
+    {
+      "label": "mixed-1200",
+      "offeredRps": 1200,
+      "durationSeconds": 20,
+      "cap": 512,
+      "scheduled": 23994,
+      "clientSkipped": 3601,
+      "peakInflight": 512,
+      "byType": {
+        "read": {
+          "count": 14273,
+          "statuses": {
+            "200": 14257,
+            "timeout": 16
+          },
+          "successful": 14257,
+          "successOver2s": 1520,
+          "maxMs": 5001,
+          "bytes": 91426587,
+          "p95Ms": 4508,
+          "successP95Ms": 4500,
+          "successP99Ms": 4698,
+          "successRps": 694.4
+        },
+        "upload": {
+          "count": 2040,
+          "statuses": {
+            "200": 72,
+            "429": 1861,
+            "ECONNRESET": 105,
+            "timeout": 2
+          },
+          "successful": 72,
+          "successOver2s": 13,
+          "maxMs": 5000,
+          "bytes": 106182,
+          "p95Ms": 339,
+          "successP95Ms": 4165,
+          "successP99Ms": 4817,
+          "successRps": 3.5
+        },
+        "enqueue": {
+          "count": 2040,
+          "statuses": {
+            "202": 11,
+            "429": 2029
+          },
+          "successful": 11,
+          "successOver2s": 1,
+          "maxMs": 4937,
+          "bytes": 99801,
+          "p95Ms": 4451,
+          "successP95Ms": 4467,
+          "successP99Ms": 4467,
+          "successRps": 0.5
+        },
+        "write": {
+          "count": 1020,
+          "statuses": {
+            "200": 1018,
+            "timeout": 2
+          },
+          "successful": 1018,
+          "successOver2s": 235,
+          "maxMs": 5000,
+          "bytes": 11198,
+          "p95Ms": 4631,
+          "successP95Ms": 4630,
+          "successP99Ms": 4732,
+          "successRps": 49.6
+        },
+        "login": {
+          "count": 1020,
+          "statuses": {
+            "200": 879,
+            "503": 134,
+            "timeout": 7
+          },
+          "successful": 879,
+          "successOver2s": 19,
+          "maxMs": 5000,
+          "bytes": 15297,
+          "p95Ms": 594,
+          "successP95Ms": 553,
+          "successP99Ms": 4152,
+          "successRps": 42.8
+        }
+      },
+      "elapsedSeconds": 20.53,
+      "resources": {
+        "maxRssMiB": 350,
+        "maxCgroupMiB": 917,
+        "maxLagP95Ms": 95,
+        "maxLagMs": 162,
+        "maxModelActive": 4,
+        "maxQueued": 24,
+        "maxQueueAgeSeconds": 38,
+        "lastCgroup": {
+          "memory.current": "961822720",
+          "memory.peak": "973754368",
+          "memory.events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+          "cpu.stat": "usage_usec 167680204\nuser_usec 155433427\nsystem_usec 12246777\nnice_usec 0\nnr_periods 752\nnr_throttled 12\nthrottled_usec 65158\nnr_bursts 0\nburst_usec 0",
+          "memory.swap.current": "0"
+        }
+      },
+      "operations": {
+        "resources": {
+          "version": 1,
+          "updatedAt": 1792993431223,
+          "sampledAt": 1792993430015,
+          "level": "normal",
+          "reasons": [
+            "recovery_wait"
+          ],
+          "rssMiB": 358,
+          "diskFreeMiB": 13561,
+          "diskReserveMiB": 853,
+          "systemSupported": true,
+          "availableMiB": 3203,
+          "budgetMiB": 4096
+        },
+        "passwordWork": {
+          "active": 0,
+          "pending": 0,
+          "concurrency": 3,
+          "maxPending": 16
+        },
+        "modelUsage": {
+          "callsLastDay": 72,
+          "callsLastHour": 72,
+          "active": 4
+        },
+        "jobs": [
+          {
+            "status": "queued",
+            "count": 21,
+            "oldest": 1792993394755
+          },
+          {
+            "status": "running",
+            "count": 4,
+            "oldest": 1792993391792
+          },
+          {
+            "status": "succeeded",
+            "count": 68,
+            "oldest": 1792993366921
+          }
+        ],
+        "runtime": {
+          "memoryBytes": 4294967296,
+          "availableBytes": 4209315840,
+          "cpuCapacity": 4,
+          "cpuWorkers": 4,
+          "sources": [
+            "os",
+            "node.constrainedMemory",
+            "cgroup"
+          ],
+          "detectedAt": 1792993354728,
+          "memoryMiB": 4096,
+          "heapMiB": 1024,
+          "rssMiB": 2048,
+          "inlineMiB": 128,
+          "httpActive": 32,
+          "jsonConcurrency": 16,
+          "httpConnections": 128,
+          "modelConcurrency": 4,
+          "ocrConcurrency": 4,
+          "schoolConcurrency": 4,
+          "staffConcurrency": 4,
+          "ocrUserConcurrency": 4,
+          "uploadConcurrency": 2,
+          "hashConcurrency": 3,
+          "parserHeapMiB": 256,
+          "parserRssMiB": 512,
+          "v8HeapLimitMiB": 1216,
+          "allocationPolicy": {
+            "heapFraction": 0.25,
+            "rssFraction": 0.5,
+            "inlineFraction": 0.03125,
+            "parserHeapFraction": 0.0625,
+            "parserRssFraction": 0.125
+          }
+        }
+      }
+    },
+    {
+      "label": "recovery",
+      "offeredRps": 20,
+      "durationSeconds": 15,
+      "cap": 512,
+      "scheduled": 299,
+      "clientSkipped": 0,
+      "peakInflight": 2,
+      "byType": {
+        "read": {
+          "count": 209,
+          "statuses": {
+            "200": 209
+          },
+          "successful": 209,
+          "successOver2s": 0,
+          "maxMs": 17,
+          "bytes": 1352784,
+          "p95Ms": 5,
+          "successP95Ms": 5,
+          "successP99Ms": 8,
+          "successRps": 13.9
+        },
+        "login": {
+          "count": 15,
+          "statuses": {
+            "200": 15
+          },
+          "successful": 15,
+          "successOver2s": 0,
+          "maxMs": 83,
+          "bytes": 165,
+          "p95Ms": 83,
+          "successP95Ms": 83,
+          "successP99Ms": 83,
+          "successRps": 1
+        },
+        "upload": {
+          "count": 30,
+          "statuses": {
+            "200": 30
+          },
+          "successful": 30,
+          "successOver2s": 0,
+          "maxMs": 46,
+          "bytes": 2370,
+          "p95Ms": 34,
+          "successP95Ms": 34,
+          "successP99Ms": 46,
+          "successRps": 2
+        },
+        "enqueue": {
+          "count": 30,
+          "statuses": {
+            "202": 28,
+            "429": 2
+          },
+          "successful": 28,
+          "successOver2s": 0,
+          "maxMs": 3,
+          "bytes": 6228,
+          "p95Ms": 3,
+          "successP95Ms": 3,
+          "successP99Ms": 3,
+          "successRps": 1.9
+        },
+        "write": {
+          "count": 15,
+          "statuses": {
+            "200": 15
+          },
+          "successful": 15,
+          "successOver2s": 0,
+          "maxMs": 4,
+          "bytes": 165,
+          "p95Ms": 4,
+          "successP95Ms": 4,
+          "successP99Ms": 4,
+          "successRps": 1
+        }
+      },
+      "elapsedSeconds": 15,
+      "resources": {
+        "maxRssMiB": 394,
+        "maxCgroupMiB": 974,
+        "maxLagP95Ms": 24,
+        "maxLagMs": 31,
+        "maxModelActive": 4,
+        "maxQueued": 20,
+        "maxQueueAgeSeconds": 40,
+        "lastCgroup": {
+          "memory.current": "1021251584",
+          "memory.peak": "1021640704",
+          "memory.events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+          "cpu.stat": "usage_usec 172921902\nuser_usec 160106141\nsystem_usec 12815761\nnice_usec 0\nnr_periods 912\nnr_throttled 12\nthrottled_usec 65158\nnr_bursts 0\nburst_usec 0",
+          "memory.swap.current": "0"
+        }
+      },
+      "operations": {
+        "resources": {
+          "version": 1,
+          "updatedAt": 1792993448234,
+          "sampledAt": 1792993444945,
+          "level": "normal",
+          "reasons": [],
+          "rssMiB": 394,
+          "diskFreeMiB": 13517,
+          "diskReserveMiB": 853,
+          "systemSupported": true,
+          "availableMiB": 3167,
+          "budgetMiB": 4096
+        },
+        "passwordWork": {
+          "active": 0,
+          "pending": 0,
+          "concurrency": 3,
+          "maxPending": 16
+        },
+        "modelUsage": {
+          "callsLastDay": 104,
+          "callsLastHour": 104,
+          "active": 4
+        },
+        "jobs": [
+          {
+            "status": "queued",
+            "count": 17,
+            "oldest": 1792993440633
+          },
+          {
+            "status": "running",
+            "count": 4,
+            "oldest": 1792993435838
+          },
+          {
+            "status": "succeeded",
+            "count": 100,
+            "oldest": 1792993366921
+          }
+        ],
+        "runtime": {
+          "memoryBytes": 4294967296,
+          "availableBytes": 4209315840,
+          "cpuCapacity": 4,
+          "cpuWorkers": 4,
+          "sources": [
+            "os",
+            "node.constrainedMemory",
+            "cgroup"
+          ],
+          "detectedAt": 1792993354728,
+          "memoryMiB": 4096,
+          "heapMiB": 1024,
+          "rssMiB": 2048,
+          "inlineMiB": 128,
+          "httpActive": 32,
+          "jsonConcurrency": 16,
+          "httpConnections": 128,
+          "modelConcurrency": 4,
+          "ocrConcurrency": 4,
+          "schoolConcurrency": 4,
+          "staffConcurrency": 4,
+          "ocrUserConcurrency": 4,
+          "uploadConcurrency": 2,
+          "hashConcurrency": 3,
+          "parserHeapMiB": 256,
+          "parserRssMiB": 512,
+          "v8HeapLimitMiB": 1216,
+          "allocationPolicy": {
+            "heapFraction": 0.25,
+            "rssFraction": 0.5,
+            "inlineFraction": 0.03125,
+            "parserHeapFraction": 0.0625,
+            "parserRssFraction": 0.125
+          }
+        }
+      }
+    },
+    {
+      "label": "sqlite-writer-lock-plus-mixed",
+      "offeredRps": 100,
+      "durationSeconds": 10,
+      "cap": 512,
+      "scheduled": 999,
+      "clientSkipped": 0,
+      "peakInflight": 12,
+      "byType": {
+        "read": {
+          "count": 699,
+          "statuses": {
+            "200": 699
+          },
+          "successful": 699,
+          "successOver2s": 0,
+          "maxMs": 123,
+          "bytes": 4521752,
+          "p95Ms": 5,
+          "successP95Ms": 5,
+          "successP99Ms": 20,
+          "successRps": 69.8
+        },
+        "upload": {
+          "count": 100,
+          "statuses": {
+            "200": 61,
+            "429": 9,
+            "503": 13,
+            "ECONNRESET": 17
+          },
+          "successful": 61,
+          "successOver2s": 0,
+          "maxMs": 44,
+          "bytes": 5695,
+          "p95Ms": 36,
+          "successP95Ms": 38,
+          "successP99Ms": 44,
+          "successRps": 6.1
+        },
+        "login": {
+          "count": 50,
+          "statuses": {
+            "200": 35,
+            "503": 15
+          },
+          "successful": 35,
+          "successOver2s": 0,
+          "maxMs": 111,
+          "bytes": 1060,
+          "p95Ms": 104,
+          "successP95Ms": 105,
+          "successP99Ms": 111,
+          "successRps": 3.5
+        },
+        "enqueue": {
+          "count": 100,
+          "statuses": {
+            "202": 7,
+            "429": 63,
+            "503": 30
+          },
+          "successful": 7,
+          "successOver2s": 0,
+          "maxMs": 10,
+          "bytes": 5457,
+          "p95Ms": 3,
+          "successP95Ms": 3,
+          "successP99Ms": 3,
+          "successRps": 0.7
+        },
+        "write": {
+          "count": 50,
+          "statuses": {
+            "200": 35,
+            "503": 15
+          },
+          "successful": 35,
+          "successOver2s": 0,
+          "maxMs": 10,
+          "bytes": 1060,
+          "p95Ms": 4,
+          "successP95Ms": 5,
+          "successP99Ms": 10,
+          "successRps": 3.5
+        }
+      },
+      "elapsedSeconds": 10.01,
+      "resources": {
+        "maxRssMiB": 364,
+        "maxCgroupMiB": 991,
+        "maxLagP95Ms": 23,
+        "maxLagMs": 125,
+        "maxModelActive": 4,
+        "maxQueued": 21,
+        "maxQueueAgeSeconds": 18,
+        "lastCgroup": {
+          "memory.current": "1039052800",
+          "memory.peak": "1039937536",
+          "memory.events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+          "cpu.stat": "usage_usec 178104933\nuser_usec 164745517\nsystem_usec 13359416\nnice_usec 0\nnr_periods 1022\nnr_throttled 12\nthrottled_usec 65158\nnr_bursts 0\nburst_usec 0",
+          "memory.swap.current": "0"
+        }
+      },
+      "operations": {
+        "resources": {
+          "version": 1,
+          "updatedAt": 1792993458386,
+          "sampledAt": 1792993454955,
+          "level": "normal",
+          "reasons": [],
+          "rssMiB": 326,
+          "diskFreeMiB": 13430,
+          "diskReserveMiB": 853,
+          "systemSupported": true,
+          "availableMiB": 3142,
+          "budgetMiB": 4096
+        },
+        "passwordWork": {
+          "active": 0,
+          "pending": 0,
+          "concurrency": 3,
+          "maxPending": 16
+        },
+        "modelUsage": {
+          "callsLastDay": 107,
+          "callsLastHour": 107,
+          "active": 4
+        },
+        "jobs": [
+          {
+            "status": "queued",
+            "count": 21,
+            "oldest": 1792993440786
+          },
+          {
+            "status": "running",
+            "count": 4,
+            "oldest": 1792993440582
+          },
+          {
+            "status": "succeeded",
+            "count": 103,
+            "oldest": 1792993366921
+          }
+        ],
+        "runtime": {
+          "memoryBytes": 4294967296,
+          "availableBytes": 4209315840,
+          "cpuCapacity": 4,
+          "cpuWorkers": 4,
+          "sources": [
+            "os",
+            "node.constrainedMemory",
+            "cgroup"
+          ],
+          "detectedAt": 1792993354728,
+          "memoryMiB": 4096,
+          "heapMiB": 1024,
+          "rssMiB": 2048,
+          "inlineMiB": 128,
+          "httpActive": 32,
+          "jsonConcurrency": 16,
+          "httpConnections": 128,
+          "modelConcurrency": 4,
+          "ocrConcurrency": 4,
+          "schoolConcurrency": 4,
+          "staffConcurrency": 4,
+          "ocrUserConcurrency": 4,
+          "uploadConcurrency": 2,
+          "hashConcurrency": 3,
+          "parserHeapMiB": 256,
+          "parserRssMiB": 512,
+          "v8HeapLimitMiB": 1216,
+          "allocationPolicy": {
+            "heapFraction": 0.25,
+            "rssFraction": 0.5,
+            "inlineFraction": 0.03125,
+            "parserHeapFraction": 0.0625,
+            "parserRssFraction": 0.125
+          }
+        }
+      }
+    },
+    {
+      "label": "post-lock-recovery",
+      "offeredRps": 20,
+      "durationSeconds": 10,
+      "cap": 512,
+      "scheduled": 199,
+      "clientSkipped": 0,
+      "peakInflight": 2,
+      "byType": {
+        "read": {
+          "count": 139,
+          "statuses": {
+            "200": 139
+          },
+          "successful": 139,
+          "successOver2s": 0,
+          "maxMs": 68,
+          "bytes": 881157,
+          "p95Ms": 15,
+          "successP95Ms": 15,
+          "successP99Ms": 35,
+          "successRps": 13.9
+        },
+        "login": {
+          "count": 10,
+          "statuses": {
+            "200": 10
+          },
+          "successful": 10,
+          "successOver2s": 0,
+          "maxMs": 64,
+          "bytes": 110,
+          "p95Ms": 64,
+          "successP95Ms": 64,
+          "successP99Ms": 64,
+          "successRps": 1
+        },
+        "upload": {
+          "count": 20,
+          "statuses": {
+            "200": 20
+          },
+          "successful": 20,
+          "successOver2s": 0,
+          "maxMs": 50,
+          "bytes": 1580,
+          "p95Ms": 48,
+          "successP95Ms": 48,
+          "successP99Ms": 50,
+          "successRps": 2
+        },
+        "enqueue": {
+          "count": 20,
+          "statuses": {
+            "429": 20
+          },
+          "successful": 0,
+          "successOver2s": 0,
+          "maxMs": 4,
+          "bytes": 960,
+          "p95Ms": 4,
+          "successP95Ms": null,
+          "successP99Ms": null,
+          "successRps": 0
+        },
+        "write": {
+          "count": 10,
+          "statuses": {
+            "200": 10
+          },
+          "successful": 10,
+          "successOver2s": 0,
+          "maxMs": 2,
+          "bytes": 110,
+          "p95Ms": 2,
+          "successP95Ms": 2,
+          "successP99Ms": 2,
+          "successRps": 1
+        }
+      },
+      "elapsedSeconds": 10,
+      "resources": {
+        "maxRssMiB": 326,
+        "maxCgroupMiB": 1020,
+        "maxLagP95Ms": 44,
+        "maxLagMs": 117,
+        "maxModelActive": 4,
+        "maxQueued": 21,
+        "maxQueueAgeSeconds": 28,
+        "lastCgroup": {
+          "memory.current": "1068941312",
+          "memory.peak": "1069498368",
+          "memory.events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0",
+          "cpu.stat": "usage_usec 179509765\nuser_usec 166006254\nsystem_usec 13503511\nnice_usec 0\nnr_periods 1122\nnr_throttled 12\nthrottled_usec 65158\nnr_bursts 0\nburst_usec 0",
+          "memory.swap.current": "0"
+        }
+      },
+      "operations": {
+        "resources": {
+          "version": 1,
+          "updatedAt": 1792993468390,
+          "sampledAt": 1792993464947,
+          "level": "normal",
+          "reasons": [],
+          "rssMiB": 326,
+          "diskFreeMiB": 13401,
+          "diskReserveMiB": 853,
+          "systemSupported": true,
+          "availableMiB": 3091,
+          "budgetMiB": 4096
+        },
+        "passwordWork": {
+          "active": 0,
+          "pending": 0,
+          "concurrency": 3,
+          "maxPending": 16
+        },
+        "modelUsage": {
+          "callsLastDay": 107,
+          "callsLastHour": 107,
+          "active": 4
+        },
+        "jobs": [
+          {
+            "status": "queued",
+            "count": 21,
+            "oldest": 1792993440786
+          },
+          {
+            "status": "running",
+            "count": 4,
+            "oldest": 1792993440582
+          },
+          {
+            "status": "succeeded",
+            "count": 103,
+            "oldest": 1792993366921
+          }
+        ],
+        "runtime": {
+          "memoryBytes": 4294967296,
+          "availableBytes": 4209315840,
+          "cpuCapacity": 4,
+          "cpuWorkers": 4,
+          "sources": [
+            "os",
+            "node.constrainedMemory",
+            "cgroup"
+          ],
+          "detectedAt": 1792993354728,
+          "memoryMiB": 4096,
+          "heapMiB": 1024,
+          "rssMiB": 2048,
+          "inlineMiB": 128,
+          "httpActive": 32,
+          "jsonConcurrency": 16,
+          "httpConnections": 128,
+          "modelConcurrency": 4,
+          "ocrConcurrency": 4,
+          "schoolConcurrency": 4,
+          "staffConcurrency": 4,
+          "ocrUserConcurrency": 4,
+          "uploadConcurrency": 2,
+          "hashConcurrency": 3,
+          "parserHeapMiB": 256,
+          "parserRssMiB": 512,
+          "v8HeapLimitMiB": 1216,
+          "allocationPolicy": {
+            "heapFraction": 0.25,
+            "rssFraction": 0.5,
+            "inlineFraction": 0.03125,
+            "parserHeapFraction": 0.0625,
+            "parserRssFraction": 0.125
+          }
+        }
+      }
+    }
+  ]
+}

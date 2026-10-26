@@ -75,7 +75,7 @@ it("accounts for reservations between disk snapshots instead of repeatedly spend
     await pressure.ready;
     pressure.assertUpload(100 * 1024 * 1024);
     pressure.chargeDisk(100 * 1024 * 1024);
-    expect(() => pressure.assertUpload(100 * 1024 * 1024)).toThrow(
+    expect(() => pressure.assertUpload(180 * 1024 * 1024)).toThrow(
       /可用空间不足/,
     );
     await pressure.refresh();

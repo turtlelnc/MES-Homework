@@ -127,7 +127,12 @@ beforeAll(async () => {
   );
   child = spawn(
     process.execPath,
-    ["--max-old-space-size=256", "--import", pathToFileURL(preload).href, "server/index.mjs"],
+    [
+      "--max-old-space-size=256",
+      "--import",
+      pathToFileURL(preload).href,
+      "server/index.mjs",
+    ],
     {
       cwd: root,
       stdio: "ignore",
@@ -144,7 +149,11 @@ beforeAll(async () => {
         MODEL_USER_DAILY_MICRO_CNY: "100000000",
         MODEL_SCHOOL_DAILY_MICRO_CNY: "200000000",
         MODEL_COST_RATES_JSON: JSON.stringify({
-          "deepseek/deepseek-flash": { input: 1000000, output: 2000000 },
+          "deepseek/deepseek-flash": {
+            input: 1000000,
+            output: 2000000,
+            imageTokens: 1024,
+          },
         }),
         UPLOAD_CONCURRENCY: "2",
         UPLOAD_TOTAL_MB: "10",
@@ -218,7 +227,9 @@ it("rejects a burst while writers are occupied, keeps reads responsive, and reco
           ),
         ),
       );
-      expect(rejected.every((s) => s === 429 || s === 0)).toBe(true);
+      // The earlier upload gate returns 429; the global request gate may
+      // reject a burst with 503 before upload admission is reached.
+      expect(rejected.every((s) => s === 429 || s === 503 || s === 0)).toBe(true);
       await Promise.all(
         Array.from({ length: 30 }, async () => {
           const start = performance.now();

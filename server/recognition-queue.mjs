@@ -1,3 +1,4 @@
+import { runtimeProfile } from "./runtime-profile.mjs";
 import { randomUUID } from "node:crypto";
 
 export const positiveLimit = (name, fallback) => {
@@ -24,8 +25,8 @@ export function createRecognitionQueue(
   db,
   execute,
   {
-    concurrency = positiveLimit("OCR_CONCURRENCY", 4),
-    userConcurrency = positiveLimit("OCR_USER_CONCURRENCY", 4),
+    concurrency = runtimeProfile().ocrConcurrency,
+    userConcurrency = runtimeProfile().ocrUserConcurrency,
     maxPending = positiveLimit("OCR_MAX_PENDING", 100),
     schoolPending = positiveLimit("OCR_SCHOOL_MAX_PENDING", 25),
     maxAttempts = 3,

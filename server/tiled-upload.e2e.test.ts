@@ -108,27 +108,35 @@ beforeAll(async () => {
  };
  `,
   );
-  child = spawn(process.execPath, ["--import", pathToFileURL(preload).href, "server/index.mjs"], {
-    cwd: root,
-    env: {
-      ...process.env,
-      PORT: String(port),
-      HOST: "127.0.0.1",
-      DATA_DIR: dir,
-      NODE_ENV: "test",
-      SYSTEM_PRESSURE_ENABLED: "0",
-      APP_SECRET: "tiling-test-only-not-a-real-production-key",
-      CLIENT_TILING_ENABLED: "1",
-      DEEPSEEK_FILES_ENABLED: "1",
-      MODEL_SCHOOL_DAILY_MICRO_CNY: "200000000",
-      MODEL_USER_DAILY_MICRO_CNY: "100000000",
-      MODEL_MAX_OUTPUT_TOKENS: "2048",
-      MODEL_COST_RATES_JSON: JSON.stringify({
-        "deepseek/deepseek-flash": { input: 1000000, output: 2000000 },
-      }),
+  child = spawn(
+    process.execPath,
+    ["--import", pathToFileURL(preload).href, "server/index.mjs"],
+    {
+      cwd: root,
+      env: {
+        ...process.env,
+        PORT: String(port),
+        HOST: "127.0.0.1",
+        DATA_DIR: dir,
+        NODE_ENV: "test",
+        SYSTEM_PRESSURE_ENABLED: "0",
+        APP_SECRET: "tiling-test-only-not-a-real-production-key",
+        CLIENT_TILING_ENABLED: "1",
+        DEEPSEEK_FILES_ENABLED: "1",
+        MODEL_SCHOOL_DAILY_MICRO_CNY: "200000000",
+        MODEL_USER_DAILY_MICRO_CNY: "100000000",
+        MODEL_MAX_OUTPUT_TOKENS: "2048",
+        MODEL_COST_RATES_JSON: JSON.stringify({
+          "deepseek/deepseek-flash": {
+            input: 1000000,
+            output: 2000000,
+            imageTokens: 1024,
+          },
+        }),
+      },
+      stdio: "ignore",
     },
-    stdio: "ignore",
-  });
+  );
   for (let i = 0; i < 100; i++) {
     try {
       if ((await request("/api/health", "")).ok) break;
