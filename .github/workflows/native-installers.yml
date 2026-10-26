@@ -12,6 +12,20 @@ on:
       - "server/version.mjs"
       - ".github/workflows/native-installers.yml"
   workflow_dispatch:
+    inputs:
+      publish_verified:
+        description: Publish an already verified native build (requires an existing reviewed draft)
+        type: boolean
+        default: false
+      source_run:
+        description: Successful native build run ID
+        type: string
+      draft_id:
+        description: Exact reviewed draft release ID
+        type: string
+      target_commit:
+        description: Exact release target commit SHA
+        type: string
 
 permissions:
   contents: read
@@ -22,6 +36,7 @@ concurrency:
 
 jobs:
   matrix:
+    if: github.event_name != 'workflow_dispatch' || inputs.publish_verified != true
     runs-on: ubuntu-latest
     outputs:
       targets: ${{ steps.targets.outputs.targets }}
@@ -202,3 +217,23 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" --draft --prerelease --verify-tag --title "MES Homework $GITHUB_REF_NAME" --notes-file tools/installer/RELEASE_NOTES.md release-native/*
+
+  publish-verified:
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_verified == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Verify existing artifacts, upload to the draft, and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SOURCE_RUN: ${{ inputs.source_run }}
+          RELEASE_TARGET_COMMIT: ${{ inputs.target_commit }}
+          RELEASE_DRAFT_ID: ${{ inputs.draft_id }}
+        run: node tools/ops/publish-native-release.mjs
