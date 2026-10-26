@@ -20,6 +20,9 @@ on:
       source_run:
         description: Successful native build run ID
         type: string
+      draft_id:
+        description: Exact reviewed draft release ID
+        type: string
       target_commit:
         description: Exact release target commit SHA
         type: string
@@ -232,4 +235,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_SOURCE_RUN: ${{ inputs.source_run }}
           RELEASE_TARGET_COMMIT: ${{ inputs.target_commit }}
+          RELEASE_DRAFT_ID: ${{ inputs.draft_id }}
         run: node tools/ops/publish-native-release.mjs

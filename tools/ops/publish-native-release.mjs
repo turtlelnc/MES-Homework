@@ -197,8 +197,23 @@ try {
     )
       throw new Error("Checksum list is invalid");
   }
-  const releases = await api("/releases?per_page=100");
-  let release = releases.find((r) => r.tag_name === APP_VERSION);
+  const draftId = process.env.RELEASE_DRAFT_ID;
+  if (draftId && !/^\d+$/.test(draftId))
+    throw new Error("Invalid release draft ID");
+  const releases = draftId ? [] : await api("/releases?per_page=100");
+  let release = draftId
+    ? await api("/releases/" + draftId)
+    : releases.find((r) => r.tag_name === APP_VERSION);
+  if (
+    release &&
+    release.tag_name !== APP_VERSION &&
+    !(release.draft && release.name.includes(APP_VERSION))
+  )
+    throw new Error("Selected draft belongs to a different release");
+  if (release)
+    console.log(
+      `Prepared release ${release.id}: ${release.tag_name}, draft=${release.draft}`,
+    );
   if (!release)
     throw new Error("Prepare the reviewed release draft before publishing");
   const expected = new Map(
@@ -229,6 +244,7 @@ try {
     )
       throw new Error("Unrecognized assets in draft; refusing to remove them");
     release = await api("/releases/" + release.id, "PATCH", {
+      tag_name: APP_VERSION,
       target_commitish: target,
       name: `MES Homework ${APP_VERSION} · 原生安装包`,
       draft: true,
