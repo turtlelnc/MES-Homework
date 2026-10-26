@@ -110,3 +110,8 @@
 - Linux 服务低权限专用账户、Windows 可选服务 LocalService、Mac 用户 LaunchAgent；不得把 Web 服务作为 root/System 运行。服务启用须显式选择/管理，默认 loopback，不自动放行防火墙。
 - 正常停止通过私有 IPC，API/监督器监听 IPC 停机；保留超时终止和父进程断开回收。实例互斥由 SQLite 事务持有，不能用不可靠 PID 文件替代。
 - 打包检查实际 Node/PE 架构、生产依赖、OS/CPU/libc 声明与实际文件摘要；版本映射遵循 versions.mjs，不猜测包大小和系统依赖。
+
+## 发布已验证的原生安装包
+
+- Native installers 的 workflow_dispatch 可显式选择 publish_verified，传入成功 source_run 和精确 target_commit；该路径验证来源、生产代码一致性、平台矩阵及所有摘要后，通过 GitHub Actions 仓库令牌上传并发布已审阅草稿，不重建应用。
+- 发布脚本 tools/ops/publish-native-release.mjs 不移动已有标签，不覆盖不同的已发布版本，只替换未发布草稿中的旧部署器资产。RC 版本保持 Pre-release；签名状态必须如实说明。
