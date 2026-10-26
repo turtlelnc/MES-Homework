@@ -1,0 +1,8 @@
+{
+  "node": "v24.19.0",
+  "platform": "linux",
+  "arch": "x64",
+  "cpuMax": "400000 100000",
+  "memoryMax": "4294967296",
+  "swapMax": "0"
+}

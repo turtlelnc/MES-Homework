@@ -196,3 +196,5 @@ See [SAFETY.md](SAFETY.md) ([中文](SAFETY.zh.md)) for detailed safety informat
 ## Background tasks and operations
 
 See [OPERATIONS.md](OPERATIONS.md) for durable OCR jobs, limits, review auditing, backup/restore, and capacity/evaluation tools (Chinese).
+
+Release audit / 发布审核：[PRE_RELEASE_AUDIT.md](PRE_RELEASE_AUDIT.md) · [runtime budgets / 运行预算](RUNTIME_CONFIGURATION.md)

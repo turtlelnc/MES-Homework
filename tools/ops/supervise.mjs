@@ -1,3 +1,4 @@
+import { runtimeProfile } from "../../server/runtime-profile.mjs";
 import { fork } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
@@ -11,7 +12,7 @@ export function supervise(
   } = {},
 ) {
   const child = fork(entry, [], {
-    execArgv: ["--max-old-space-size=1024"],
+    execArgv: [`--max-old-space-size=${runtimeProfile().heapMiB}`],
     stdio: ["ignore", "inherit", "inherit", "ipc"],
   });
   let lastHeartbeat = performance.now(),

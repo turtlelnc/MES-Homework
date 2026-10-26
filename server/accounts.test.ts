@@ -521,6 +521,21 @@ describe("登录兼容 username / email / account", () => {
     expect(harness.sessions.at(-1)).toBe(school.adminId);
   });
 
+  it("does not report authentication overload as an incorrect password", async () => {
+    await createSchool();
+    harness.ctx.pass = () => {
+      throw Object.assign(new Error("认证繁忙"), {
+        status: 503,
+        code: "AUTH_BUSY",
+      });
+    };
+    await expect(
+      request("POST", "/api/auth/login", {
+        body: { username: "principal", password: PASSWORD },
+      }),
+    ).rejects.toMatchObject({ status: 503, code: "AUTH_BUSY" });
+  });
+
   it("支持 account 字段填邮箱与旧 email 字段", async () => {
     await createSchool({ email: "principal@example.test" });
     db.prepare("UPDATE users SET email=? WHERE username='principal'").run(

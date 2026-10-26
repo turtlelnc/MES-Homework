@@ -1,3 +1,6 @@
+import { storageStatus } from "./io-guards.mjs";
+import { runtimeProfile } from "./runtime-profile.mjs";
+import { storageProfile } from "./storage-profile.mjs";
 import { randomUUID } from "node:crypto";
 import { createResourcePressure } from "./resource-pressure.mjs";
 import { watchUpload } from "./io-guards.mjs";
@@ -13,9 +16,30 @@ export function createUploadAdmission(
   { pressure = createResourcePressure(dataDir) } = {},
 ) {
   const maxBytes = positive("UPLOAD_TOTAL_MB", 50) * 1024 * 1024;
-  const globalScratch = positive("UPLOAD_SCRATCH_MB", 512) * 1024 * 1024;
-  const schoolScratch = positive("UPLOAD_SCHOOL_SCRATCH_MB", 128) * 1024 * 1024;
-  const globalConcurrent = positive("UPLOAD_CONCURRENCY", 2);
+  const storage = storageProfile(dataDir);
+  const globalScratch = Math.min(
+    positive(
+      "UPLOAD_SCRATCH_MB",
+      Math.max(
+        1,
+        Math.floor(
+          Math.min(storage.freeBytes / 4, runtimeProfile().memoryBytes) /
+            1024 ** 2,
+        ),
+      ),
+    ) *
+      1024 ** 2,
+    Math.floor(storage.freeBytes / 2),
+  );
+  const schoolScratch = Math.min(
+    positive(
+      "UPLOAD_SCHOOL_SCRATCH_MB",
+      Math.ceil(Math.max(maxBytes, globalScratch / 4) / 1024 ** 2),
+    ) *
+      1024 ** 2,
+    globalScratch,
+  );
+  const globalConcurrent = runtimeProfile().uploadConcurrency;
   const activeWriters = new Map();
   const totalMs = Math.min(positive("UPLOAD_TIMEOUT_MS", 60000), 60000);
   const idleMs = Math.min(positive("UPLOAD_IDLE_TIMEOUT_MS", 15000), totalMs);
@@ -246,7 +270,7 @@ export function createUploadAdmission(
       res
         .set("Connection", "close")
         .set("Retry-After", "5")
-        .status(e.status || 400)
+        .status(storageStatus(e) || e.status || 400)
         .json({ error: e.message });
     }
   }

@@ -59,7 +59,7 @@ export const providers = {
     name: "Anthropic Claude",
     endpoint: "https://api.anthropic.com/v1/messages",
     model: "claude-sonnet-4-5",
-    vision: false,
+    vision: true,
   },
 };
 export const publicProviders = () =>

@@ -289,3 +289,5 @@ Windows 自定义域名部署会保存与新建隧道匹配的本地凭据，凭
 ## 后台任务与运维
 
 后台 OCR 队列、并发限制、复核审计、备份恢复及容量/效果评测见 [OPERATIONS.md](OPERATIONS.md)。
+
+Release audit / 发布审核：[PRE_RELEASE_AUDIT.md](PRE_RELEASE_AUDIT.md) · [runtime budgets / 运行预算](RUNTIME_CONFIGURATION.md)

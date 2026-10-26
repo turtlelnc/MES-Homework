@@ -23,10 +23,6 @@ concurrency:
   group: deployer-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  DEPLOYER_VERSION: v0.2.1-rc4
-  DEPLOYER_BUILD: "26102501"
-
 jobs:
   deployer-windows:
     name: Deployer Windows ${{ matrix.slug }}
@@ -228,7 +224,7 @@ jobs:
           npm run build
           npm prune --omit=dev
       - name: Package app runtime bundle
-        run: node tools/deployer/packaging/build-app-bundle.mjs --out release/mes-homework-app-${{ matrix.platform }}-${{ matrix.arch }}.zip --platform ${{ matrix.platform }} --arch ${{ matrix.arch }} --version ${{ env.DEPLOYER_VERSION }} --build ${{ env.DEPLOYER_BUILD }}
+        run: node tools/deployer/packaging/build-app-bundle.mjs --out release/mes-homework-app-${{ matrix.platform }}-${{ matrix.arch }}.zip --platform ${{ matrix.platform }} --arch ${{ matrix.arch }}
       - uses: actions/upload-artifact@v4
         with:
           name: app-${{ matrix.slug }}
@@ -249,6 +245,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Read release identity from source
+        run: node tools/ops/release-identity.mjs
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -256,8 +257,7 @@ jobs:
           merge-multiple: true
       - name: Build manifest and checksums
         run: |
-          node tools/deployer/packaging/build-manifest.mjs --dir release \
-            --version "${DEPLOYER_VERSION}" --build "${DEPLOYER_BUILD}"
+          node tools/deployer/packaging/build-manifest.mjs --dir release
           rm -f release/*.meta.json release/*.sha256
           chmod +x release/mes-deployer-linux-* release/mes-deployer-macos-* || true
           ls -la release
@@ -271,7 +271,7 @@ jobs:
               --draft --prerelease \
               --target "${GITHUB_SHA}" \
               --title "桌面版无依赖一键部署器 ${DEPLOYER_VERSION} (build ${DEPLOYER_BUILD})" \
-              --notes-file docs/releases/v0.2.1-rc4.md
+              --notes-file "docs/releases/${DEPLOYER_VERSION}.md"
           fi
           gh release upload "${DEPLOYER_VERSION}" release/* \
             --repo "${GITHUB_REPOSITORY}" --clobber
@@ -293,6 +293,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Read release identity from source
+        run: node tools/ops/release-identity.mjs
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -300,8 +305,7 @@ jobs:
           merge-multiple: true
       - name: Build manifest and checksums
         run: |
-          node tools/deployer/packaging/build-manifest.mjs --dir release \
-            --version "${DEPLOYER_VERSION}" --build "${DEPLOYER_BUILD}"
+          node tools/deployer/packaging/build-manifest.mjs --dir release
           chmod +x release/mes-deployer-linux-* release/mes-deployer-macos-* || true
           ls -la release
       - name: Create release

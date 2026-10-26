@@ -35,6 +35,70 @@ test.afterEach(async ({ page }) => {
   expect(page.__errors).toEqual([]);
 });
 
+test("registration follows server policy instead of an invented local default", async ({
+  page,
+}) => {
+  await page.route("**/api/capabilities", (route) =>
+    route.fulfill({
+      json: { stages: ["小学", "高中"], publicRegistration: false },
+    }),
+  );
+  await page.goto("/");
+  await page.getByRole("button", { name: "创建学校空间", exact: true }).click();
+  await expect(
+    page.getByRole("tab", { name: "学校", exact: true }),
+  ).toBeEnabled();
+  await expect(
+    page.getByRole("tab", { name: "老师", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("tab", { name: "学生", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("tab", { name: "家长", exact: true }),
+  ).toBeDisabled();
+});
+
+test("published assignment details show real questions but no student reference answers", async ({
+  page,
+}) => {
+  await login(page, "lin@fixture.test");
+  await page.getByRole("button", { name: "我的作业", exact: true }).click();
+  const detail = page
+    .locator("section")
+    .filter({ has: page.getByRole("heading", { name: "作业详情" }) });
+  await expect(page.getByText("正在读取题目…")).toHaveCount(0);
+  await expect(page.getByText("第 1 题 · 5 分", { exact: true })).toBeVisible();
+  await expect(page.getByText("教师参考答案", { exact: true })).toHaveCount(0);
+  await page.screenshot({
+    path: "test-results/release-student-assignment-details.png",
+    fullPage: true,
+  });
+});
+
+test("a saved paper can be reopened after a page reload", async ({ page }) => {
+  await login(page);
+  await page.getByRole("button", { name: "错题组卷", exact: true }).click();
+  await page.getByLabel("试卷名称", { exact: true }).fill("发布验收历史试卷");
+  await page.getByRole("button", { name: "从错题组卷", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "发布验收历史试卷", exact: true }),
+  ).toBeVisible();
+  await page.reload();
+  await page.getByRole("button", { name: "错题组卷", exact: true }).click();
+  await page.getByRole("button", { name: /发布验收历史试卷 ·/ }).click();
+  await expect(
+    page.getByRole("heading", { name: "发布验收历史试卷", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "打印 / 保存 PDF", exact: true }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: "test-results/release-saved-paper.png",
+    fullPage: true,
+  });
+});
+
 test("login and enrollment boundary are visible in the real UI", async ({
   page,
 }) => {
@@ -131,6 +195,49 @@ test("two pages form one submission; OCR and manual scores save consistently", a
   expect(saved.score).toBe(6);
   expect(saved.teacher_reviewed).toBe(1);
   expect(saved.files).toHaveLength(2);
+  const completed = page
+    .locator(".select-list button")
+    .filter({ hasText: "林一" })
+    .filter({ hasText: "已完成" })
+    .first();
+  await expect(completed).toBeVisible();
+  await completed.click();
+  await page.getByText("批改与复核历史", { exact: true }).click();
+  await expect(page.getByText("保存教师复核", { exact: true })).toBeVisible();
+});
+
+test("account creation resets its real form and import templates contain no invented credentials", async ({
+  page,
+}) => {
+  await login(page, "admin@fixture.test");
+  const form = page.locator("form").filter({
+    has: page.getByRole("heading", { name: "注册教师", exact: true }),
+  });
+  await form.getByLabel("教师姓名", { exact: true }).fill("发布验收教师");
+  await form
+    .getByLabel("登录账号名", { exact: true })
+    .fill("releaseauditteacher");
+  await form.getByLabel("初始密码", { exact: true }).fill("ChangeMe123!");
+  await form.getByLabel("任教学科", { exact: true }).fill("发布验收学科");
+  await form
+    .getByLabel("默认班级 / 班主任班级", { exact: true })
+    .fill("发布验收班级");
+  await form.getByRole("button", { name: "创建教师账户", exact: true }).click();
+  await expect(
+    page.getByText("教师账户已创建。", { exact: true }),
+  ).toBeVisible();
+  await expect(form.getByLabel("教师姓名", { exact: true })).toHaveValue("");
+  await page.getByRole("button", { name: "学生管理", exact: true }).click();
+  const pending = page.waitForEvent("download");
+  await page
+    .getByRole("button", { name: "下载 CSV 模板", exact: true })
+    .click();
+  const download = await pending;
+  const fs = await import("node:fs");
+  const text = fs.readFileSync(await download.path(), "utf8");
+  expect(text.replace(/^\uFEFF/, "").trim()).toBe(
+    "姓名,账号名,初始密码,学段,班级",
+  );
 });
 
 test("late answer-sheet detail cannot replace the selected student", async ({
@@ -339,13 +446,11 @@ test("device-side overlapping tiles resume after interruption and preserve origi
   await page.getByLabel("对应的正式作业").selectOption(a.id);
   await page.getByLabel("关联学生账户").selectOption(student.id);
   await page.getByLabel(/在设备上切分照片/).check();
-  await page
-    .locator(".upload-box input[type=file]")
-    .setInputFiles({
-      name: "full-page.jpg",
-      mimeType: "image/jpeg",
-      buffer: canvas.toBuffer("image/jpeg"),
-    });
+  await page.locator(".upload-box input[type=file]").setInputFiles({
+    name: "full-page.jpg",
+    mimeType: "image/jpeg",
+    buffer: canvas.toBuffer("image/jpeg"),
+  });
   let originals = 0;
   page.on("request", (request) => {
     if (/\/upload-sessions\/[^/]+\/parts\/0$/.test(request.url())) originals++;

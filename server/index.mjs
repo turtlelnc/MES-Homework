@@ -1,3 +1,7 @@
+import { runtimeProfile } from "./runtime-profile.mjs";
+import { applicationCapabilities } from "./capabilities.mjs";
+import { providerRequest, providerReply } from "./provider-protocol.mjs";
+import { requestAdmission } from "./request-admission.mjs";
 import express from "express";
 import { limitJsonBodies } from "./body-admission.mjs";
 import { requestJson, abortable, storageStatus } from "./io-guards.mjs";
@@ -107,13 +111,17 @@ const data = path.resolve(process.env.DATA_DIR || path.join(root, "data"));
 const files = path.join(data, "uploads");
 fs.mkdirSync(files, { recursive: true });
 const db = new DatabaseSync(path.join(data, "smart-campus.sqlite"));
-db.exec(
-  `PRAGMA busy_timeout=${Math.min(positive("SQLITE_BUSY_TIMEOUT_MS", 250), 1000)}`,
-);
+const sqliteWait = Number(process.env.SQLITE_BUSY_TIMEOUT_MS ?? 0);
+if (!Number.isSafeInteger(sqliteWait) || sqliteWait < 0 || sqliteWait > 1000)
+  throw new Error("SQLITE_BUSY_TIMEOUT_MS 必须为 0–1000 的整数");
+// A synchronous SQLite wait blocks every reader on this event loop. Default
+// to SQLite's immediate busy response; callers receive a retryable 503.
+db.exec(`PRAGMA busy_timeout=${sqliteWait}`);
 const schemaSql = fs.readFileSync(path.join(root, "server/schema.sql"), "utf8");
 // v0.2.1: rebuild users/mistakes where SQLite cannot widen constraints in place,
 // then create v0.2.1 tables and derive account names for legacy rows.
 migrateDatabase(db, { schemaSql });
+const capabilities = applicationCapabilities(db);
 db.exec(`
   UPDATE users SET is_school_admin=1
   WHERE id IN (
@@ -159,6 +167,7 @@ const uploadAdmission = createUploadAdmission(db, data, { pressure });
 const app = express();
 const requestMetrics = createRequestMetrics();
 app.disable("x-powered-by");
+app.use("/api", requestAdmission());
 app.use("/api", requestScope);
 app.use("/api", (req, res, next) => {
   const started = performance.now();
@@ -373,7 +382,7 @@ function assertModelConfigured(user) {
 }
 
 const modelImages = createModelImages({
-  maxBytes: Math.min(positive("MODEL_INLINE_BUDGET_MB", 96), 256) * 1024 ** 2,
+  maxBytes: runtimeProfile().inlineMiB * 1024 ** 2,
 });
 async function askModel(
   userOrId,
@@ -489,28 +498,21 @@ async function askModel(
       release.renew();
       signal.throwIfAborted();
       cost?.dispatch();
+      const request = providerRequest(
+        config,
+        images.length ? content : prompt,
+        decrypt(config.encrypted_key, config.iv),
+        cost?.maxTokens ||
+          Math.min(positive("MODEL_MAX_OUTPUT_TOKENS", 8192), 32768),
+      );
       const { response: rr, body: raw } = await requestJson(
         endpoint,
         {
           redirect: "error",
           signal,
           method: "POST",
-          headers: {
-            "content-type": "application/json",
-            authorization: `Bearer ${decrypt(config.encrypted_key, config.iv)}`,
-          },
-          body: JSON.stringify({
-            model: config.model,
-            response_format: { type: "json_object" },
-            temperature: 0,
-            stream: false,
-            max_tokens:
-              cost?.maxTokens ||
-              Math.min(positive("MODEL_MAX_OUTPUT_TOKENS", 8192), 32768),
-            messages: [
-              { role: "user", content: images.length ? content : prompt },
-            ],
-          }),
+          headers: request.headers,
+          body: JSON.stringify(request.body),
         },
         {
           timeoutMs: Math.min(
@@ -528,8 +530,9 @@ async function askModel(
         throw Object.assign(new Error(`模型接口请求失败 (${rr.status})`), {
           retryable: rr.status === 429 || rr.status >= 500,
         });
-      cost?.settle(raw.usage);
-      text = raw.choices?.[0]?.message?.content;
+      const reply = providerReply(config, raw);
+      cost?.settle(reply.usage);
+      text = reply.text;
     }
     if (!text) throw new Error("模型没有返回识别内容");
     return cleanModelJson(text);
@@ -631,6 +634,7 @@ app.get("/api/health", (_q, r) =>
   }),
 );
 app.get("/api/providers", (_q, r) => r.json(publicProviders()));
+app.get("/api/capabilities", (_q, r) => r.json(capabilities));
 
 app.post("/api/auth/logout", auth, (req, res) => {
   db.prepare("DELETE FROM sessions WHERE user_id=?").run(req.user.id);
@@ -651,7 +655,7 @@ app.patch("/api/me", auth, (req, res) => {
       x.subject !== undefined)
   )
     return res.status(403).json({ error: "学生与家长不能自行更改学段或班级" });
-  if (x.stage && !["小学", "初中", "高中"].includes(x.stage))
+  if (x.stage && !capabilities.stages.includes(x.stage))
     return res.status(400).json({ error: "学段无效" });
   db.prepare(
     "UPDATE users SET stage=COALESCE(?,stage),subject=COALESCE(?,subject),class_name=COALESCE(?,class_name),name=COALESCE(?,name) WHERE id=?",
@@ -853,7 +857,7 @@ app.post(
         try {
           if (
             !name ||
-            !["小学", "初中", "高中"].includes(stage) ||
+            !capabilities.stages.includes(stage) ||
             !validPassword(initialPassword)
           )
             throw new Error("姓名、学段或密码格式无效");
@@ -1693,7 +1697,7 @@ const recognitionQueue = createRecognitionQueue(
   },
   {
     canStart: () => pressure.limit(1) > 0,
-    availableConcurrency: () => pressure.limit(positive("OCR_CONCURRENCY", 4)),
+    availableConcurrency: () => pressure.limit(runtimeProfile().ocrConcurrency),
     publish(job, prepared) {
       persistRecognition(job, prepared);
     },
@@ -1716,7 +1720,7 @@ app.post("/api/submissions/:id/recognition-jobs", auth, teacher, (req, res) => {
     const job = recognitionQueue.enqueue(submission, req.user);
     res.status(202).json(publicJob(job));
   } catch (e) {
-    if (e.status === 429) res.set("Retry-After", "5");
+    if ([429, 503].includes(modelErrorStatus(e))) res.set("Retry-After", "5");
     res.status(modelErrorStatus(e)).json({ error: e.message });
   }
 });
@@ -1761,6 +1765,7 @@ app.get("/api/operations", auth, schoolAdmin, (req, res) => {
     passwordWork: passwords.snapshot(),
     statementCache: statements.snapshot(),
     modelImages: modelImages.snapshot(),
+    runtime: runtimeProfile(),
   });
 });
 // Synchronous legacy endpoint kept for older clients; it shares the queue's
@@ -1873,7 +1878,9 @@ app.post("/api/submissions/:id/review", auth, teacher, (req, res) => {
     );
     res.json({ ok: true, score: outcome.score });
   } catch (e) {
-    res.status(400).json({ error: e.message || "复核保存失败" });
+    res
+      .status(storageStatus(e) || 400)
+      .json({ error: e.message || "复核保存失败" });
   }
 });
 app.post("/api/papers/generate", auth, teacher, (req, res) => {
@@ -2121,7 +2128,7 @@ app.post(
       });
       const raw = await callModel(
         req.user,
-        `你是初中/高中一线教研组长，正在把一次真实作业的复核数据转写成教师可以直接拿去上课的讲评方案。学段=${stats.assignment.stage}，学科=${stats.assignment.subject}，班级=${stats.assignment.className}，作业名称=${stats.assignment.title}。
+        `你是该学段的一线教研组长，正在把一次真实作业的复核数据转写成教师可以直接拿去上课的讲评方案。学段=${stats.assignment.stage}，学科=${stats.assignment.subject}，班级=${stats.assignment.className}，作业名称=${stats.assignment.title}。
 统计与错题数据（已由教师复核确认，请勿更改其中的数字、题号、知识点和错因结论）：${JSON.stringify(payload)}
 写作要求：
 1. 只使用给定数据，不得编造题目、学生、分数或比例；引用比例时使用数据中的原始数字；
@@ -2391,12 +2398,21 @@ if (fs.existsSync(path.join(root, "dist"))) {
 app.use((e, _q, r, next) => {
   if (r.headersSent) return next(e);
   if (r.destroyed) return;
-  const diskStatus = storageStatus(e);
+  const databaseBusy =
+    e.errcode === 5 ||
+    e.errcode === 6 ||
+    e.code === "SQLITE_BUSY" ||
+    e.code === "SQLITE_LOCKED";
+  const diskStatus = databaseBusy ? 503 : storageStatus(e);
   const status =
     diskStatus || (e.code === "LIMIT_FILE_SIZE" ? 413 : e.status || 400);
   if ([429, 503, 507].includes(status)) r.set("Retry-After", "5");
   r.status(status).json({
-    error: diskStatus ? "存储暂不可用，请稍后重试" : e.message || "请求失败",
+    error: databaseBusy
+      ? "数据库繁忙，请稍后重试"
+      : diskStatus
+        ? "存储暂不可用，请稍后重试"
+        : e.message || "请求失败",
   });
 });
 const port = Number(process.env.PORT || 8787);

@@ -95,7 +95,7 @@ std::string shQuoted(const std::string& value) {
 std::string launchdShellScript(const Options& options, const std::string& execPath) {
   std::string script;
   script += "set -a; . " + shQuoted(envFileOf(options)) + "; set +a; ";
-  script += "exec " + shQuoted(execPath) + " " + shQuoted(serverEntryOf(options));
+  script += "exec " + shQuoted(execPath) + " " + shQuoted(launchEntryOf(options));
   script += " >> " + shQuoted(serverLogOf(options)) + " 2>&1";
   return script;
 }
@@ -150,8 +150,10 @@ std::string windowsStartScript(const Options& options) {
   script += "rem APP_SECRET / DATA_DIR are loaded from .env via Node --env-file.\r\n";
   script += "if not exist \"%INSTALL%logs\" mkdir \"%INSTALL%logs\" >nul 2>&1\r\n";
   script += "cd /d \"%INSTALL%app\"\r\n";
+  script += "set \"ENTRY=%INSTALL%app\\server\\index.mjs\"\r\n";
+  script += "if exist \"%INSTALL%app\\tools\\ops\\supervise.mjs\" set \"ENTRY=%INSTALL%app\\tools\\ops\\supervise.mjs\"\r\n";
   script += "\"%INSTALL%runtime\\node.exe\" --env-file=\"%INSTALL%.env\" "
-            "\"%INSTALL%app\\server\\index.mjs\" >> \"%INSTALL%logs\\server.log\" 2>&1\r\n";
+            "\"%ENTRY%\" >> \"%INSTALL%logs\\server.log\" 2>&1\r\n";
   script += "exit /b %errorlevel%\r\n";
   return script;
 }
@@ -181,7 +183,7 @@ std::string systemdUnit(const Options& options, const std::string& execPath) {
   unit += systemdEnvironment("NODE_ENV", nodeEnvOf(options)) + "\n";
   unit += systemdEnvironment("DATA_DIR", dataDirOf(options)) + "\n";
   unit += "ExecStart=" + systemdQuoted(execPath) + " " +
-          systemdQuoted(serverEntryOf(options)) + "\n";
+          systemdQuoted(launchEntryOf(options)) + "\n";
   unit += "Restart=on-failure\n";
   unit += "RestartSec=5\n";
   unit += "KillMode=mixed\n";
@@ -248,7 +250,7 @@ std::string posixStartScript(const Options& options) {
   script += "set +a\n";
   script += "cd " + shQuoted(appDirOf(options)) + "\n";
   script += "exec " + shQuoted(platformNodeOf(options)) + " " +
-            shQuoted(serverEntryOf(options)) + " >> " +
+            shQuoted(launchEntryOf(options)) + " >> " +
             shQuoted(serverLogOf(options)) + " 2>&1\n";
   return script;
 }

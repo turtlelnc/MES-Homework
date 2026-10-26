@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { createBackupGate } from "./backup-pressure.mjs";
 import { createBackup, verifyBackup, restoreBackup } from "./storage.mjs";
+import { storageProfile } from "../../server/storage-profile.mjs";
 
 const SNAPSHOT = /^snapshot-\d{8}T\d{9}Z-[a-f0-9-]{36}$/;
 const read = (file) => {
@@ -40,7 +41,13 @@ const positive = (value, fallback) => {
 export function backupSettings(env = process.env) {
   if (!env.DATA_DIR || !env.BACKUP_DIR)
     throw new Error("必须配置 DATA_DIR 和 BACKUP_DIR");
-  const total = positive(env.BACKUP_MAX_TOTAL_MB, 16384) * 1024 ** 2;
+  const storage = storageProfile(env.BACKUP_DIR);
+  const total =
+    positive(
+      env.BACKUP_MAX_TOTAL_MB,
+      Math.max(1, Math.floor(storage.freeBytes / 4 / 1024 ** 2)),
+    ) *
+    1024 ** 2;
   return {
     source: path.resolve(env.DATA_DIR),
     pressureEnabled: env.SYSTEM_PRESSURE_ENABLED !== "0",
@@ -49,10 +56,19 @@ export function backupSettings(env = process.env) {
     days: positive(env.BACKUP_KEEP_DAYS, 7),
     maxTotalBytes: total,
     maxSnapshotBytes: Math.min(
-      positive(env.BACKUP_MAX_SNAPSHOT_MB, 2048) * 1024 ** 2,
+      positive(
+        env.BACKUP_MAX_SNAPSHOT_MB,
+        Math.max(1, Math.floor(total / 2 / 1024 ** 2)),
+      ) *
+        1024 ** 2,
       Math.floor(total / 2),
     ),
-    minFreeBytes: positive(env.BACKUP_MIN_FREE_MB, 1024) * 1024 ** 2,
+    minFreeBytes:
+      positive(
+        env.BACKUP_MIN_FREE_MB,
+        Math.max(1, Math.ceil(storage.totalBytes / 20 / 1024 ** 2)),
+      ) *
+      1024 ** 2,
     drillDays: positive(env.BACKUP_RESTORE_DRILL_DAYS, 7),
   };
 }

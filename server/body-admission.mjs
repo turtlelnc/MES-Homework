@@ -1,8 +1,11 @@
+import { runtimeProfile } from "./runtime-profile.mjs";
 import { watchUpload } from "./io-guards.mjs";
 
 // Body-parser's per-request limit alone permits N concurrent 2 MiB buffers.
 // Bound their aggregate admission too, before allocating those buffers.
-export function limitJsonBodies({ concurrency = 16 } = {}) {
+export function limitJsonBodies({
+  concurrency = runtimeProfile().jsonConcurrency,
+} = {}) {
   let active = 0;
   return (req, res, next) => {
     if (!req.is("application/json")) return next();

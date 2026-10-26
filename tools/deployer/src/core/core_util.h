@@ -55,6 +55,7 @@ std::string xmlEscape(const std::string& text);
 std::string hostOf(const Options& options);       // lan ? 0.0.0.0 : 127.0.0.1
 std::string nodeEnvOf(const Options& options);    // production / development
 std::string appDirOf(const Options& options);     // <install>/app
+std::string launchEntryOf(const Options& options);
 std::string serverEntryOf(const Options& options);  // <install>/app/server/index.mjs
 std::string logsDirOf(const Options& options);    // <install>/logs
 std::string serverLogOf(const Options& options);  // <install>/logs/server.log

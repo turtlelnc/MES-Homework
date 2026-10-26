@@ -95,7 +95,7 @@ const FALLBACK_REVIEW_MODES: ReviewModeInfo[] = [
 ];
 
 function regionLabel(region: string) {
-  return region === "cn" ? "国内直连" : "境外服务";
+  return region === "cn" ? "中国区服务" : "国际区服务";
 }
 
 const CONNECTED_BADGE: React.CSSProperties = {
@@ -155,6 +155,7 @@ export function ProviderSettings({ user, notify }: Props) {
     modes: FALLBACK_REVIEW_MODES,
   });
   const [reviewAvailable, setReviewAvailable] = useState(true);
+  const [reviewError, setReviewError] = useState("");
   const [reviewBusy, setReviewBusy] = useState("");
   const [authModeDraft, setAuthModeDraft] = useState("api_key");
   const [oauthDraft, setOauthDraft] = useState("");
@@ -198,6 +199,11 @@ export function ProviderSettings({ user, notify }: Props) {
   const loadOAuth = async () => {
     applyOAuthPayload(await api<OAuthPayload>("/oauth/providers"));
   };
+  const loadReview = async () => {
+    setReview(await api<ReviewPayload>("/settings/review-mode"));
+    setReviewAvailable(true);
+    setReviewError("");
+  };
 
   useEffect(() => {
     let active = true;
@@ -209,7 +215,10 @@ export function ProviderSettings({ user, notify }: Props) {
             api<ProviderPreset[]>("/providers").catch(() => []),
             api<OAuthPayload>("/oauth/providers"),
             api<SavedProvider>("/settings/provider").catch(() => null),
-            api<ReviewPayload>("/settings/review-mode").catch(() => null),
+            api<ReviewPayload>("/settings/review-mode").catch((error) => {
+              if (active) setReviewError(error.message);
+              return null;
+            }),
           ]);
         if (!active) return;
         setAccess(accessData);
@@ -256,7 +265,7 @@ export function ProviderSettings({ user, notify }: Props) {
   const refreshAll = async () => {
     setLoading(true);
     try {
-      await Promise.all([loadAccess(), loadOAuth()]);
+      await Promise.all([loadAccess(), loadOAuth(), loadReview()]);
     } catch (error) {
       notify((error as Error).message);
     } finally {
@@ -787,66 +796,71 @@ export function ProviderSettings({ user, notify }: Props) {
         )}
       </section>
 
-      <section className="rc4-panel">
-        <h2>
-          <ShieldAlert /> 作业复核方式
-        </h2>
-        <p className="panel-intro">
-          决定 AI
-          批改后教师需要核对的范围；仅任课教师可修改，学校管理员不参与作业复核。
-        </p>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))",
-            gap: 12,
-          }}
-        >
-          {reviewModes.map((mode) => {
-            const active = review.mode === mode.id;
-            return (
-              <button
-                key={mode.id}
-                type="button"
-                className={active ? "active" : ""}
-                onClick={() => void saveReviewMode(mode.id)}
-                disabled={Boolean(reviewBusy) || !reviewAvailable}
-                style={{
-                  textAlign: "left",
-                  borderRadius: 9,
-                  padding: 14,
-                  display: "grid",
-                  gap: 6,
-                  cursor: active ? "default" : "pointer",
-                  border: active ? "2px solid #1168c9" : "1px solid #e4e8ee",
-                  background: active ? "#eef5ff" : "#fff",
-                  color: "#26364a",
-                }}
-              >
-                <strong style={{ color: active ? "#1168c9" : "#26364a" }}>
-                  {active ? "✓ " : ""}
-                  {mode.label}
-                </strong>
-                <small style={{ color: "#7c8796", lineHeight: 1.6 }}>
-                  {mode.desc}
-                </small>
-                <small style={{ color: "#939eac" }}>
-                  {active
-                    ? "当前生效"
-                    : reviewBusy === mode.id
-                      ? "正在保存…"
-                      : "点击切换"}
-                </small>
-              </button>
-            );
-          })}
-        </div>
-        {!reviewAvailable && (
-          <p className="panel-intro" style={{ marginTop: 12, marginBottom: 0 }}>
-            复核方式接口暂未就绪（由服务端复核模块提供），此处先展示选项。
+      {user.role === "teacher" && !user.is_school_admin && (
+        <section className="rc4-panel">
+          <h2>
+            <ShieldAlert /> 作业复核方式
+          </h2>
+          <p className="panel-intro">
+            决定 AI
+            批改后教师需要核对的范围；仅任课教师可修改，学校管理员不参与作业复核。
           </p>
-        )}
-      </section>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))",
+              gap: 12,
+            }}
+          >
+            {reviewModes.map((mode) => {
+              const active = review.mode === mode.id;
+              return (
+                <button
+                  key={mode.id}
+                  type="button"
+                  className={active ? "active" : ""}
+                  onClick={() => void saveReviewMode(mode.id)}
+                  disabled={Boolean(reviewBusy) || !reviewAvailable}
+                  style={{
+                    textAlign: "left",
+                    borderRadius: 9,
+                    padding: 14,
+                    display: "grid",
+                    gap: 6,
+                    cursor: active ? "default" : "pointer",
+                    border: active ? "2px solid #1168c9" : "1px solid #e4e8ee",
+                    background: active ? "#eef5ff" : "#fff",
+                    color: "#26364a",
+                  }}
+                >
+                  <strong style={{ color: active ? "#1168c9" : "#26364a" }}>
+                    {active ? "✓ " : ""}
+                    {mode.label}
+                  </strong>
+                  <small style={{ color: "#7c8796", lineHeight: 1.6 }}>
+                    {mode.desc}
+                  </small>
+                  <small style={{ color: "#939eac" }}>
+                    {active
+                      ? "当前生效"
+                      : reviewBusy === mode.id
+                        ? "正在保存…"
+                        : "点击切换"}
+                  </small>
+                </button>
+              );
+            })}
+          </div>
+          {!reviewAvailable && (
+            <p
+              className="panel-intro"
+              style={{ marginTop: 12, marginBottom: 0 }}
+            >
+              无法读取复核设置：{reviewError || "请重新加载页面"}
+            </p>
+          )}
+        </section>
+      )}
 
       {pendingMainland && (
         <div

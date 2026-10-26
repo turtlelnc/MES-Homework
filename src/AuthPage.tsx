@@ -1,3 +1,4 @@
+import { useCapabilities } from "./capabilities";
 import { useState } from "react";
 import type { FormEvent, InputHTMLAttributes, ReactNode } from "react";
 import {
@@ -16,7 +17,6 @@ import { Button } from "./components/ui/button";
 type Role = "school" | "teacher" | "student" | "parent";
 type Mode = "login" | "register";
 
-const stages = ["小学", "初中", "高中"];
 const relations = ["父亲", "母亲", "其他监护人"];
 
 const roleOptions: {
@@ -91,6 +91,7 @@ function Select({
 }
 
 export function AuthPage({ onDone }: { onDone: () => void }) {
+  const { stages, publicRegistration } = useCapabilities();
   const [mode, setMode] = useState<Mode>("login");
   const [role, setRole] = useState<Role>("school");
   const [error, setError] = useState("");
@@ -240,7 +241,7 @@ export function AuthPage({ onDone }: { onDone: () => void }) {
                 className="switch-auth"
                 onClick={() => switchMode("register")}
               >
-                还没有账户？注册
+                {publicRegistration ? "还没有账户？注册" : "创建学校空间"}
               </button>
             </div>
           </form>
@@ -249,7 +250,11 @@ export function AuthPage({ onDone }: { onDone: () => void }) {
             <div>
               <span className="eyebrow">CREATE ACCOUNT</span>
               <h2>注册账户</h2>
-              <p>先选择身份，再填写对应的注册信息。</p>
+              <p>
+                {publicRegistration
+                  ? "先选择身份，再填写对应的注册信息。"
+                  : "公开加入已关闭；仍可创建独立学校空间。加入已有学校请联系管理员。"}
+              </p>
             </div>
             <div className="role-pills" role="tablist" aria-label="注册身份">
               {roleOptions.map((option) => (
@@ -257,6 +262,7 @@ export function AuthPage({ onDone }: { onDone: () => void }) {
                   key={option.id}
                   type="button"
                   role="tab"
+                  disabled={!publicRegistration && option.id !== "school"}
                   aria-selected={role === option.id}
                   className={role === option.id ? "active" : ""}
                   onClick={() => {
@@ -326,7 +332,7 @@ export function AuthPage({ onDone }: { onDone: () => void }) {
                   name="stage"
                   label="学段"
                   options={stages}
-                  defaultValue="初中"
+                  defaultValue={undefined}
                 />
                 <Field
                   name="className"

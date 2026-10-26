@@ -1,0 +1,46 @@
+{
+  "validatedAtUTC": "2026-10-26T06:01:55.854402+00:00",
+  "baseline": "0bc4b63d",
+  "version": "v0.2.1-rc4",
+  "build": "26102501",
+  "vitest": {
+    "files": 49,
+    "tests": 498,
+    "passed": 498,
+    "durationSeconds": 24.19
+  },
+  "chromium": {
+    "tests": 12,
+    "passed": 12
+  },
+  "productionBuild": "passed",
+  "teachingHttpChecks": "passed",
+  "linuxDeployer": {
+    "fullBuild": "passed",
+    "ctest": "passed",
+    "selfTestsPassed": 97,
+    "selfTestsFailed": 0
+  },
+  "actualArchiveSupervisorStartup": {
+    "health": {
+      "ok": true,
+      "version": "v0.2.1-rc4",
+      "build": "26102501",
+      "versionLabel": "v0.2.1-rc4 (build26102501)",
+      "storage": "SQLite + local filesystem"
+    },
+    "capabilities": {
+      "stages": [
+        "小学",
+        "初中",
+        "高中"
+      ],
+      "publicRegistration": false
+    },
+    "supervised": true,
+    "node": "v24.19.0",
+    "source": "actual extracted archive; test dependencies not pruned; no upstream calls"
+  },
+  "upstreamModelsAndOAuth": "mocked; no real accounts/API calls",
+  "productionDeployment": "not performed"
+}

@@ -1,3 +1,6 @@
+import { ReviewHistory } from "./ReviewHistory";
+import { AssignmentDetails } from "./AssignmentDetails";
+import { CapabilitiesProvider, useCapabilities } from "./capabilities";
 import { uploadTiledSubmission } from "./tiled-upload";
 import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -24,7 +27,7 @@ import {
   UserPlus,
   Users,
 } from "lucide-react";
-import { api, json } from "./api";
+import { api, json, ApiError } from "./api";
 import {
   changeReviewGrade,
   createReviewGuard,
@@ -108,7 +111,6 @@ type DraftQuestion = {
   answerGenerated?: boolean;
   knowledgeGenerated?: boolean;
 };
-const stages = ["小学", "初中", "高中"];
 const teacherNav = [
   ["overview", "总览", BookOpen],
   ["teaching", "AI 教学分析", BarChart3],
@@ -258,7 +260,9 @@ function App() {
             <SchoolDashboard user={user} notify={setToast} />
           )}{" "}
           {view === "overview" && <Overview user={user} navigate={setView} />}{" "}
-          {view === "parent" && <ParentDashboard user={user} notify={setToast} />}{" "}
+          {view === "parent" && (
+            <ParentDashboard user={user} notify={setToast} />
+          )}{" "}
           {view === "teaching" && <TeachingAnalysis notify={setToast} />}{" "}
           {view === "assignments" && (
             <Assignments user={user} notify={setToast} />
@@ -316,14 +320,15 @@ function Select({
 }: {
   name: string;
   label: string;
-  options: string[];
+  options?: string[];
   defaultValue?: string;
 }) {
+  const { stages } = useCapabilities();
   return (
     <label className="field">
       <span>{label}</span>
       <select name={name} defaultValue={defaultValue}>
-        {options.map((v) => (
+        {(options || stages).map((v) => (
           <option key={v}>{v}</option>
         ))}
       </select>
@@ -385,12 +390,13 @@ function SchoolDashboard({
   }, []);
   const addTeacher = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const form = event.currentTarget;
     try {
       await api(
         "/teachers",
-        json("POST", Object.fromEntries(new FormData(event.currentTarget))),
+        json("POST", Object.fromEntries(new FormData(form))),
       );
-      event.currentTarget.reset();
+      form.reset();
       notify("教师账户已创建。");
       load();
     } catch (error) {
@@ -451,6 +457,17 @@ function SchoolDashboard({
                   : "系统指标不可用，仍保留进程内存保护。"}
               </p>
             )}
+            {operations.runtime && (
+              <p>
+                实际 CPU 配额 {operations.runtime.cpuCapacity} 核，有效内存预算{" "}
+                {operations.runtime.memoryMiB} MiB；主堆预算{" "}
+                {operations.runtime.heapMiB} MiB，模型并发{" "}
+                {operations.runtime.modelConcurrency}，后台并发{" "}
+                {operations.runtime.ocrConcurrency}。
+                {operations.resources?.diskFreeMiB !== null &&
+                  `文件系统剩余 ${operations.resources.diskFreeMiB} MiB，保留 ${operations.resources.diskReserveMiB} MiB。`}
+              </p>
+            )}
             {operations.costBudget?.enabled && (
               <p>
                 费用预算已用或预留{" "}
@@ -505,7 +522,7 @@ function SchoolDashboard({
             required
           />
           <div className="field-row">
-            <Select name="stage" label="任教学段" options={stages} />
+            <Select name="stage" label="任教学段" options={undefined} />
             <Field name="subject" label="任教学科" required />
           </div>
           <Field name="className" label="默认班级 / 班主任班级" required />
@@ -762,6 +779,7 @@ function Assignments({
           ) : undefined
         }
       />
+      <AssignmentDetails id={selected} />
       {creating && (
         <AssignmentForm
           user={user}
@@ -920,6 +938,7 @@ function AssignmentForm({
     score: 0,
     knowledgeId: "",
   });
+  const { stages } = useCapabilities();
   const [mode, setMode] = useState<"bank" | "direct">("bank"),
     [title, setTitle] = useState(""),
     [dueAt, setDueAt] = useState(""),
@@ -1040,9 +1059,11 @@ function AssignmentForm({
         </div>
       ) : (
         <p className="panel-intro">
-          不用上传原题。发布后学生直接提交答卷，AI 会按卷面切题、给出参考答案与评分要点、逐题批改并说明判断逻辑；
-          下方「作业内容描述」可选填，用于告诉 AI 这次作业的范围、题量和重点（例如“第 3
-          章课后练习 1–10 题，重点考查串联电路计算”）。
+          不用上传原题。发布后学生直接提交答卷，AI
+          会按卷面切题、给出参考答案与评分要点、逐题批改并说明判断逻辑；
+          下方「作业内容描述」可选填，用于告诉 AI
+          这次作业的范围、题量和重点（例如“第 3 章课后练习 1–10
+          题，重点考查串联电路计算”）。
         </p>
       )}
       {warnings.length > 0 && (
@@ -1185,12 +1206,13 @@ function StudentsPage({
   }, []);
   const register = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    const form = e.currentTarget;
     try {
       await api(
         "/students",
-        json("POST", Object.fromEntries(new FormData(e.currentTarget))),
+        json("POST", Object.fromEntries(new FormData(form))),
       );
-      e.currentTarget.reset();
+      form.reset();
       notify("学生账户已注册。");
       load();
     } catch (err) {
@@ -1216,8 +1238,7 @@ function StudentsPage({
     }
   };
   const template = () => {
-    const csv =
-      "姓名,账号名,初始密码,学段,班级\r\n张三,zhangsan,ChangeMe123!,高中,高二（1）班\r\n";
+    const csv = "姓名,账号名,初始密码,学段,班级\r\n";
     const a = document.createElement("a");
     a.href = URL.createObjectURL(
       new Blob(["\ufeff" + csv], { type: "text/csv" }),
@@ -1258,8 +1279,8 @@ function StudentsPage({
             <Select
               name="stage"
               label="学段"
-              options={stages}
-              defaultValue={user.stage || stages[0]}
+              options={undefined}
+              defaultValue={user.stage || undefined}
             />
             <Field
               name="className"
@@ -1343,9 +1364,7 @@ function Review({ notify }: { notify: (s: string) => void }) {
     [busy, setBusy] = useState<Record<string, string>>({}),
     [loading, setLoading] = useState(false),
     [attentionOnly, setAttentionOnly] = useState(false),
-    [reviewMode, setReviewMode] = useState<"all" | "uncertain" | "none">(
-      "all",
-    ),
+    [reviewMode, setReviewMode] = useState<"all" | "uncertain" | "none">("all"),
     [confirmed, setConfirmed] = useState<Record<string, boolean>>({});
   const guard = useRef(createReviewGuard()).current;
   const listGeneration = useRef(0);
@@ -1369,8 +1388,10 @@ function Review({ notify }: { notify: (s: string) => void }) {
     try {
       const result = await api<Submission[]>("/submissions");
       if (generation === listGeneration.current) setItems(result);
+      return 2000;
     } catch (e) {
       if (generation === listGeneration.current) notify((e as Error).message);
+      return Math.max(2000, e instanceof ApiError ? e.retryAfterMs : 0);
     }
   };
   useEffect(() => {
@@ -1399,8 +1420,17 @@ function Review({ notify }: { notify: (s: string) => void }) {
   useEffect(() => {
     if (!items.some((item) => ["queued", "recognizing"].includes(item.status)))
       return;
-    const timer = setInterval(() => void load(), 2000);
-    return () => clearInterval(timer);
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      const delay = await load();
+      if (!stopped) timer = setTimeout(poll, delay);
+    };
+    timer = setTimeout(poll, 2000);
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
   }, [items]);
   useEffect(() => {
     if (!detail || !["queued", "recognizing"].includes(detail.status)) return;
@@ -1408,6 +1438,7 @@ function Review({ notify }: { notify: (s: string) => void }) {
     let timer: ReturnType<typeof setTimeout>;
     const ticket = guard.current();
     const poll = async () => {
+      let delay = 2000;
       try {
         const result = await api<any>(`/submissions/${ticket.id}`);
         if (cancelled || !guard.isCurrent(ticket)) return;
@@ -1416,10 +1447,13 @@ function Review({ notify }: { notify: (s: string) => void }) {
           void load();
           return;
         }
-      } catch {
-        /* Keep the saved job intact when a connection is interrupted. */
+      } catch (error) {
+        delay = Math.max(
+          delay,
+          error instanceof ApiError ? error.retryAfterMs : 0,
+        );
       }
-      if (!cancelled) timer = setTimeout(poll, 2000);
+      if (!cancelled) timer = setTimeout(poll, delay);
     };
     timer = setTimeout(poll, 500);
     return () => {
@@ -1597,9 +1631,7 @@ function Review({ notify }: { notify: (s: string) => void }) {
                       : ""}
                   </p>
                 </div>
-                {(["uploaded", "failed", "completed"].includes(
-                  detail.status,
-                ) ||
+                {(["uploaded", "failed", "completed"].includes(detail.status) ||
                   (detail.status === "review" && !!review.error)) && (
                   <Button
                     disabled={!!busy[detail.id]}
@@ -1657,6 +1689,10 @@ function Review({ notify }: { notify: (s: string) => void }) {
                   )}
                 </div>
               )}
+              <ReviewHistory
+                key={`${detail.id}:${detail.status}:${detail.score}`}
+                submissionId={detail.id}
+              />
               {detail.ocr_text && (
                 <label className="field">
                   <span>OCR 原文</span>
@@ -1828,13 +1864,18 @@ function KnowledgeBase({
   }, []);
   const add = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    await api(
-      "/knowledge",
-      json("POST", Object.fromEntries(new FormData(e.currentTarget))),
-    );
-    e.currentTarget.reset();
-    notify("知识点已保存。");
-    load();
+    const form = e.currentTarget;
+    try {
+      await api(
+        "/knowledge",
+        json("POST", Object.fromEntries(new FormData(form))),
+      );
+      form.reset();
+      notify("知识点已保存。");
+      await load();
+    } catch (error) {
+      notify((error as Error).message);
+    }
   };
   return (
     <>
@@ -1850,7 +1891,7 @@ function KnowledgeBase({
             <Select
               name="stage"
               label="学段"
-              options={stages}
+              options={undefined}
               defaultValue={user.stage}
             />
             <Field
@@ -1899,50 +1940,74 @@ function KnowledgeBase({
 }
 function Papers({ notify }: { notify: (s: string) => void }) {
   const [papers, setPapers] = useState<any[]>([]),
-    [current, setCurrent] = useState<any>(null);
+    [current, setCurrent] = useState<any>(null),
+    [busy, setBusy] = useState(false);
   const load = () => api<any[]>("/papers").then(setPapers);
   useEffect(() => {
-    load();
+    void load().catch((e) => notify(e.message));
   }, []);
   const make = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const p: any = await api(
-      "/papers/generate",
-      json("POST", Object.fromEntries(new FormData(e.currentTarget))),
-    );
-    setCurrent(p);
-    notify(p.questions.length ? "试卷已生成。" : "尚无已复核错题。");
-    load();
+    const values = Object.fromEntries(new FormData(e.currentTarget));
+    setBusy(true);
+    try {
+      const result = await api("/papers/generate", json("POST", values));
+      setCurrent(result);
+      await load();
+      notify(result.questions.length ? "试卷已生成。" : "尚无已复核错题。");
+    } catch (error) {
+      notify((error as Error).message);
+    } finally {
+      setBusy(false);
+    }
   };
   return (
     <>
       <Title
         eyebrow="MISTAKE PAPER"
         title="通过错题出试卷"
-        desc="题源仅包含教师复核错题。"
+        desc="题源仅包含教师复核错题，可重新打开历史试卷。"
       />
       <div className="two-col">
-        <form className="rc4-panel" onSubmit={make}>
-          <h2>组卷条件</h2>
-          <Field
-            name="title"
-            label="试卷名称"
-            required
-            defaultValue="错题巩固卷"
-          />
-          <Field
-            name="count"
-            label="题目数量"
-            type="number"
-            min="1"
-            max="50"
-            defaultValue="10"
-          />
-          <Button className="full">
-            <Sparkles />
-            从错题组卷
-          </Button>
-        </form>
+        <section>
+          <form className="rc4-panel" onSubmit={make}>
+            <h2>组卷条件</h2>
+            <Field
+              name="title"
+              label="试卷名称"
+              required
+              defaultValue="错题巩固卷"
+            />
+            <Field
+              name="count"
+              label="题目数量"
+              type="number"
+              min="1"
+              max="50"
+              defaultValue="10"
+            />
+            <Button className="full" disabled={busy}>
+              <Sparkles />
+              {busy ? "正在组卷…" : "从错题组卷"}
+            </Button>
+          </form>
+          <section className="rc4-panel">
+            <h2>历史试卷（{papers.length}）</h2>
+            {papers.length ? (
+              papers.map((p) => (
+                <Button
+                  key={p.id}
+                  variant="outline"
+                  onClick={() => setCurrent({ ...p, questions: p.content })}
+                >
+                  {p.title} · {new Date(p.created_at).toLocaleString()}
+                </Button>
+              ))
+            ) : (
+              <Empty text="暂无已保存试卷。" />
+            )}
+          </section>
+        </section>
         <section className="rc4-panel paper">
           <h2>{current?.title || "试卷预览"}</h2>
           {current?.questions?.length ? (
@@ -1959,13 +2024,13 @@ function Papers({ notify }: { notify: (s: string) => void }) {
               </div>
             ))
           ) : (
-            <Empty text={`已保存 ${papers.length} 份试卷。`} />
-          )}{" "}
-          {current?.questions?.length ? (
+            <Empty text="请选择历史试卷或创建新试卷。" />
+          )}
+          {!!current?.questions?.length && (
             <Button variant="outline" onClick={() => window.print()}>
               打印 / 保存 PDF
             </Button>
-          ) : null}
+          )}
         </section>
       </div>
     </>
@@ -2008,7 +2073,7 @@ function AccountSettings({
               <Select
                 name="stage"
                 label="学段"
-                options={stages}
+                options={undefined}
                 defaultValue={user.stage}
               />
               <Field
@@ -2069,6 +2134,8 @@ function AccountSettings({
 
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <App />
+    <CapabilitiesProvider>
+      <App />
+    </CapabilitiesProvider>
   </React.StrictMode>,
 );

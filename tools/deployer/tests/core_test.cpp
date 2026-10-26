@@ -233,7 +233,13 @@ void testOptionsAndTexts() {
   expect(env.find("PORT=8787") != std::string::npos, ".env PORT");
   expect(env.find("APP_SECRET=") != std::string::npos, ".env APP_SECRET");
 
+  const std::string upgraded = mes::core::envFileContent(server, std::string(96, 'b'),
+      "MODEL_CONCURRENCY=7\nOAUTH_GEMINI_CLIENT_ID=fixture\nexport PORT=9\nAPP_SECRET=old\n# retained\n");
+  expect(upgraded.find("MODEL_CONCURRENCY=7") != std::string::npos, "升级保留资源配置");
+  expect(upgraded.find("OAUTH_GEMINI_CLIENT_ID=fixture") != std::string::npos, "升级保留 OAuth 配置");
+  expect(upgraded.find("PORT=9") == std::string::npos && upgraded.find("APP_SECRET=old") == std::string::npos, "升级替换受管配置");
   const std::string startScript = mes::core::windowsStartScript(server);
+  expect(startScript.find("tools\\ops\\supervise.mjs") != std::string::npos, "安装启动优先监督器");
   expect(startScript.find("cd /d") != std::string::npos,
          "启动脚本包含 cd /d");
   expect(startScript.find("runtime\\node.exe") != std::string::npos,

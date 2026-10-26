@@ -1,9 +1,10 @@
+import { runtimeProfile } from "./runtime-profile.mjs";
 import { scrypt } from "node:crypto";
 
 // Native hashing uses libuv workers; bounded admission reserves room for file I/O.
 // A cancelled hash retains its slot until the native operation actually returns.
 export function createPasswordHasher({
-  concurrency = 2,
+  concurrency = runtimeProfile().hashConcurrency,
   maxPending = 16,
   derive = (password, salt) =>
     new Promise((resolve, reject) =>

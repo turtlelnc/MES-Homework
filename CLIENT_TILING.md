@@ -8,8 +8,8 @@
 
 1. 管理员在服务器进程环境中设置 `CLIENT_TILING_ENABLED=1`。
 2. 同时设置 `MODEL_SCHOOL_DAILY_MICRO_CNY`、`MODEL_USER_DAILY_MICRO_CNY` 为正整数。金额单位是微元人民币，1000000 等于 1 元。两者均为 0 时不开启费用账本，继续使用原有调用次数配额；配置不完整则拒绝模型调用。
-3. 在 `MODEL_COST_RATES_JSON` 填写每个实际使用的 `provider/model` 的输入和输出价格上界。`input`、`output` 的单位是“微元人民币/百万 tokens”，不假设缓存折扣。示例形状：`{"deepseek/deepseek-flash":{"input":填入整数,"output":填入整数}}`，这不是可直接复制的价格配置。不要凭示例猜测当前费率。
-4. 官方 `deepseek-flash` 的图片预留按单图 1024 tokens；其他模型必须配置正整数 `imageTokens` 上界。文本按 UTF-8 字节数加协议余量估算；输入预留上限 120000 tokens，输出通过 `MODEL_MAX_OUTPUT_TOKENS` 和请求中的 `max_tokens` 限制，默认 8192、最多 32768。推理 tokens 应包含在模型的输出计费与上限约定内，不符合此约定的模型不能直接套用该预算。
+3. 在 `MODEL_COST_RATES_JSON` 填写每个实际使用的 `provider/model` 的输入和输出价格上界。`input`、`output` 的单位是“微元人民币/百万 tokens”，不假设缓存折扣。示例形状：`{"deepseek/deepseek-flash":{"input":填入整数,"output":填入整数,"imageTokens":填入经管理员确认的上界}}`，这不是可直接复制的价格配置。不要凭示例猜测当前费率。
+4. 所有视觉模型（包括 DeepSeek）都必须显式配置正整数 `imageTokens` 上界，程序不再根据历史文档或模型名称猜测单图计费参数。文本按 UTF-8 字节数加协议余量估算；输入预留上限 120000 tokens，输出通过 `MODEL_MAX_OUTPUT_TOKENS` 和请求中的 `max_tokens` 限制，默认 8192、最多 32768。推理 tokens 应包含在模型的输出计费与上限约定内，不符合此约定的模型不能直接套用该预算。
 5. 需要临时文件时设置 `DEEPSEEK_FILES_ENABLED=1`。仅对官方 `https://api.deepseek.com`、模型 `deepseek-flash` 启用，不将密钥发送到客户端提供的上传地址。其他供应商继续使用内联图片。内联图像的 base64 合计最多 44 MiB。
 
 费用账本在 SQLite `BEGIN IMMEDIATE` 中原子检查账户和学校最近 24 小时的已结算费用及未决预留。每次模型请求（包括重试）独立预留；预留发生在 Files API 上传和模型调用之前。成功响应的有效 `usage` 会写入回执并按调用时价格结算。即使模型返回内容不符合题目结构，已经发生的调用仍结算用量。
