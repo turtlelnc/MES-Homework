@@ -159,7 +159,10 @@ export async function insertUser(ctx, fields) {
       .get(username);
     if (taken) throw new Error("该账号名已被使用");
   }
-  if (email && db.prepare("SELECT id FROM users WHERE email=?").get(email))
+  if (
+    email &&
+    db.prepare("SELECT id FROM users WHERE email=? COLLATE NOCASE").get(email)
+  )
     throw new Error("邮箱已注册");
   const id = newId(ctx);
   const salt = randomBytes(16).toString("hex");
@@ -358,10 +361,16 @@ function findLoginUser(db, body) {
     const lowered = identifier.toLowerCase();
     const compact = squashUsername(identifier);
     const user =
-      (compact &&
-        db.prepare("SELECT * FROM users WHERE username=?").get(compact)) ||
-      db.prepare("SELECT * FROM users WHERE email=?").get(lowered);
+      compact &&
+      db.prepare("SELECT * FROM users WHERE username=?").get(compact);
     if (user) return user;
+    // A legacy database may contain mixed-case emails. Never pick an arbitrary
+    // account if two old rows differ only by email case.
+    const emails = db
+      .prepare("SELECT * FROM users WHERE email=? COLLATE NOCASE LIMIT 2")
+      .all(lowered);
+    if (emails.length > 1) return null;
+    if (emails.length === 1) return emails[0];
   }
   return null;
 }
@@ -425,7 +434,13 @@ export function registerAccountsRoutes(app, ctx) {
     )
       return res.status(400).json({ error: "密码格式无效" });
     const user = findLoginUser(db, body);
-    if (!user || !(await verifyPassword(ctx, body.password, user)))
+    if (!user) {
+      // Use the same bounded hashing admission as real accounts, so missing
+      // accounts do not expose an immediate fast path for enumeration.
+      await normalizerFor(ctx)(body.password, "login-dummy-salt");
+      return res.status(401).json({ error: "账号或密码错误" });
+    }
+    if (!(await verifyPassword(ctx, body.password, user)))
       return res.status(401).json({ error: "账号或密码错误" });
     if (typeof ctx.setSession !== "function")
       return res.status(500).json({ error: "登录服务不可用" });

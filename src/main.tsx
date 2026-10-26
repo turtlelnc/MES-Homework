@@ -140,24 +140,57 @@ function App() {
     [loading, setLoading] = useState(true),
     [view, setView] = useState("overview"),
     [toast, setToast] = useState("");
-  const refresh = () =>
-    api<User>("/me")
-      .then((u) => {
-        setUser(u);
-        setView(
-          u.is_school_admin
-            ? "school"
-            : u.role === "teacher"
-              ? "overview"
-              : u.role === "parent"
-                ? "parent"
-                : "assignments",
+  const [sessionError, setSessionError] = useState("");
+  const refreshGeneration = useRef(0);
+  const refresh = async (expectSession = false) => {
+    const generation = ++refreshGeneration.current;
+    try {
+      const u = await api<User>("/me");
+      if (generation !== refreshGeneration.current) return;
+      setSessionError("");
+      setUser(u);
+      setView(
+        u.is_school_admin
+          ? "school"
+          : u.role === "teacher"
+            ? "overview"
+            : u.role === "parent"
+              ? "parent"
+              : "assignments",
+      );
+    } catch (error) {
+      if (generation !== refreshGeneration.current) return;
+      if (error instanceof ApiError && error.status === 401) {
+        setUser(null);
+        setSessionError(
+          expectSession
+            ? "登录响应成功，但浏览器未能保持会话。请检查 Cookie 和 HTTPS 配置后重试。"
+            : "",
         );
-      })
-      .catch(() => setUser(null))
-      .finally(() => setLoading(false));
+      } else {
+        setSessionError(`暂时无法读取登录状态：${(error as Error).message}`);
+      }
+    } finally {
+      if (generation === refreshGeneration.current) setLoading(false);
+    }
+  };
+  const logout = async () => {
+    const generation = ++refreshGeneration.current;
+    try {
+      await api("/auth/logout", { method: "POST" });
+      if (generation !== refreshGeneration.current) return;
+      setUser(null);
+      setSessionError("");
+    } catch (error) {
+      if (generation !== refreshGeneration.current) return;
+      if (error instanceof ApiError && error.status === 401) {
+        setUser(null);
+        setSessionError("");
+      } else setToast(`退出未完成：${(error as Error).message}，请重试。`);
+    }
+  };
   useEffect(() => {
-    refresh();
+    void refresh();
   }, []);
   // OAuth 回调会带 ?oauth_status=connected|error|denied 返回单页应用。
   useEffect(() => {
@@ -193,7 +226,28 @@ function App() {
         <p>正在连接校园作业分析服务…</p>
       </div>
     );
-  if (!user) return <AuthPage onDone={refresh} />;
+  if (!user && sessionError)
+    return (
+      <div className="auth-shell">
+        <p role="alert">{sessionError}</p>
+        <Button
+          onClick={() => {
+            setLoading(true);
+            void refresh();
+          }}
+        >
+          重试登录状态
+        </Button>
+      </div>
+    );
+  if (!user)
+    return (
+      <AuthPage
+        onDone={() => {
+          void refresh(true);
+        }}
+      />
+    );
   const nav = user.is_school_admin
     ? adminNav
     : user.role === "teacher"
@@ -245,17 +299,27 @@ function App() {
           </nav>
           <button
             className="logout"
-            onClick={() =>
-              api("/auth/logout", { method: "POST" }).finally(() =>
-                setUser(null),
-              )
-            }
+            onClick={() => {
+              void logout();
+            }}
           >
             <LogOut size={18} />
             退出登录
           </button>
         </aside>
         <main className="rc4-main">
+          {sessionError && (
+            <div role="alert">
+              {sessionError}{" "}
+              <Button
+                onClick={() => {
+                  void refresh();
+                }}
+              >
+                重试登录状态
+              </Button>
+            </div>
+          )}
           {view === "school" && (
             <SchoolDashboard user={user} notify={setToast} />
           )}{" "}
