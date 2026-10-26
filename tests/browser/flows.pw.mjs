@@ -59,6 +59,96 @@ test("registration follows server policy instead of an invented local default", 
   ).toBeDisabled();
 });
 
+test("temporary session lookup failures offer retry and preserve the actual login", async ({
+  page,
+}) => {
+  await login(page);
+  await page.route("**/api/me", (route) =>
+    route.fulfill({ status: 503, json: { error: "fixture temporarily busy" } }),
+  );
+  await page.reload();
+  await expect(page.getByRole("alert")).toContainText("暂时无法读取登录状态");
+  await expect(page.locator('input[name="account"]')).toHaveCount(0);
+  await page.unroute("**/api/me");
+  await page.getByRole("button", { name: "重试登录状态", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "退出登录", exact: true }),
+  ).toBeVisible();
+});
+
+test("login success without a persisted session explains cookie configuration", async ({
+  page,
+}) => {
+  await page.route("**/api/me", (route) =>
+    route.fulfill({ status: 401, json: { error: "请先登录" } }),
+  );
+  await page.goto("/");
+  await page.locator('input[name="account"]').fill("teacher@fixture.test");
+  await page.locator('input[name="password"]').fill("ChangeMe123!");
+  await page.getByRole("button", { name: "登录", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText("浏览器未能保持会话");
+  await page.unroute("**/api/me");
+  await page.getByRole("button", { name: "重试登录状态", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "退出登录", exact: true }),
+  ).toBeVisible();
+});
+
+test("failed logout retains the real session and reports a retryable error", async ({
+  page,
+}) => {
+  await login(page);
+  await page.route("**/api/auth/logout", (route) =>
+    route.fulfill({ status: 503, json: { error: "fixture temporarily busy" } }),
+  );
+  await page.getByRole("button", { name: "退出登录", exact: true }).click();
+  await expect(page.getByText(/退出未完成/)).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "退出登录", exact: true }),
+  ).toBeVisible();
+  const response = await page.request.get("/api/me");
+  expect(response.status()).toBe(200);
+  await page.unroute("**/api/auth/logout");
+  await page.getByRole("button", { name: "退出登录", exact: true }).click();
+  await expect(page.locator('input[name="account"]')).toBeVisible();
+  expect((await page.request.get("/api/me")).status()).toBe(401);
+});
+
+test("a late session refresh cannot undo a completed logout", async ({
+  page,
+}) => {
+  await login(page);
+  const before = await (await page.request.get("/api/me")).json();
+  await page.getByRole("button", { name: "设置", exact: true }).click();
+  const gate = deferred(),
+    entered = deferred();
+  await page.route("**/api/me", async (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    entered.resolve();
+    await gate.promise;
+    await route.fulfill({ json: before });
+  });
+  await page.getByRole("button", { name: "保存设置", exact: true }).click();
+  await entered.promise;
+  await page.getByRole("button", { name: "退出登录", exact: true }).click();
+  await expect(page.locator('input[name="account"]')).toBeVisible();
+  const response = page.waitForResponse(
+    (r) => r.url().endsWith("/api/me") && r.request().method() === "GET",
+  );
+  gate.resolve();
+  await (await response).finished();
+  await page.evaluate(
+    () =>
+      new Promise((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(resolve)),
+      ),
+  );
+  await expect(page.locator('input[name="account"]')).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "退出登录", exact: true }),
+  ).toHaveCount(0);
+});
+
 test("published assignment details show real questions but no student reference answers", async ({
   page,
 }) => {

@@ -529,11 +529,90 @@ describe("登录兼容 username / email / account", () => {
         code: "AUTH_BUSY",
       });
     };
+    for (const username of ["principal", "missing_user"]) {
+      await expect(
+        request("POST", "/api/auth/login", {
+          body: { username, password: PASSWORD },
+        }),
+      ).rejects.toMatchObject({ status: 503, code: "AUTH_BUSY" });
+    }
+  });
+
+  it("accepts mixed-case emails stored by legacy deployments", async () => {
+    await createSchool();
+    db.prepare(
+      "UPDATE users SET email='Principal@Example.test' WHERE username='principal'",
+    ).run();
+    const response = await request("POST", "/api/auth/login", {
+      body: { account: "PRINCIPAL@EXAMPLE.TEST", password: PASSWORD },
+    });
+    expect(response.statusCode).toBe(200);
+  });
+
+  it("refuses ambiguous legacy emails instead of choosing an arbitrary account", async () => {
+    const school = await createSchool();
+    const row = db
+      .prepare("SELECT * FROM users WHERE id=?")
+      .get(school.adminId)!;
+    db.prepare(
+      "UPDATE users SET email='Principal@Example.test' WHERE id=?",
+    ).run(row.id);
+    db.prepare(
+      "INSERT INTO users(id,school_id,role,name,username,email,password_hash,salt,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
+    ).run(
+      randomUUID(),
+      row.school_id,
+      "teacher",
+      "fixture",
+      "legacy_case",
+      "principal@example.test",
+      row.password_hash,
+      row.salt,
+      iso(),
+    );
+    const before = harness.sessions.length;
+    const response = await request("POST", "/api/auth/login", {
+      body: { account: "principal@example.test", password: PASSWORD },
+    });
+    expect(response.statusCode).toBe(401);
+    expect(harness.sessions.length).toBe(before);
+  });
+
+  it("does not allow registration to collide with a legacy email by case", async () => {
+    const school = await createSchool();
+    db.prepare(
+      "UPDATE users SET email='Principal@Example.test' WHERE id=?",
+    ).run(school.adminId);
     await expect(
-      request("POST", "/api/auth/login", {
-        body: { username: "principal", password: PASSWORD },
+      insertUser(harness.ctx, {
+        schoolId: school.schoolCode,
+        role: "teacher",
+        name: "fixture",
+        username: "new_teacher",
+        email: "principal@example.test",
+        password: PASSWORD,
       }),
-    ).rejects.toMatchObject({ status: 503, code: "AUTH_BUSY" });
+    ).rejects.toThrow("邮箱已注册");
+  });
+
+  it("uses bounded password derivation for both missing and incorrect accounts", async () => {
+    await createSchool();
+    const derive = harness.ctx.pass;
+    let calls = 0;
+    harness.ctx.pass = (password, salt) => {
+      calls++;
+      return derive(password, salt);
+    };
+    const missing = await request("POST", "/api/auth/login", {
+      body: { account: "missing_user", password: PASSWORD },
+    });
+    expect(missing.statusCode).toBe(401);
+    expect(calls).toBe(1);
+    const wrong = await request("POST", "/api/auth/login", {
+      body: { account: "principal", password: "wrong-password" },
+    });
+    expect(wrong.statusCode).toBe(401);
+    expect(calls).toBe(2);
   });
 
   it("支持 account 字段填邮箱与旧 email 字段", async () => {
