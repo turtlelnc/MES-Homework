@@ -46,31 +46,4 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-  windows:
-    name: Windows MSVC desktop deployer build and real self-test
-    runs-on: windows-2022
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          persist-credentials: false
-      - name: Configure desktop deployer and core tests
-        run: cmake -S tools/deployer -B tools/deployer/build -G "Visual Studio 17 2022" -A x64 -DMES_DEPLOYER_TESTING=ON
-      - name: Compile with MSVC
-        run: cmake --build tools/deployer/build --config Release --parallel
-      - name: CTest with Release assertions enabled
-        run: ctest --test-dir tools/deployer/build -C Release --output-on-failure
-      - name: Real executable core self-test
-        run: tools/deployer/build/Release/mes-deployer.exe --self-test
-      - name: Version identity
-        run: tools/deployer/build/Release/mes-deployer.exe --version
-      - name: Upload Windows executable and CTest diagnostics
-        if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
-        with:
-          name: windows-evidence
-          path: |
-            tools/deployer/build/Release/mes-deployer.exe
-            tools/deployer/build/Testing/Temporary/
-          if-no-files-found: warn
-          retention-days: 7
+  # Native Windows launcher/MSI validation is provided by native-installers.yml.

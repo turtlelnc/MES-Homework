@@ -1,0 +1,7 @@
+[
+  {"slug":"windows-x64","os":"windows-2022","arch":"x64","cmakeArch":"x64","formats":["msi"]},
+  {"slug":"windows-arm64","os":"windows-11-arm","arch":"arm64","cmakeArch":"ARM64","formats":["msi"]},
+  {"slug":"linux-x64","os":"ubuntu-22.04","arch":"x64","formats":["deb","rpm"]},
+  {"slug":"linux-arm64","os":"ubuntu-24.04-arm","arch":"arm64","formats":["deb","rpm"]},
+  {"slug":"macos-arm64","os":"macos-14","arch":"arm64","formats":["pkg"]}
+]

@@ -27,3 +27,21 @@ it("terminates an unresponsive API automatically and signals service-manager res
     fs.rmSync(dir, { recursive: true, force: true });
   }
 }, 5000);
+
+it("requests graceful shutdown through private IPC before forcing termination", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "watchdog-ipc-"));
+  try {
+    const entry = path.join(dir, "api.mjs");
+    fs.writeFileSync(
+      entry,
+      "process.on('message',m=>{if(m.type==='shutdown')process.exit(0)});process.send({type:'heartbeat'});",
+    );
+    const exitCode = await new Promise((resolve) => {
+      const worker = supervise(entry, { onExit: resolve });
+      worker.child.once("message", () => worker.stop());
+    });
+    expect(exitCode).toBe(0);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

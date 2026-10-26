@@ -1,0 +1,204 @@
+name: Native installers
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - "tools/installer/**"
+      - "tools/ops/supervise.mjs"
+      - "server/lifecycle.mjs"
+      - "server/version.mjs"
+      - ".github/workflows/native-installers.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-installers-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      targets: ${{ steps.targets.outputs.targets }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - id: targets
+        run: node --input-type=module -e 'import fs from "node:fs"; fs.appendFileSync(process.env.GITHUB_OUTPUT,"targets="+JSON.stringify(JSON.parse(fs.readFileSync("tools/installer/targets.json","utf8")))+"\n");'
+      - run: node tools/ops/release-identity.mjs
+
+  build:
+    name: Native ${{ matrix.slug }}
+    needs: matrix
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.matrix.outputs.targets) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          architecture: ${{ matrix.arch }}
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Production dependencies (POSIX)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/mes-production"
+          cp package.json package-lock.json "$RUNNER_TEMP/mes-production/"
+          npm ci --omit=dev --libc=glibc --prefix "$RUNNER_TEMP/mes-production"
+      - name: Production dependencies (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP/mes-production" | Out-Null
+          Copy-Item package.json,package-lock.json "$env:RUNNER_TEMP/mes-production/"
+          npm ci --omit=dev --prefix "$env:RUNNER_TEMP/mes-production"
+          if ($LASTEXITCODE) { throw 'Production dependency install failed' }
+      - name: Install native Linux packaging tools
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dpkg-dev rpm
+      - name: Build native Windows launcher and install WiX
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cmake -S tools/installer/windows -B "$env:RUNNER_TEMP/native-launcher" -A ${{ matrix.cmakeArch }}
+          if ($LASTEXITCODE) { throw 'Launcher configure failed' }
+          cmake --build "$env:RUNNER_TEMP/native-launcher" --config Release --parallel
+          if ($LASTEXITCODE) { throw 'Launcher build failed' }
+          ctest --test-dir "$env:RUNNER_TEMP/native-launcher" -C Release --output-on-failure
+          if ($LASTEXITCODE) { throw 'Launcher argument tests failed' }
+          # WiX 5's native tools run under x64; Windows ARM64 uses its x64 emulation.
+          Invoke-WebRequest https://dot.net/v1/dotnet-install.ps1 -OutFile "$env:RUNNER_TEMP/dotnet-install.ps1"
+          & "$env:RUNNER_TEMP/dotnet-install.ps1" -Channel 8.0 -Architecture x64 -InstallDir "$env:RUNNER_TEMP/dotnet-x64"
+          $env:DOTNET_ROOT_X64 = "$env:RUNNER_TEMP/dotnet-x64"
+          $env:DOTNET_ROOT = $env:DOTNET_ROOT_X64
+          "DOTNET_ROOT_X64=$env:DOTNET_ROOT_X64" >> $env:GITHUB_ENV
+          "DOTNET_ROOT=$env:DOTNET_ROOT" >> $env:GITHUB_ENV
+          & "$env:DOTNET_ROOT/dotnet.exe" tool install --tool-path "$env:RUNNER_TEMP/mes-wix" wix --version 5.0.2
+          if ($LASTEXITCODE) { throw 'WiX install failed' }
+          & "$env:RUNNER_TEMP/mes-wix/wix.exe" extension add -g WixToolset.UI.wixext/5.0.2
+          if ($LASTEXITCODE) { throw 'WiX UI extension failed' }
+          & "$env:RUNNER_TEMP/mes-wix/wix.exe" extension add -g WixToolset.Util.wixext/5.0.2
+          if ($LASTEXITCODE) { throw 'WiX service extension failed' }
+      - name: Build MSI
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          node tools/installer/build.mjs --modules "$env:RUNNER_TEMP/mes-production/node_modules" --launcher "$env:RUNNER_TEMP/native-launcher/Release/MESHomework.exe" --wix "$env:RUNNER_TEMP/mes-wix/wix.exe" --out release-native
+          if ($LASTEXITCODE) { throw 'MSI build failed' }
+      - name: Build DEB/RPM or PKG
+        if: runner.os != 'Windows'
+        run: node tools/installer/build.mjs --modules "$RUNNER_TEMP/mes-production/node_modules" --out release-native
+      - name: Install, repair, stop and uninstall MSI
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./tools/installer/windows/smoke-msi.ps1 -PackageDirectory release-native
+      - name: Install and remove DEB; verify actual runtime and systemd service
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get install -y ./release-native/*.deb
+          node tools/installer/smoke-installed.mjs --entry /opt/mes-homework/bin/mes-homework --report "$RUNNER_TEMP/native-smoke.json"
+          sudo systemctl start mes-homework
+          sudo "$(command -v node)" tools/installer/smoke-service.mjs /var/lib/mes-homework/instance.json
+          sudo systemctl stop mes-homework
+          sudo apt-get remove -y mes-homework
+          test ! -e /opt/mes-homework/runtime/node
+          node tools/installer/check-retained-data.mjs "$RUNNER_TEMP/native-smoke.json"
+          sudo test -f /etc/mes-homework/environment
+          rpm -qpl ./release-native/*.rpm >/dev/null
+          rpm -qp --requires ./release-native/*.rpm
+      - name: Install PKG and verify .app launch, restart and data retention
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          sudo installer -pkg ./release-native/*.pkg -target /
+          plutil -lint "/Applications/MES Homework.app/Contents/Info.plist"
+          node tools/installer/smoke-installed.mjs --entry "/Applications/MES Homework.app/Contents/MacOS/MESHomework" --report "$RUNNER_TEMP/native-smoke.json"
+          sudo installer -pkg ./release-native/*.pkg -target /
+          node tools/installer/check-retained-data.mjs "$RUNNER_TEMP/native-smoke.json"
+          sudo rm -rf "/Applications/MES Homework.app"
+          sudo pkgutil --forget org.mes-homework.installer
+          node tools/installer/check-retained-data.mjs "$RUNNER_TEMP/native-smoke.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-package-${{ matrix.slug }}
+          path: |
+            release-native/*.msi
+            release-native/*.deb
+            release-native/*.rpm
+            release-native/*.pkg
+            release-native/*.meta.json
+          if-no-files-found: error
+      - name: Upload native smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-evidence-${{ matrix.slug }}
+          path: |
+            ${{ runner.temp }}/native-smoke.json
+            ${{ runner.temp }}/native-msi-smoke.json
+            ${{ runner.temp }}/msi-*.log
+          if-no-files-found: ignore
+
+  manifest:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: native-package-*
+          path: release-native
+          merge-multiple: true
+      - run: node tools/installer/manifest.mjs release-native
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-installers-verified
+          path: |
+            release-native/*.msi
+            release-native/*.deb
+            release-native/*.rpm
+            release-native/*.pkg
+            release-native/mes-homework-installers.json
+            release-native/SHA256SUMS.txt
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: manifest
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node tools/ops/release-identity.mjs
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-installers-verified
+          path: release-native
+      - name: Publish native packages as a draft pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --draft --prerelease --verify-tag --title "MES Homework $GITHUB_REF_NAME" --notes-file tools/installer/RELEASE_NOTES.md release-native/*

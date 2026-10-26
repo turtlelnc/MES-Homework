@@ -43,3 +43,9 @@ tools/deployer/build-*/
 
 # Local reference material for OAuth protocol research (not committed)
 .tmp-ref/
+
+# Native installer output/cache (not source)
+release-native/
+.native-build/
+.native-deps/
+.wix/

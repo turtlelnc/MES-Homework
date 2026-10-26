@@ -1,3 +1,5 @@
+> Historical source only: this custom deployment GUI is retired from builds and releases. Use [native MSI / DEB / RPM / PKG packages](../installer/README.md).
+
 # 校园作业分析 · 桌面版一键部署器
 
 **v0.2.1-rc4（build26102501）** · MIT License · 单文件、无外部运行时依赖
