@@ -6,7 +6,8 @@ $install = Join-Path $env:ProgramW6432 'MES Homework'
 $report = Join-Path $env:RUNNER_TEMP 'native-msi-smoke.json'
 function Invoke-Msi([string]$Arguments) {
   $log = Join-Path $env:RUNNER_TEMP ('msi-' + [guid]::NewGuid().ToString() + '.log')
-  $p = Start-Process msiexec.exe -ArgumentList ($Arguments + ' /qn /norestart /l*v "' + $log + '"') -Wait -PassThru
+  $p = Start-Process msiexec.exe -ArgumentList ($Arguments + ' /qn /norestart /l*v "' + $log + '"') -PassThru
+  if (-not $p.WaitForExit(180000)) { $p.Kill(); Get-Content $log -Tail 100; throw 'MSI did not finish within the bounded test deadline' }
   if ($p.ExitCode -notin @(0,3010)) { Get-Content $log -Tail 100; throw "MSI failed with exit $($p.ExitCode)" }
 }
 Invoke-Msi ('/i "' + $msi + '" ADDLOCAL=Application,Server')

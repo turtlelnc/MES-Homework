@@ -6,6 +6,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { assemble, copyTree } from "./assemble.mjs";
 import { packageVersions } from "./versions.mjs";
+import { minimumMacOS } from "./macho.mjs";
 
 const root = path.resolve(import.meta.dirname, "../.."),
   args = process.argv.slice(2);
@@ -323,34 +324,11 @@ function macos() {
       f.endsWith(".node"),
     ),
   ];
-  const minimums = machoFiles.flatMap((file) =>
-    execFileSync("otool", ["-l", file], { encoding: "utf8" })
-      .split(/Load command \d+/)
-      .filter((block) =>
-        /cmd LC_(BUILD_VERSION|VERSION_MIN_MACOSX)\b/.test(block),
-      )
-      .flatMap((block) =>
-        [
-          ...block.matchAll(
-            /^\s*(?:minos|version)\s+(\d+(?:\.\d+){1,2})\s*$/gm,
-          ),
-        ].map((m) => m[1]),
-      ),
+  const minimum = minimumMacOS(
+    machoFiles.map((file) =>
+      execFileSync("otool", ["-l", file], { encoding: "utf8" }),
+    ),
   );
-  if (!minimums.length)
-    throw new Error(
-      "Cannot derive macOS minimum version from bundled Mach-O files",
-    );
-  const compare = (a, b) => {
-    const x = a.split(".").map(Number),
-      y = b.split(".").map(Number);
-    for (let i = 0; i < 3; i++) {
-      const d = (x[i] || 0) - (y[i] || 0);
-      if (d) return d;
-    }
-    return 0;
-  };
-  const minimum = minimums.sort(compare).at(-1);
   const componentPackage = path.join(work, "application.pkg");
   run("pkgbuild", [
     "--root",

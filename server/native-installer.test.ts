@@ -1,3 +1,4 @@
+import { minimumMacOS } from "../tools/installer/macho.mjs";
 import { packageCompatible } from "../tools/installer/assemble.mjs";
 import { it, expect } from "vitest";
 import fs from "node:fs";
@@ -93,9 +94,41 @@ it("refuses to replace a lost database master secret or expose local mode on a p
   }
 });
 
-it("filters optional native modules using declared OS, CPU and libc metadata",()=>{
-  expect(packageCompatible({os:["linux"],cpu:["x64"],libc:["glibc"]},"linux","x64","glibc")).toBe(true);
-  expect(packageCompatible({os:["linux"],cpu:["x64"],libc:["musl"]},"linux","x64","glibc")).toBe(false);
-  expect(packageCompatible({os:["!win32"]},"win32","arm64")).toBe(false);
-  expect(packageCompatible({cpu:["arm64"]},"linux","x64","glibc")).toBe(false);
+it("filters optional native modules using declared OS, CPU and libc metadata", () => {
+  expect(
+    packageCompatible(
+      { os: ["linux"], cpu: ["x64"], libc: ["glibc"] },
+      "linux",
+      "x64",
+      "glibc",
+    ),
+  ).toBe(true);
+  expect(
+    packageCompatible(
+      { os: ["linux"], cpu: ["x64"], libc: ["musl"] },
+      "linux",
+      "x64",
+      "glibc",
+    ),
+  ).toBe(false);
+  expect(packageCompatible({ os: ["!win32"] }, "win32", "arm64")).toBe(false);
+  expect(packageCompatible({ cpu: ["arm64"] }, "linux", "x64", "glibc")).toBe(
+    false,
+  );
+});
+
+it("reads Mach-O deployment minimums without confusing linker versions for macOS versions", () => {
+  const output =
+    "Load command 1\n cmd LC_BUILD_VERSION\n minos 13.5\n sdk 15.5\n ntools 1\n tool 3\n version 1267.0\nLoad command 2\n cmd LC_SOURCE_VERSION\n version 99999.0\n";
+  expect(
+    minimumMacOS([
+      output,
+      "Load command 1\n cmd LC_VERSION_MIN_MACOSX\n version 11.0\n sdk 12.0\n",
+    ]),
+  ).toBe("13.5");
+  expect(() =>
+    minimumMacOS([
+      "Load command 1\n cmd LC_SOURCE_VERSION\n version 99999.0\n",
+    ]),
+  ).toThrow();
 });

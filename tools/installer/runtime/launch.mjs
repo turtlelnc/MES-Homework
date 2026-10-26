@@ -259,11 +259,11 @@ async function main() {
       if (stdin.includes("stop\n")) stop();
     });
     for (let i = 0; i < 240 && !ready; i++) {
+      if (stopping) break;
       if (ended)
         throw new Error(
           "Application exited during startup; inspect application.log",
         );
-      if (stopping) break;
       try {
         const r = await fetch(url + "/api/health", {
           signal: AbortSignal.timeout(500),
