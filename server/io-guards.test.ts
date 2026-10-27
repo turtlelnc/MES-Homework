@@ -115,3 +115,121 @@ it("propagates caller cancellation even when the provider never responds", async
   controller.abort(new Error("client disconnected"));
   await expect(call).rejects.toThrow("client disconnected");
 });
+
+it("reads only bounded error JSON for safe provider classification", async () => {
+  const { body, response } = await requestJson(
+    "https://mock.invalid",
+    {},
+    {
+      request: async () =>
+        Response.json({ error: { code: "model_not_found" } }, { status: 400 }),
+      errorMaxBytes: 1024,
+    },
+  );
+  expect(response.status).toBe(400);
+  expect(body).toEqual({ error: { code: "model_not_found" } });
+});
+
+it("preserves upstream status when error diagnostics overflow, stall, or are not JSON", async () => {
+  for (const variant of ["oversize", "declared", "stall", "html", "empty"]) {
+    let cancelled = false;
+    const response =
+      variant === "empty"
+        ? new Response(null, { status: 402 })
+        : new Response(
+            new ReadableStream({
+              start(controller) {
+                if (variant === "stall") return;
+                controller.enqueue(
+                  new TextEncoder().encode(
+                    variant === "html"
+                      ? "<html>Bad gateway</html>"
+                      : "x".repeat(2048),
+                  ),
+                );
+                if (variant === "html") controller.close();
+              },
+              cancel() {
+                cancelled = true;
+              },
+            }),
+            {
+              status: 402,
+              headers:
+                variant === "declared" ? { "content-length": "2048" } : {},
+            },
+          );
+    const result = await requestJson(
+      "https://mock.invalid",
+      {},
+      {
+        request: async () => response,
+        errorMaxBytes: 1024,
+        idleMs: 20,
+        timeoutMs: 200,
+      },
+    );
+    expect(result.response.status).toBe(402);
+    expect(result.body).toBeNull();
+    if (!["empty", "html"].includes(variant)) expect(cancelled).toBe(true);
+  }
+});
+
+it("waits for non-streaming generation while retaining a hard total deadline", async () => {
+  const { modelResponseLimits } = await import("./provider-protocol.mjs");
+  let timer;
+  const result = await requestJson(
+    "https://mock.invalid",
+    {},
+    {
+      ...modelResponseLimits({ MODEL_REQUEST_TIMEOUT_MS: "200" }),
+      request: async () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              timer = setTimeout(() => {
+                controller.enqueue(new TextEncoder().encode('\n\n{"ok":true}'));
+                controller.close();
+              }, 40);
+            },
+            cancel() {
+              clearTimeout(timer);
+            },
+          }),
+        ),
+    },
+  );
+  expect(result.body).toEqual({ ok: true });
+  await expect(
+    requestJson(
+      "https://mock.invalid",
+      {},
+      {
+        ...modelResponseLimits({ MODEL_REQUEST_TIMEOUT_MS: "30" }),
+        request: async () =>
+          new Response(
+            new ReadableStream({
+              start(c) {
+                c.enqueue(new TextEncoder().encode("\n"));
+              },
+            }),
+          ),
+      },
+    ),
+  ).rejects.toMatchObject({ code: "IO_TIMEOUT" });
+});
+
+it("does not expose response content in malformed-JSON parse errors", async () => {
+  await expect(
+    requestJson(
+      "https://mock.invalid",
+      {},
+      {
+        request: async () => new Response("private homework secret-key"),
+      },
+    ),
+  ).rejects.toMatchObject({
+    code: "INVALID_RESPONSE",
+    message: "模型接口未返回有效 JSON 响应，请检查接口地址",
+  });
+});

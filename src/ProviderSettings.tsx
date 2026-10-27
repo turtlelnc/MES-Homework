@@ -145,6 +145,7 @@ export function ProviderSettings({ user, notify }: Props) {
   const [access, setAccess] = useState<ModelAccess | null>(null);
   const [presets, setPresets] = useState<ProviderPreset[]>([]);
   const [saved, setSaved] = useState<SavedProvider>(null);
+  const [apiProviderDraft, setApiProviderDraft] = useState("");
   const [oauth, setOauth] = useState<OAuthState>({
     providers: [],
     authMode: "api_key",
@@ -225,6 +226,7 @@ export function ProviderSettings({ user, notify }: Props) {
         setPresets(presetData);
         applyOAuthPayload(oauthData);
         setSaved(savedData);
+        setApiProviderDraft(savedData?.provider || presetData[0]?.id || "");
         if (reviewData) setReview(reviewData);
         else setReviewAvailable(false);
       } catch (error) {
@@ -569,7 +571,17 @@ export function ProviderSettings({ user, notify }: Props) {
               <span>厂商</span>
               <select
                 name="provider"
-                defaultValue={saved?.provider || presets[0]?.id || "deepseek"}
+                value={apiProviderDraft}
+                onChange={(event) => {
+                  setApiProviderDraft(event.currentTarget.value);
+                  // Overrides belong to the previous vendor. Do not send a
+                  // newly entered key to its endpoint after switching vendors.
+                  const form = event.currentTarget.form;
+                  for (const name of ["model", "endpoint"]) {
+                    const input = form?.elements.namedItem(name);
+                    if (input instanceof HTMLInputElement) input.value = "";
+                  }
+                }}
               >
                 {presets.map((preset) => (
                   <option value={preset.id} key={preset.id}>
@@ -583,7 +595,7 @@ export function ProviderSettings({ user, notify }: Props) {
               name="model"
               label="模型名称（可选覆盖）"
               defaultValue={saved?.model || ""}
-              placeholder="例如 deepseek-chat"
+              placeholder="留空使用所选厂商的默认模型"
             />
             <Field
               name="endpoint"

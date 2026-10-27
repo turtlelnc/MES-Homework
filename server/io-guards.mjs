@@ -36,6 +36,7 @@ export async function requestJson(
     timeoutMs = 60000,
     idleMs = 15000,
     maxBytes = 2 * 1024 * 1024,
+    errorMaxBytes = 0,
   } = {},
 ) {
   const controller = new AbortController();
@@ -50,18 +51,24 @@ export async function requestJson(
   try {
     signal.throwIfAborted();
     response = await abortable(request(url, { ...options, signal }), signal);
-    if (!response.ok) {
+    if (!response.ok && !errorMaxBytes) {
       void response.body?.cancel().catch(() => {});
       return { response, body: null };
     }
+    const limit = response.ok ? maxBytes : Math.min(errorMaxBytes, maxBytes);
     const declared = response.headers.get("content-length");
     if (
       declared !== null &&
-      (!/^\d+$/.test(declared) || Number(declared) > maxBytes)
-    )
-      throw ioError("模型接口响应超过大小上限", "RESPONSE_TOO_LARGE");
+      (!/^\d+$/.test(declared) || Number(declared) > limit)
+    ) {
+      if (!response.ok) return { response, body: null };
+      else throw ioError("模型接口响应超过大小上限", "RESPONSE_TOO_LARGE");
+    }
     reader = response.body?.getReader();
-    if (!reader) throw ioError("模型接口返回空响应", "INVALID_RESPONSE");
+    if (!reader) {
+      if (!response.ok) return { response, body: null };
+      throw ioError("模型接口返回空响应", "INVALID_RESPONSE");
+    }
     let size = 0;
     const chunks = [];
     while (true) {
@@ -72,19 +79,33 @@ export async function requestJson(
       let part;
       try {
         part = await abortable(reader.read(), signal);
+      } catch (error) {
+        if (!response.ok && !options.signal?.aborted)
+          return { response, body: null };
+        throw error;
       } finally {
         clearTimeout(idle);
       }
       if (part.done) break;
       size += part.value.byteLength;
-      if (size > maxBytes)
+      if (size > limit) {
+        if (!response.ok) return { response, body: null };
         throw ioError("模型接口响应超过大小上限", "RESPONSE_TOO_LARGE");
+      }
       chunks.push(Buffer.from(part.value));
     }
-    return {
-      response,
-      body: JSON.parse(Buffer.concat(chunks, size).toString("utf8")),
-    };
+    try {
+      return {
+        response,
+        body: JSON.parse(Buffer.concat(chunks, size).toString("utf8")),
+      };
+    } catch {
+      if (!response.ok) return { response, body: null };
+      throw ioError(
+        "模型接口未返回有效 JSON 响应，请检查接口地址",
+        "INVALID_RESPONSE",
+      );
+    }
   } finally {
     clearTimeout(timer);
     clearTimeout(idle);

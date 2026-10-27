@@ -1,6 +1,12 @@
 import { runtimeProfile } from "./runtime-profile.mjs";
 import { applicationCapabilities } from "./capabilities.mjs";
-import { providerRequest, providerReply } from "./provider-protocol.mjs";
+import {
+  providerRequest,
+  providerReply,
+  providerHttpError,
+  assertProviderCompletion,
+  modelResponseLimits,
+} from "./provider-protocol.mjs";
 import { requestAdmission } from "./request-admission.mjs";
 import express from "express";
 import { limitJsonBodies } from "./body-admission.mjs";
@@ -514,24 +520,12 @@ async function askModel(
           headers: request.headers,
           body: JSON.stringify(request.body),
         },
-        {
-          timeoutMs: Math.min(
-            positive("MODEL_REQUEST_TIMEOUT_MS", 60000),
-            120000,
-          ),
-          idleMs: Math.min(positive("MODEL_RESPONSE_IDLE_MS", 15000), 60000),
-          maxBytes: Math.min(
-            positive("MODEL_RESPONSE_MAX_BYTES", 2 * 1024 * 1024),
-            8 * 1024 * 1024,
-          ),
-        },
+        modelResponseLimits(),
       );
-      if (!rr.ok)
-        throw Object.assign(new Error(`模型接口请求失败 (${rr.status})`), {
-          retryable: rr.status === 429 || rr.status >= 500,
-        });
+      if (!rr.ok) throw providerHttpError(rr.status, raw);
       const reply = providerReply(config, raw);
       cost?.settle(reply.usage);
+      assertProviderCompletion(config, raw);
       text = reply.text;
     }
     if (!text) throw new Error("模型没有返回识别内容");
@@ -693,7 +687,12 @@ app.put(
     } catch (error) {
       return res.status(400).json({ error: error.message });
     }
-    if (typeof req.body.apiKey !== "string" || req.body.apiKey.length > 8192)
+    if (
+      typeof req.body.apiKey !== "string" ||
+      req.body.apiKey.length > 8192 ||
+      !req.body.apiKey.trim() ||
+      /[\r\n]/.test(req.body.apiKey.trim())
+    )
       return res.status(400).json({ error: "API Key 格式无效" });
     // Reject endpoints whose DNS resolves to internal addresses before saving,
     // so a rebinding target cannot be persisted and used with the stored key.
@@ -702,8 +701,13 @@ app.put(
     } catch (error) {
       return res.status(400).json({ error: error.message });
     }
-    const [key, iv] = encrypt(req.body.apiKey);
-    const model = req.body.model || p.model;
+    if (
+      req.body.model != null &&
+      (typeof req.body.model !== "string" || req.body.model.length > 256)
+    )
+      return res.status(400).json({ error: "模型名称格式无效" });
+    const [key, iv] = encrypt(req.body.apiKey.trim());
+    const model = req.body.model?.trim() || p.model;
     db.prepare(
       "INSERT INTO provider_settings(id,user_id,provider,endpoint,model,encrypted_key,iv,updated_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET provider=excluded.provider,endpoint=excluded.endpoint,model=excluded.model,encrypted_key=excluded.encrypted_key,iv=excluded.iv,updated_at=excluded.updated_at",
     ).run(

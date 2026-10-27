@@ -115,3 +115,10 @@
 
 - Native installers 的 workflow_dispatch 可显式选择 publish_verified，传入成功 source_run 和精确 target_commit；该路径验证来源、生产代码一致性、平台矩阵及所有摘要后，通过 GitHub Actions 仓库令牌上传并发布已审阅草稿，不重建应用。
 - 发布脚本 tools/ops/publish-native-release.mjs 不移动已有标签，不覆盖不同的已发布版本，只替换未发布草稿中的旧部署器资产。RC 版本保持 Pre-release；签名状态必须如实说明。
+
+## API Key 模型排障
+
+- 非流式正文等待默认与总超时一致；显式 MODEL_RESPONSE_IDLE_MS 仍保留。不得为消除超时而移除总时限、响应字节上限、并发及费用预留。
+- HTTP 失败诊断限 16 KiB，providerHttpError 仅返回静态分类文案，不回显上游错误原文。截断输出须先结算实际 usage，再报明确错误，不自动提高预算或发起额外收费重试。
+- 保存凭证去除首尾空白、拒绝空 Key/内部换行与非字符串模型名；历史已存 Key 在请求构建时兼容首尾空白。测试仅使用 mock 凭证，真实排障密钥不得落盘或提交。
+- 模型厂商选择必须由异步读取的已保存配置同步控制；切换厂商清空旧接口/模型覆盖值，避免显示厂商与实际请求目标不一致。浏览器回归覆盖保存配置回显及 DeepSeek 切换。
