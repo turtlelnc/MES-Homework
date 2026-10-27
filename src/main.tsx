@@ -2128,6 +2128,9 @@ function AccountSettings({
         title="设置"
         desc="账号名注册与登录；模型凭证按学校选择的调用模式生效。审核方式、OAuth 授权与 API Key 都集中在这里。"
       />
+      {(user.is_school_admin || user.role !== "student") && (
+        <ProviderSettings user={user} notify={notify} />
+      )}
       <div className="two-col">
         <form className="rc4-panel" onSubmit={profile}>
           <h2>账户信息</h2>
@@ -2189,9 +2192,6 @@ function AccountSettings({
           </section>
         )}
       </div>
-      {(user.is_school_admin || user.role !== "student") && (
-        <ProviderSettings user={user} notify={notify} />
-      )}
     </>
   );
 }

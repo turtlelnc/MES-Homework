@@ -182,6 +182,62 @@ afterAll(async () => {
 });
 
 describe("HTTP authorization regressions (isolated SQLite; no model requests)", () => {
+  it("retains an existing same-vendor key and activates it only when explicitly requested", async () => {
+    expect(
+      (
+        await request("/api/settings/provider", teacher, "PUT", {
+          provider: "deepseek",
+          apiKey: "mock-retained-key",
+        })
+      ).status,
+    ).toBe(200);
+    const old = db
+      .prepare("SELECT encrypted_key,iv FROM provider_settings WHERE user_id=?")
+      .get(fixture.teacherId);
+    db.prepare(
+      "UPDATE users SET model_auth_mode='oauth',oauth_provider='chatgpt' WHERE id=?",
+    ).run(fixture.teacherId);
+    expect(
+      (
+        await request("/api/settings/provider", teacher, "PUT", {
+          provider: "deepseek",
+          apiKey: "",
+          model: "custom-model",
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      db
+        .prepare(
+          "SELECT encrypted_key,iv FROM provider_settings WHERE user_id=?",
+        )
+        .get(fixture.teacherId),
+    ).toEqual(old);
+    expect(
+      db
+        .prepare("SELECT model_auth_mode FROM users WHERE id=?")
+        .get(fixture.teacherId)?.model_auth_mode,
+    ).toBe("oauth");
+    expect(
+      (
+        await request("/api/settings/provider", teacher, "PUT", {
+          provider: "openai",
+          apiKey: "",
+        })
+      ).status,
+    ).toBe(400);
+    const activated = await request("/api/settings/provider", teacher, "PUT", {
+      provider: "deepseek",
+      apiKey: "",
+      activate: true,
+    });
+    expect(await activated.json()).toMatchObject({ activated: true });
+    expect(
+      db
+        .prepare("SELECT model_auth_mode,oauth_provider FROM users WHERE id=?")
+        .get(fixture.teacherId),
+    ).toMatchObject({ model_auth_mode: "api_key", oauth_provider: null });
+  });
   it("normalizes copied model credentials and rejects invalid settings without replacing the saved configuration", async () => {
     const saved = await request("/api/settings/provider", teacher, "PUT", {
       provider: "deepseek",

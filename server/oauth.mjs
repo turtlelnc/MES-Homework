@@ -21,6 +21,12 @@
 
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import http from "node:http";
+import { oauthFetch } from "./oauth-http.mjs";
+import {
+  providerHttpError,
+  assertProviderCompletion,
+  modelResponseLimits,
+} from "./provider-protocol.mjs";
 import { assertPublicProviderEndpoint } from "./security.mjs";
 import {
   canConfigureOwnModel,
@@ -77,7 +83,8 @@ export const OAUTH_PROVIDERS = Object.freeze([
     tokenUrl: "https://oauth2.googleapis.com/token",
     apiEndpoint:
       "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
-    scopes: "openid email profile",
+    scopes:
+      "openid email profile https://www.googleapis.com/auth/cloud-platform",
     model: "gemini-2.5-flash",
     apiStyle: "openai",
     tokenAuth: "post",
@@ -203,6 +210,15 @@ export function configuredProvider(id, env = process.env) {
 
   const envHint = [];
   if (!clientId) envHint.push(envName(id, "CLIENT_ID"));
+  if (!clientSecret) envHint.push(envName(id, "CLIENT_SECRET"));
+  const projectId = envValue(env, id, "PROJECT_ID");
+  if (!projectId) envHint.push(envName(id, "PROJECT_ID"));
+  if (
+    !scopes
+      .split(/\s+/)
+      .includes("https://www.googleapis.com/auth/cloud-platform")
+  )
+    envHint.push(envName(id, "SCOPES"));
   if (!isHttpsUrl(authorizeUrl)) envHint.push(envName(id, "AUTHORIZE_URL"));
   if (!isHttpsUrl(tokenUrl)) envHint.push(envName(id, "TOKEN_URL"));
   if (!isHttpsUrl(apiEndpoint)) envHint.push(envName(id, "API_ENDPOINT"));
@@ -215,6 +231,7 @@ export function configuredProvider(id, env = process.env) {
     disabled: false,
     clientId,
     clientSecret,
+    projectId,
     authorizeUrl: isHttpsUrl(authorizeUrl) ? authorizeUrl : "",
     tokenUrl: isHttpsUrl(tokenUrl) ? tokenUrl : "",
     apiEndpoint: isHttpsUrl(apiEndpoint) ? apiEndpoint : "",
@@ -262,6 +279,18 @@ export function publicOAuthProviders(db, userId, env = process.env) {
       vision: provider.vision,
       envHint: config.configured ? [] : config.envHint,
       flows: provider.flows,
+      verification:
+        provider.id === "gemini" ? "official-reference" : "experimental",
+      setupHint:
+        provider.id === "chatgpt"
+          ? "Codex 兼容入口：复用 Codex 客户端，尚未实现本应用的官方 Sign in with ChatGPT 注册流程。浏览器登录要求与服务器同机；远程使用设备码，需有 Codex 权益。"
+          : provider.id === "gemini"
+            ? "部署方须配置 Google Web application OAuth 客户端、完整回调地址、配额项目，并启用 Gemini API；Google 登录不等于免费模型额度。"
+            : "兼容连接：尚未找到官方公开的第三方授权协议，未完成真实账户端到端验证。",
+      redirectUri:
+        provider.id === "gemini"
+          ? oauthRedirectUri(provider.id, env)
+          : undefined,
     };
   });
 }
@@ -403,12 +432,16 @@ async function requestToken(config, fields, fetchImpl) {
   const { body, headers } = tokenRequest(config, fields);
   let response;
   try {
-    response = await doFetch(config.tokenUrl, {
-      method: "POST",
-      headers,
-      body,
-      redirect: "error",
-    });
+    response = await oauthFetch(
+      config.tokenUrl,
+      {
+        method: "POST",
+        headers,
+        body,
+        redirect: "error",
+      },
+      { request: doFetch },
+    );
   } catch {
     throw Object.assign(new Error("OAuth 授权服务连接失败，请稍后重试"), {
       code: "exchange_failed",
@@ -420,6 +453,8 @@ async function requestToken(config, fields, fetchImpl) {
     throw Object.assign(new Error("OAuth 授权失败，请重新授权"), {
       code: "exchange_failed",
       status: response.status,
+      invalidGrant: payload?.error === "invalid_grant",
+      retryable: response.status === 429 || response.status >= 500,
     });
   return normalizeTokenPayload(payload);
 }
@@ -443,7 +478,7 @@ export async function exchangeCode({
     throw Object.assign(new Error("缺少 OAuth 授权码"), {
       code: "exchange_failed",
     });
-  return requestToken(
+  const tokens = await requestToken(
     config,
     {
       grant_type: "authorization_code",
@@ -453,6 +488,17 @@ export async function exchangeCode({
     },
     fetchImpl,
   );
+  if (
+    preset.kind === "gemini" &&
+    tokens.scope &&
+    !tokens.scope
+      .split(/\s+/)
+      .includes("https://www.googleapis.com/auth/cloud-platform")
+  )
+    throw Object.assign(new Error("Google 未授予模型访问权限，请重新授权"), {
+      code: "scope_missing",
+    });
+  return tokens;
 }
 
 export async function refreshToken({
@@ -596,7 +642,7 @@ function writeOAuthConnection({
      ON CONFLICT(user_id,provider) DO UPDATE SET
        account_label=excluded.account_label,
        encrypted_access=excluded.encrypted_access,
-       encrypted_refresh=COALESCE(excluded.encrypted_refresh,oauth_connections.encrypted_refresh),
+       encrypted_refresh=excluded.encrypted_refresh,
        iv=excluded.iv,
        token_type=excluded.token_type,
        scope=excluded.scope,
@@ -967,6 +1013,24 @@ function wrapProviderError(error) {
  * Expired access tokens are refreshed per provider; when `db` + `encrypt` are
  * supplied the refreshed token and identity metadata are persisted.
  */
+const pendingRefreshes = new WeakMap();
+async function sharedRefresh(db, key, action) {
+  if (!db) return action();
+  let jobs = pendingRefreshes.get(db);
+  if (!jobs) {
+    jobs = new Map();
+    pendingRefreshes.set(db, jobs);
+  }
+  if (jobs.has(key)) return jobs.get(key);
+  const job = action();
+  jobs.set(key, job);
+  try {
+    return await job;
+  } finally {
+    if (jobs.get(key) === job) jobs.delete(key);
+  }
+}
+
 export async function oauthChatText({
   user,
   provider,
@@ -987,6 +1051,11 @@ export async function oauthChatText({
   if (!connection) throw oauthInvalidError();
   if (typeof decrypt !== "function") throw oauthInvalidError();
 
+  if (db && user?.id) {
+    connection = getOAuthConnection(db, user.id, preset.id);
+    if (!connection || connection.status !== "active")
+      throw oauthInvalidError();
+  }
   let storedTokens;
   try {
     storedTokens = readOAuthTokens(connection, decrypt);
@@ -996,7 +1065,7 @@ export async function oauthChatText({
   let accessToken = storedTokens.accessToken;
   let refreshValue = storedTokens.refreshToken;
   let expiresAt = storedTokens.expiresAt;
-  const meta = oauthConnectionMeta(connection);
+  let meta = oauthConnectionMeta(connection);
   const imageList = Array.isArray(images) ? images : [];
   if (!accessToken) throw oauthInvalidError();
 
@@ -1007,33 +1076,79 @@ export async function oauthChatText({
     }
     let refreshed;
     try {
-      refreshed = await refreshConnectionTokens({
-        preset,
-        meta,
-        accessToken,
-        refreshValue,
-        fetchImpl,
-        now,
-      });
-    } catch {
-      markConnectionInvalid(db, user?.id, preset.id, now);
-      throw oauthInvalidError();
+      refreshed = await sharedRefresh(
+        db,
+        `${user?.id}:${preset.id}`,
+        async () => {
+          const result = await refreshConnectionTokens({
+            preset,
+            meta,
+            accessToken,
+            refreshValue,
+            fetchImpl,
+            now,
+          });
+          // Disconnect/reconnect while the refresh was pending must not resurrect
+          // or replace the newly selected account's credentials.
+          if (db && user?.id) {
+            const current = getOAuthConnection(db, user.id, preset.id);
+            if (
+              !current ||
+              current.encrypted_access !== connection.encrypted_access
+            )
+              throw oauthInvalidError();
+          }
+          persistRefreshedTokens({
+            db,
+            encrypt,
+            userId: user?.id,
+            providerId: preset.id,
+            accessToken: result.tokens.accessToken,
+            refreshToken: result.tokens.refreshToken,
+            expiresAt: result.tokens.expiresAt,
+            meta,
+            metaPatch: result.metaPatch,
+            now,
+          });
+          return result;
+        },
+      );
+    } catch (error) {
+      if (error?.retryable)
+        throw Object.assign(new Error("OAuth 令牌刷新暂时失败，请稍后重试"), {
+          status: 503,
+          retryable: true,
+        });
+      if (db && user?.id) {
+        const current = getOAuthConnection(db, user.id, preset.id);
+        if (
+          !current ||
+          current.encrypted_access !== connection.encrypted_access
+        )
+          throw Object.assign(new Error("OAuth 连接已更改，请重试"), {
+            status: 409,
+          });
+      }
+      if (error?.invalidGrant || error?.code === "OAUTH_INVALID") {
+        markConnectionInvalid(db, user?.id, preset.id, now);
+        throw oauthInvalidError();
+      }
+      throw Object.assign(
+        new Error("OAuth 令牌刷新失败，请检查部署配置或重新授权"),
+        { status: 502, retryable: false },
+      );
     }
     accessToken = refreshed.tokens.accessToken;
-    refreshValue = refreshed.tokens.refreshToken;
+    refreshValue = refreshed.tokens.refreshToken || refreshValue;
     expiresAt = refreshed.tokens.expiresAt;
-    persistRefreshedTokens({
-      db,
-      encrypt,
-      userId: user?.id,
-      providerId: preset.id,
-      accessToken,
-      refreshToken: refreshValue,
-      expiresAt,
-      meta,
-      metaPatch: refreshed.metaPatch,
-      now,
-    });
+    meta = {
+      ...meta,
+      ...Object.fromEntries(
+        Object.entries(refreshed.metaPatch || {}).filter(
+          ([, value]) => value != null,
+        ),
+      ),
+    };
   }
 
   const promptText = String(prompt ?? "");
@@ -1078,6 +1193,7 @@ export async function oauthChatText({
         model: model || oauthModel(preset),
         messages,
         fetchImpl: fetchImpl || undefined,
+        signal,
       });
       return requireChatText(text);
     }
@@ -1161,6 +1277,9 @@ async function callGeminiChat({
   fetchImpl,
 }) {
   const endpoint = oauthEndpoint(preset.id);
+  const config = configuredProvider(preset.id);
+  if (!config.configured)
+    throw new Error("Gemini OAuth 尚未配置完整，请联系部署管理员");
   const doFetch = fetchImpl || globalThis.fetch;
   if (!fetchImpl) {
     try {
@@ -1184,6 +1303,11 @@ async function callGeminiChat({
     model: model || oauthModel(preset),
     temperature: 0,
     response_format: { type: "json_object" },
+    stream: false,
+    max_tokens: Math.min(
+      Number(process.env.MODEL_MAX_OUTPUT_TOKENS) || 8192,
+      32768,
+    ),
     messages: [
       { role: "user", content: imageList.length ? content : promptText },
     ],
@@ -1192,33 +1316,39 @@ async function callGeminiChat({
   try {
     const signals = [AbortSignal.timeout(60000)];
     if (signal) signals.push(signal);
-    response = await doFetch(endpoint, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${accessToken}`,
+    response = await oauthFetch(
+      endpoint,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${accessToken}`,
+          "x-goog-user-project": config.projectId,
+        },
+        body: JSON.stringify(body),
+        redirect: "error",
+        signal: AbortSignal.any(signals),
       },
-      body: JSON.stringify(body),
-      redirect: "error",
-      signal: AbortSignal.any(signals),
-    });
+      { request: doFetch, ...modelResponseLimits() },
+    );
   } catch {
     throw Object.assign(new Error("OAuth 模型接口连接失败，请稍后重试"), {
       retryable: true,
     });
   }
-  if (response.status === 401 || response.status === 403)
-    throw oauthInvalidError();
-  if (!response.ok)
-    throw Object.assign(new Error(`模型接口请求失败 (${response.status})`), {
-      retryable: response.status === 429 || response.status >= 500,
-    });
+  if (response.status === 401) throw oauthInvalidError();
+  if (response.status === 403)
+    throw new Error(
+      "Gemini 权限不足：请重新授权模型访问 scope，并检查配额项目、Gemini API 启用状态和账单权限",
+    );
+  if (!response.ok) throw providerHttpError(response.status, null);
   let payload;
   try {
     payload = await response.json();
   } catch {
     throw new Error("模型返回内容格式无效");
   }
+  assertProviderCompletion({ provider: "gemini" }, payload);
   const text =
     typeof payload?.choices?.[0]?.message?.content === "string"
       ? payload.choices[0].message.content
@@ -1343,6 +1473,8 @@ async function handleChatgptCallback({ attempt, req, res }) {
         fetchImpl: attempt.fetchImpl || undefined,
       }),
     );
+    if (attempt.disposed || attempt.status !== "pending")
+      return respondHtml(res, 409, "授权已取消", "请回到应用重新发起授权。");
     writeOAuthConnection({
       db: attempt.services.db,
       encrypt: attempt.services.encrypt,
@@ -1426,7 +1558,15 @@ function startChatgptDevicePolling({ attempt, services }) {
         now: Date.now(),
       });
       services.store.markConnected(attempt);
-    } catch {
+    } catch (error) {
+      if (
+        error?.retryable &&
+        attempt.status === "pending" &&
+        !attempt.disposed
+      ) {
+        schedule();
+        return;
+      }
       services.store.markError(
         attempt,
         "ChatGPT 设备码登录失败，请重新发起或改用浏览器授权",
@@ -1590,6 +1730,7 @@ export function registerOAuthRoutes(app, ctx) {
   }
 
   async function startChatgptBrowser(req, res) {
+    store.removeForUser(req.user.id, "chatgpt");
     const attempt = store.create({
       userId: req.user.id,
       provider: "chatgpt",
@@ -1838,6 +1979,15 @@ export function registerOAuthRoutes(app, ctx) {
     return res.json(attemptPayload(attempt));
   });
 
+  app.delete("/api/oauth/:provider/attempt/:attemptId", auth, (req, res) => {
+    const preset = resolvePreset(req, res);
+    if (!preset) return;
+    const attempt = store.get(req.user.id, preset.id, req.params.attemptId);
+    if (!attempt) return fail(res, 404, "OAuth 授权请求不存在或已过期");
+    store.removeAttempt(attempt);
+    res.json({ ok: true });
+  });
+
   app.post("/api/oauth/:provider/disconnect", auth, (req, res) => {
     const preset = resolvePreset(req, res);
     if (!preset) return undefined;
@@ -1936,6 +2086,8 @@ export function registerOAuthRoutes(app, ctx) {
         redirectUri: attempt.redirectUri,
         fetchImpl: fetchImpl || undefined,
       });
+      if (attempt.disposed || attempt.status !== "pending")
+        return oauthRedirect(res, "gemini", "error", "state_invalid");
       writeOAuthConnection({
         db,
         encrypt,

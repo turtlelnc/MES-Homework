@@ -193,6 +193,25 @@ describe("chatgptDecodeIdToken", () => {
 });
 
 describe("chatgptExchangeCode", () => {
+  it("uses the upstream JWT expiry without guessing an hour when expires_in is absent", async () => {
+    const expiry = Math.floor(Date.now() / 1000) + 90;
+    const bundle = await chatgptExchangeCode({
+      code: "code",
+      codeVerifier: "verifier",
+      fetchImpl: fetchMock(() =>
+        jsonResponse({ access_token: jwt({ exp: expiry }) }),
+      ) as any,
+    });
+    expect(bundle.expiresAt).toBe(expiry * 1000);
+    const unknown = await chatgptExchangeCode({
+      code: "code",
+      codeVerifier: "verifier",
+      fetchImpl: fetchMock(() =>
+        jsonResponse({ access_token: "opaque-token" }),
+      ) as any,
+    });
+    expect(unknown.expiresAt).toBeNull();
+  });
   it("用 authorization_code + PKCE 换回统一 token bundle", async () => {
     const fetchImpl = fetchMock(() => jsonResponse(tokenResponse()));
     const before = Date.now();
@@ -612,8 +631,8 @@ describe("chatgptChat", () => {
     const body = bodyJson(init);
     expect(body.model).toBe("gpt-5.4");
     expect(body.store).toBe(false);
-    expect(body.stream).toBe(false);
-    expect(body.max_output_tokens).toBe(256);
+    expect(body.stream).toBe(true);
+    expect(body).not.toHaveProperty("max_output_tokens");
     expect(body.input).toEqual([
       {
         role: "user",
@@ -739,14 +758,26 @@ describe("chatgptChat", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it("上游意外返回 SSE 时也能解析 output_text 增量", async () => {
+  it("rejects an interrupted Responses stream instead of accepting partial grading", async () => {
+    const fetchImpl = fetchMock(
+      () =>
+        new Response(
+          'data: {"type":"response.output_text.delta","delta":"partial"}\n\n',
+        ),
+    );
+    await expect(
+      chatgptChat({ ...chatArgs, fetchImpl: fetchImpl as any }),
+    ).rejects.toThrow("未完整结束");
+  });
+
+  it("按官方 Responses SSE 的完成事件解析增量", async () => {
     const sse = [
       "event: response.output_text.delta",
       'data: {"type":"response.output_text.delta","delta":"批改"}',
       "",
       'data: {"type":"response.output_text.delta","delta":"完成"}',
       "",
-      "data: [DONE]",
+      'data: {"type":"response.completed","response":{"status":"completed","output":[]}}',
       "",
     ].join("\n");
     const fetchImpl = fetchMock(

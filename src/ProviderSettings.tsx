@@ -146,6 +146,10 @@ export function ProviderSettings({ user, notify }: Props) {
   const [presets, setPresets] = useState<ProviderPreset[]>([]);
   const [saved, setSaved] = useState<SavedProvider>(null);
   const [apiProviderDraft, setApiProviderDraft] = useState("");
+  const [modelDraft, setModelDraft] = useState("");
+  const [endpointDraft, setEndpointDraft] = useState("");
+  const [apiKeyDraft, setApiKeyDraft] = useState("");
+  const [apiKeyStatus, setApiKeyStatus] = useState("");
   const [oauth, setOauth] = useState<OAuthState>({
     providers: [],
     authMode: "api_key",
@@ -171,6 +175,7 @@ export function ProviderSettings({ user, notify }: Props) {
   } | null>(null);
   const [busy, setBusy] = useState("");
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   // Keep only the rc4 providers (chatgpt/gemini/workbuddy) and make sure the
   // "使用方式" provider select never points at a removed/disconnected card.
@@ -213,9 +218,9 @@ export function ProviderSettings({ user, notify }: Props) {
         const [accessData, presetData, oauthData, savedData, reviewData] =
           await Promise.all([
             api<ModelAccess>("/model/access"),
-            api<ProviderPreset[]>("/providers").catch(() => []),
+            api<ProviderPreset[]>("/providers"),
             api<OAuthPayload>("/oauth/providers"),
-            api<SavedProvider>("/settings/provider").catch(() => null),
+            api<SavedProvider>("/settings/provider"),
             api<ReviewPayload>("/settings/review-mode").catch((error) => {
               if (active) setReviewError(error.message);
               return null;
@@ -227,10 +232,15 @@ export function ProviderSettings({ user, notify }: Props) {
         applyOAuthPayload(oauthData);
         setSaved(savedData);
         setApiProviderDraft(savedData?.provider || presetData[0]?.id || "");
+        setModelDraft(savedData?.model || "");
+        setEndpointDraft(savedData?.endpoint || "");
         if (reviewData) setReview(reviewData);
         else setReviewAvailable(false);
       } catch (error) {
-        if (active) notify((error as Error).message);
+        if (active) {
+          setLoadError((error as Error).message);
+          notify((error as Error).message);
+        }
       } finally {
         if (active) setLoading(false);
       }
@@ -267,8 +277,22 @@ export function ProviderSettings({ user, notify }: Props) {
   const refreshAll = async () => {
     setLoading(true);
     try {
-      await Promise.all([loadAccess(), loadOAuth(), loadReview()]);
+      const [, , , nextPresets, nextSaved] = await Promise.all([
+        loadAccess(),
+        loadOAuth(),
+        loadReview(),
+        api<ProviderPreset[]>("/providers"),
+        api<SavedProvider>("/settings/provider"),
+      ]);
+      setPresets(nextPresets);
+      setSaved(nextSaved);
+      setApiProviderDraft(nextSaved?.provider || nextPresets[0]?.id || "");
+      setModelDraft(nextSaved?.model || "");
+      setEndpointDraft(nextSaved?.endpoint || "");
+      setApiKeyDraft("");
+      setLoadError("");
     } catch (error) {
+      setLoadError((error as Error).message);
       notify((error as Error).message);
     } finally {
       setLoading(false);
@@ -279,17 +303,27 @@ export function ProviderSettings({ user, notify }: Props) {
     e.preventDefault();
     const form = e.currentTarget;
     const values = Object.fromEntries(new FormData(form));
+    const submitter = (e.nativeEvent as SubmitEvent).submitter;
+    const activate =
+      submitter instanceof HTMLButtonElement && submitter.value === "activate";
     setBusy("api-key");
     try {
       const result = await api<SavedProvider>(
         "/settings/provider",
-        json("PUT", values),
+        json("PUT", { ...values, activate }),
       );
       setSaved(result);
-      notify("API Key 已在服务端加密保存。");
-      form.reset();
-      await loadAccess();
+      setApiKeyDraft("");
+      setModelDraft(result?.model || "");
+      setEndpointDraft(result?.endpoint || "");
+      const message = activate
+        ? "已保存并切换为 API Key。"
+        : "配置已保存，当前使用方式未更改。";
+      setApiKeyStatus(message);
+      notify(message);
+      await Promise.all([loadAccess(), loadOAuth()]);
     } catch (error) {
+      setApiKeyStatus(`保存失败：${(error as Error).message}`);
       notify(`保存失败：${(error as Error).message}`);
     } finally {
       setBusy("");
@@ -330,8 +364,11 @@ export function ProviderSettings({ user, notify }: Props) {
       return;
     }
     setBusy(`oauth-${card.id}`);
+    let popup: Window | null = null;
     try {
       if (flow === "browser") {
+        popup = window.open("about:blank", "_blank");
+        if (popup) popup.opener = null;
         const result = await api<OAuthBrowserStartResponse>(
           `/oauth/${encodeURIComponent(card.id)}/browser/start`,
           json("POST", {}),
@@ -345,21 +382,8 @@ export function ProviderSettings({ user, notify }: Props) {
           }
           throw new Error("服务端未返回授权链接");
         }
-        let popupBlocked = false;
-        if (url) {
-          const opened = window.open(url, "_blank");
-          if (opened) {
-            try {
-              opened.opener = null;
-            } catch {
-              // Ignore cross-origin opener failures; the window may be gone.
-            }
-          } else {
-            popupBlocked = true;
-          }
-        } else {
-          popupBlocked = true;
-        }
+        const popupBlocked = !popup || !url;
+        if (popup && url) popup.location.href = url;
         setSession({
           card,
           flow,
@@ -389,6 +413,7 @@ export function ProviderSettings({ user, notify }: Props) {
         });
       }
     } catch (error) {
+      popup?.close();
       notify(`发起 OAuth 登录失败：${(error as Error).message}`);
     } finally {
       setBusy("");
@@ -415,9 +440,19 @@ export function ProviderSettings({ user, notify }: Props) {
     void launchFlow(card, flow);
   };
 
-  const retrySession = () => {
+  const retrySession = async () => {
     const current = session;
     if (!current) return;
+    if (current.start?.attemptId) {
+      try {
+        await api(
+          `/oauth/${current.card.id}/attempt/${current.start.attemptId}`,
+          { method: "DELETE" },
+        );
+      } catch {
+        /* Expired attempts are already closed by the server. */
+      }
+    }
     setSession(null);
     if (current.card.mainlandUnavailable && current.flow === "browser") {
       setPendingMainland({ card: current.card, flow: current.flow });
@@ -480,6 +515,10 @@ export function ProviderSettings({ user, notify }: Props) {
       : ROLE_LABELS[access?.ownerRole || ""] || access?.ownerRole || "";
   const reviewModes =
     review.modes && review.modes.length ? review.modes : FALLBACK_REVIEW_MODES;
+  const selectedPreset = presets.find(
+    (preset) => preset.id === apiProviderDraft,
+  );
+  const canReuseKey = saved?.provider === apiProviderDraft;
 
   return (
     <div style={{ display: "grid", gap: 20, alignContent: "start" }}>
@@ -504,6 +543,11 @@ export function ProviderSettings({ user, notify }: Props) {
         </Button>
       </div>
 
+      {loadError && (
+        <p role="alert">
+          无法读取模型设置：{loadError}。请点击“刷新状态”重试。
+        </p>
+      )}
       <section className="rc4-panel">
         <h2>
           <ShieldCheck /> 当前生效凭证
@@ -560,11 +604,16 @@ export function ProviderSettings({ user, notify }: Props) {
             <KeyRound /> API Key 方式
           </h2>
           <p className="panel-intro">
-            图片与 PDF OCR 需选择标记为“视觉”的厂商；AI 教学分析使用同一个模型。
-            密钥保存后不会再回显。
+            每个账户保存一套 API Key 配置。选择厂商并填写密钥即可使用默认模型；
+            图片与 PDF 识别需视觉模型。保存配置不会发送付费测试请求。
           </p>
           <fieldset
-            disabled={!access?.canConfigure || busy === "api-key"}
+            disabled={
+              loading ||
+              Boolean(loadError) ||
+              !access?.canConfigure ||
+              busy === "api-key"
+            }
             style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}
           >
             <label className="field">
@@ -574,13 +623,10 @@ export function ProviderSettings({ user, notify }: Props) {
                 value={apiProviderDraft}
                 onChange={(event) => {
                   setApiProviderDraft(event.currentTarget.value);
-                  // Overrides belong to the previous vendor. Do not send a
-                  // newly entered key to its endpoint after switching vendors.
-                  const form = event.currentTarget.form;
-                  for (const name of ["model", "endpoint"]) {
-                    const input = form?.elements.namedItem(name);
-                    if (input instanceof HTMLInputElement) input.value = "";
-                  }
+                  setModelDraft("");
+                  setEndpointDraft("");
+                  setApiKeyDraft("");
+                  setApiKeyStatus("");
                 }}
               >
                 {presets.map((preset) => (
@@ -591,35 +637,74 @@ export function ProviderSettings({ user, notify }: Props) {
                 ))}
               </select>
             </label>
-            <Field
-              name="model"
-              label="模型名称（可选覆盖）"
-              defaultValue={saved?.model || ""}
-              placeholder="留空使用所选厂商的默认模型"
-            />
-            <Field
-              name="endpoint"
-              label="兼容接口地址（可选覆盖）"
-              defaultValue={saved?.endpoint || ""}
-              placeholder="默认使用厂商官方 HTTPS 地址"
-            />
+            <p className="panel-intro" aria-live="polite">
+              默认模型：{selectedPreset?.model || "读取中…"}；
+              {selectedPreset?.vision ? "支持图片识别" : "仅文本"}。
+              {canReuseKey
+                ? " 已保存此厂商的密钥，留空即可保留。"
+                : " 切换厂商后须填写对应厂商的新密钥。"}
+            </p>
             <Field
               name="apiKey"
               type="password"
               label="API Key"
-              required
+              required={!canReuseKey}
               autoComplete="off"
-              placeholder="粘贴厂商 API Key"
+              value={apiKeyDraft}
+              onChange={(event) => setApiKeyDraft(event.target.value)}
+              placeholder={
+                canReuseKey
+                  ? "已保存；留空保留，填写则替换"
+                  : "粘贴所选厂商的 API Key"
+              }
             />
-            <Button
-              className="full"
-              type="submit"
-              disabled={!access?.canConfigure || busy === "api-key"}
+            <details
+              open={Boolean(
+                (modelDraft && modelDraft !== selectedPreset?.model) ||
+                (endpointDraft && endpointDraft !== selectedPreset?.endpoint),
+              )}
             >
-              <KeyRound />
-              {busy === "api-key" ? "正在加密保存…" : "加密保存 API Key"}
-            </Button>
+              <summary>高级设置：模型名称与接口地址</summary>
+              <Field
+                name="model"
+                label="模型名称（可选覆盖）"
+                value={modelDraft}
+                onChange={(event) => setModelDraft(event.target.value)}
+                placeholder={selectedPreset?.model || "留空使用默认模型"}
+              />
+              <Field
+                name="endpoint"
+                label="兼容接口地址（可选覆盖）"
+                value={endpointDraft}
+                onChange={(event) => setEndpointDraft(event.target.value)}
+                placeholder={
+                  selectedPreset?.endpoint || "默认使用厂商官方 HTTPS 地址"
+                }
+              />
+            </details>
+            <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
+              <Button
+                className="full"
+                type="submit"
+                name="intent"
+                value="activate"
+                disabled={!access?.canConfigure || busy === "api-key"}
+              >
+                <KeyRound />
+                {busy === "api-key" ? "正在保存…" : "保存并使用 API Key"}
+              </Button>
+              <Button
+                type="submit"
+                variant="outline"
+                name="intent"
+                value="save"
+                disabled={busy === "api-key"}
+              >
+                仅保存配置
+              </Button>
+            </div>
           </fieldset>
+          {apiKeyStatus && <p role="status">{apiKeyStatus}</p>}
           {saved?.provider && (
             <p className="save-status" style={{ marginTop: 14 }}>
               已保存：
@@ -684,9 +769,9 @@ export function ProviderSettings({ user, notify }: Props) {
           <Link2 /> OAuth 授权方式
         </h2>
         <p className="panel-intro">
-          支持 ChatGPT（Codex OAuth）、Gemini 与 WorkBuddy 三种登录：
-          浏览器登录会打开授权页并在回调后自动完成；设备码登录会显示用户码或授权链接，
-          服务端自动轮询换取令牌。所有令牌只在服务端 AES-256-GCM 加密保存。
+          登录完成后点击“使用此连接”启用。Gemini 需要部署方配置；ChatGPT 与
+          WorkBuddy
+          为实验性兼容入口，适用条件见各卡片。授权令牌仅在服务器加密保存。
         </p>
         <div
           style={{
@@ -734,6 +819,20 @@ export function ProviderSettings({ user, notify }: Props) {
                 <p style={{ color: "#8491a3", fontSize: 13, lineHeight: 1.7 }}>
                   {card.description}
                 </p>
+                {card.setupHint && (
+                  <p className="panel-intro">{card.setupHint}</p>
+                )}
+                {card.verification === "experimental" && (
+                  <strong>实验性兼容连接 · 尚未验证真实登录</strong>
+                )}
+                {card.redirectUri && (
+                  <small>
+                    Google 控制台回调地址：
+                    <code style={{ overflowWrap: "anywhere" }}>
+                      {card.redirectUri}
+                    </code>
+                  </small>
+                )}
                 <small style={{ color: "#7c8796", lineHeight: 1.7 }}>
                   默认模型：{card.model || "—"}
                   {card.vision ? " · 支持图片" : " · 仅文本"} ·{" "}
@@ -765,14 +864,42 @@ export function ProviderSettings({ user, notify }: Props) {
                   }}
                 >
                   {card.connected ? (
-                    <Button
-                      variant="outline"
-                      type="button"
-                      onClick={() => void disconnect(card)}
-                      disabled={cardBusy}
-                    >
-                      {cardBusy ? "正在断开…" : "断开连接"}
-                    </Button>
+                    <>
+                      <Button
+                        type="button"
+                        disabled={
+                          cardBusy || !access?.canConfigure || !card.configured
+                        }
+                        onClick={async () => {
+                          setBusy(`oauth-${card.id}`);
+                          try {
+                            await api(
+                              "/model/auth-mode",
+                              json("PUT", { mode: "oauth", provider: card.id }),
+                            );
+                            await Promise.all([loadAccess(), loadOAuth()]);
+                            notify(`当前已使用 ${card.name}。`);
+                          } catch (error) {
+                            notify((error as Error).message);
+                          } finally {
+                            setBusy("");
+                          }
+                        }}
+                      >
+                        {oauth.authMode === "oauth" &&
+                        oauth.provider === card.id
+                          ? "当前正在使用"
+                          : "使用此连接"}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        type="button"
+                        onClick={() => void disconnect(card)}
+                        disabled={cardBusy}
+                      >
+                        {cardBusy ? "正在断开…" : "断开连接"}
+                      </Button>
+                    </>
                   ) : (
                     flows.map((flow) => (
                       <Button

@@ -1,3 +1,4 @@
+import { oauthFetch } from "./oauth-http.mjs";
 // ChatGPT（Codex OAuth）provider —— v0.2.1-rc4
 //
 // 使用 OpenAI Codex 的公共 PKCE 客户端（client_id 为公开常量，无 client_secret）：
@@ -44,7 +45,6 @@ const ORIGINATOR = "codex_cli_rs";
 const DEFAULT_MODEL = "gpt-5.4";
 const AUTH_TIMEOUT_MS = 30_000;
 const CHAT_TIMEOUT_MS = 120_000;
-const DEFAULT_EXPIRES_IN_SECONDS = 3600;
 const DEFAULT_DEVICE_INTERVAL_MS = 5_000;
 const MIN_DEVICE_INTERVAL_MS = 1_000;
 // 设备码授权本身约 15 分钟有效；超过该值的 interval 没有意义。
@@ -58,7 +58,13 @@ function resolveFetch(fetchImpl) {
   const doFetch = fetchImpl || globalThis.fetch;
   if (typeof doFetch !== "function")
     throw taggedError("当前运行环境不支持网络请求");
-  return doFetch;
+  return (url, options) =>
+    oauthFetch(url, options, {
+      request: doFetch,
+      timeoutMs:
+        url === CHATGPT_RESPONSES_URL ? CHAT_TIMEOUT_MS : AUTH_TIMEOUT_MS,
+      maxBytes: url === CHATGPT_RESPONSES_URL ? 2 * 1024 * 1024 : 65536,
+    });
 }
 
 /**
@@ -76,7 +82,21 @@ function safeUpstreamCode(payload) {
   for (const candidate of candidates) {
     if (typeof candidate !== "string") continue;
     const code = candidate.trim();
-    if (/^[A-Za-z0-9_.:-]{1,64}$/.test(code)) return code;
+    if (
+      [
+        "invalid_grant",
+        "invalid_client",
+        "invalid_request",
+        "access_denied",
+        "expired_token",
+        "authorization_pending",
+        "slow_down",
+        "rate_limit_exceeded",
+        "server_error",
+        "temporarily_unavailable",
+      ].includes(code)
+    )
+      return code;
   }
   return "";
 }
@@ -121,12 +141,15 @@ function normalizeTokenBundle(payload) {
   let expiresIn = payload.expires_in;
   if (typeof expiresIn === "string" && expiresIn.trim())
     expiresIn = Number(expiresIn);
+  const jwtExpiry = Number(decodeJwtPayload(accessToken)?.exp);
   const expiresAt =
     typeof expiresIn === "number" &&
     Number.isFinite(expiresIn) &&
     expiresIn >= 0
       ? Date.now() + Math.floor(expiresIn * 1000)
-      : Date.now() + DEFAULT_EXPIRES_IN_SECONDS * 1000;
+      : Number.isSafeInteger(jwtExpiry * 1000) && jwtExpiry > 0
+        ? jwtExpiry * 1000
+        : null;
 
   const idToken = typeof payload.id_token === "string" ? payload.id_token : "";
   // id_token 是身份文档（不验签，只读声明）；部分上游只在 access_token 里带
@@ -217,7 +240,12 @@ function tokenEndpointFailure(label, status, payload) {
   const code = safeUpstreamCode(payload);
   return taggedError(
     `${label}（HTTP ${status}${code ? `，错误代码 ${code}` : ""}）`,
-    { code: "exchange_failed", status },
+    {
+      code: "exchange_failed",
+      status,
+      invalidGrant: code === "invalid_grant",
+      retryable: status === 429 || status >= 500,
+    },
   );
 }
 
@@ -599,13 +627,14 @@ function parseSseEvents(text) {
 }
 
 /**
- * 兼容流式响应（即使请求带了 stream:false，个别上游仍可能回 SSE）。
+ * Codex 兼容通道使用 Responses SSE；必须看到 response.completed 才算成功。
  * 返回 {text}；若事件里带错误则抛中文 Error。
  */
 function extractSseText(text) {
   const deltas = [];
   const doneTexts = [];
   let completedText = "";
+  let completed = false;
   for (const raw of parseSseEvents(text)) {
     if (!raw || raw === "[DONE]") continue;
     let event;
@@ -632,11 +661,16 @@ function extractSseText(text) {
       continue;
     }
     if (type === "response.completed" && event.response) {
+      completed = true;
       const responseText = extractResponsesText(event.response);
       if (responseText && !completedText) completedText = responseText;
       continue;
     }
-    if (type === "error" || type === "response.failed") {
+    if (
+      type === "error" ||
+      type === "response.failed" ||
+      type === "response.incomplete"
+    ) {
       const code = safeUpstreamCode(
         event.response?.error ? { error: event.response.error } : event,
       );
@@ -646,6 +680,10 @@ function extractSseText(text) {
       );
     }
   }
+  if (!completed)
+    throw taggedError("ChatGPT 模型响应未完整结束，请重试", {
+      code: "chat_failed",
+    });
   const combined = completedText || deltas.join("") || doneTexts.join("\n");
   return combined.trim();
 }
@@ -721,17 +759,14 @@ export async function chatgptChat({
     model: selectedModel,
     input,
     store: false,
-    stream: false,
+    stream: true,
   };
-  const tokens =
-    typeof maxTokens === "number" && Number.isFinite(maxTokens) && maxTokens > 0
-      ? Math.floor(maxTokens)
-      : 0;
-  if (tokens) body.max_output_tokens = tokens;
+  // Codex uses its Responses transport contract, not the public API's
+  // max_output_tokens parameter. Local lifetime/byte bounds still apply.
 
   const headers = {
     "content-type": "application/json",
-    accept: "application/json",
+    accept: "text/event-stream",
     authorization: `Bearer ${accessToken}`,
     "chatgpt-account-id": accountId,
     originator: ORIGINATOR,

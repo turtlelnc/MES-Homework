@@ -75,7 +75,7 @@
 ## Security & Data Handling
 
 - 不提交 API Key、`.env`、SQLite 数据库、上传的学生作业/答卷、生成的临时文件或截图中的真实账号信息。
-- OAuth：授权码 + PKCE（ChatGPT 另支持设备码/Codex OAuth；WorkBuddy 使用官方浏览器/设备码轮询），一次性 state、AES-256-GCM 加密令牌、自动刷新/断开；ChatGPT 本机回调仅监听 `127.0.0.1:1455`，授权链接只允许官方域名。
+- OAuth：授权码 + PKCE（ChatGPT 另支持设备码/Codex OAuth；WorkBuddy 使用实验性兼容浏览器/设备码轮询），一次性 state、AES-256-GCM 加密令牌、自动刷新/断开；ChatGPT 本机回调仅监听 `127.0.0.1:1455`，授权链接只允许官方域名。
 - 上传文件必须校验 MIME/大小；AI 批改结果保留教师复核流程（按学校所选复核模式）；直接批改模式的题目快照不参与班级 AI 教学分析。
 - 服务器版部署器安装服务/放行防火墙必须显式提权（UAC/pkexec/osascript），不得静默提权；生产环境需要 HTTPS 反向代理（Secure Cookie）。
 - 外部 OAuth/模型上游协议（Codex OAuth、WorkBuddy 非公开接口）存在变更风险；修改相关端点/请求头后必须更新测试与文档，并说明真实联调状态。
@@ -122,3 +122,11 @@
 - HTTP 失败诊断限 16 KiB，providerHttpError 仅返回静态分类文案，不回显上游错误原文。截断输出须先结算实际 usage，再报明确错误，不自动提高预算或发起额外收费重试。
 - 保存凭证去除首尾空白、拒绝空 Key/内部换行与非字符串模型名；历史已存 Key 在请求构建时兼容首尾空白。测试仅使用 mock 凭证，真实排障密钥不得落盘或提交。
 - 模型厂商选择必须由异步读取的已保存配置同步控制；切换厂商清空旧接口/模型覆盖值，避免显示厂商与实际请求目标不一致。浏览器回归覆盖保存配置回显及 DeepSeek 切换。
+
+## 模型设置与 OAuth 来源核对（2026-10-27）
+
+- 设置页优先显示模型连接；默认厂商/模型来自后端目录，模型/接口覆盖收进高级设置。同厂商修改可留空保留密钥，换厂商必须提供新密钥。activate:true 在事务中保存并切换 API Key；缺省仅保存。读取失败必须展示重试，不能当成未配置。
+- Gemini 使用 Web application OAuth 客户端、精确回调 URL、CLIENT_ID/SECRET/PROJECT_ID，默认 scope 包含 cloud-platform，模型请求带 x-goog-user-project。旧身份 scope 需重新授权；403 不一概判为 token 失效。
+- ChatGPT 当前为 Codex 兼容连接，**不是本应用的官方第三方 SIWC 注册实现**；最新官方 SIWC 要动态客户端/主机注册、nonce 与 JWKS 身份验证、plan usage scope、公共 Responses API。WorkBuddy 的第三方授权协议尚无足够官方证据。两者在 UI 标为实验性，不得把 mock 测试或 Codex 源码匹配称为真实登录验收。证据见 docs/oauth-audit-2026-10-27.md。
+- OAuth JSON/SSE 使用 oauth-http.mjs 限制完整响应体积/总时间，错误不回显上游原文。Codex 兼容 SSE 必须收到 response.completed。DELETE attempt 只取消发起者自己的尝试，释放监听/轮询；迟到回调/刷新不能复活旧连接。
+- 同一连接并发刷新须合并；暂时故障保留 active，新的登录不继承旧账号 refresh token，刷新未轮换时仍保留原 token。外部真实账号授权不在自动化测试中进行。

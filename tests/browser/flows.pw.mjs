@@ -597,6 +597,7 @@ test("switching API vendors clears old endpoint and model overrides before savin
   await page.getByRole("button", { name: "设置", exact: true }).click();
   const provider = page.locator('select[name="provider"]');
   await expect(provider).toHaveValue("openai");
+  await page.getByText("高级设置：模型名称与接口地址", { exact: true }).click();
   await page
     .locator('input[name="endpoint"]')
     .fill("https://api.openai.com/v1/chat/completions");
@@ -611,7 +612,7 @@ test("switching API vendors clears old endpoint and model overrides before savin
       r.request().method() === "PUT",
   );
   await page
-    .getByRole("button", { name: "加密保存 API Key", exact: true })
+    .getByRole("button", { name: "保存并使用 API Key", exact: true })
     .click();
   expect(await (await response).json()).toMatchObject({
     provider: "deepseek",
@@ -632,4 +633,126 @@ test("switching API vendors clears old endpoint and model overrides before savin
     path: "test-results/deepseek-provider-settings.png",
     fullPage: true,
   });
+});
+
+test("existing model settings reuse the encrypted key and distinguish save from activation", async ({
+  page,
+}) => {
+  await login(page);
+  await configure(page);
+  await page.getByRole("button", { name: "设置", exact: true }).click();
+  await expect(page.locator('select[name="provider"]')).toHaveValue("openai");
+  await expect(page.locator('input[name="apiKey"]')).not.toHaveAttribute(
+    "required",
+  );
+  await page.getByText("高级设置：模型名称与接口地址", { exact: true }).click();
+  await page.locator('input[name="model"]').fill("custom-fixture-model");
+  const saved = page.waitForResponse(
+    (r) =>
+      r.url().endsWith("/api/settings/provider") &&
+      r.request().method() === "PUT",
+  );
+  await page.getByRole("button", { name: "仅保存配置", exact: true }).click();
+  expect(await (await saved).json()).toMatchObject({
+    model: "custom-fixture-model",
+    activated: false,
+  });
+  const activated = page.waitForResponse(
+    (r) =>
+      r.url().endsWith("/api/settings/provider") &&
+      r.request().method() === "PUT",
+  );
+  await page
+    .getByRole("button", { name: "保存并使用 API Key", exact: true })
+    .click();
+  expect(await (await activated).json()).toMatchObject({ activated: true });
+  await expect(page.getByRole("status")).toContainText("已保存并切换");
+  await page.screenshot({
+    path: "test-results/model-key-reuse.png",
+    fullPage: true,
+  });
+});
+
+test("model settings read failures offer a real retry without overwriting saved credentials", async ({
+  page,
+}) => {
+  await login(page);
+  await configure(page);
+  await page.route("**/api/settings/provider", (route) =>
+    route.request().method() === "GET"
+      ? route.fulfill({
+          status: 503,
+          json: { error: "fixture temporarily busy" },
+        })
+      : route.continue(),
+  );
+  await page.getByRole("button", { name: "设置", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText("无法读取模型设置");
+  await expect(
+    page.getByRole("button", { name: "保存并使用 API Key", exact: true }),
+  ).toBeDisabled();
+  await page.unroute("**/api/settings/provider");
+  await page.getByRole("button", { name: "刷新状态", exact: true }).click();
+  await expect(page.locator('select[name="provider"]')).toHaveValue("openai");
+  await expect(
+    page.getByRole("button", { name: "保存并使用 API Key", exact: true }),
+  ).toBeEnabled();
+});
+
+test("cancelling OAuth sends cancellation for the actual attempt", async ({
+  page,
+}) => {
+  await login(page);
+  await page.route("**/api/oauth/providers", (route) =>
+    route.fulfill({
+      json: {
+        authMode: "api_key",
+        provider: null,
+        providers: [
+          {
+            id: "chatgpt",
+            name: "ChatGPT（Codex OAuth）",
+            region: "global",
+            mainlandUnavailable: true,
+            configured: true,
+            connected: false,
+            connectedAt: null,
+            description: "Offline fixture",
+            model: "gpt-5.4",
+            vision: false,
+            flows: ["device"],
+          },
+        ],
+      },
+    }),
+  );
+  await page.route("**/api/oauth/chatgpt/device/start", (route) =>
+    route.fulfill({
+      json: {
+        attemptId: "fixture-attempt",
+        userCode: "TEST-CODE",
+        verificationUrl: "https://auth.openai.com/codex/device",
+        intervalMs: 5000,
+      },
+    }),
+  );
+  await page.route("**/api/oauth/chatgpt/attempt/fixture-attempt", (route) =>
+    route.fulfill({
+      json:
+        route.request().method() === "DELETE"
+          ? { ok: true }
+          : { status: "pending" },
+    }),
+  );
+  await page.getByRole("button", { name: "设置", exact: true }).click();
+  await page.getByRole("button", { name: "设备码登录", exact: true }).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  const cancelled = page.waitForRequest(
+    (r) =>
+      r.url().endsWith("/api/oauth/chatgpt/attempt/fixture-attempt") &&
+      r.method() === "DELETE",
+  );
+  await page.keyboard.press("Escape");
+  await cancelled;
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 });

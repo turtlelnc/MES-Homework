@@ -146,7 +146,7 @@ describe("workbuddyStart", () => {
     );
 
     await expect(workbuddyStart({ region: "cn", fetchImpl })).rejects.toThrow(
-      "WorkBuddy 登录服务失败：服务繁忙，请稍后再试",
+      "WorkBuddy 登录服务失败（业务码 1001）",
     );
   });
 });
@@ -422,9 +422,7 @@ describe("workbuddyChat", () => {
     }).catch((reason: unknown) => reason as Error);
 
     expect(error).toBeInstanceOf(Error);
-    expect(error.message).toBe(
-      "WorkBuddy 模型接口请求失败（HTTP 429）：额度已用尽，请购买加量包",
-    );
+    expect(error.message).toBe("WorkBuddy 模型接口请求失败（HTTP 429）");
     expect(error.message).not.toContain("at-cn-secret");
     expect(error.message).not.toContain("rt-cn-secret");
   });
