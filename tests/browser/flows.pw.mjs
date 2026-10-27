@@ -588,3 +588,48 @@ test("device-side overlapping tiles resume after interruption and preserve origi
     fullPage: true,
   });
 });
+
+test("switching API vendors clears old endpoint and model overrides before saving", async ({
+  page,
+}) => {
+  await login(page);
+  await configure(page);
+  await page.getByRole("button", { name: "设置", exact: true }).click();
+  const provider = page.locator('select[name="provider"]');
+  await expect(provider).toHaveValue("openai");
+  await page
+    .locator('input[name="endpoint"]')
+    .fill("https://api.openai.com/v1/chat/completions");
+  await page.locator('input[name="model"]').fill("gpt-4.1-mini");
+  await provider.selectOption("deepseek");
+  await expect(page.locator('input[name="endpoint"]')).toHaveValue("");
+  await expect(page.locator('input[name="model"]')).toHaveValue("");
+  await page.locator('input[name="apiKey"]').fill("browser-mock-only");
+  const response = page.waitForResponse(
+    (r) =>
+      r.url().endsWith("/api/settings/provider") &&
+      r.request().method() === "PUT",
+  );
+  await page
+    .getByRole("button", { name: "加密保存 API Key", exact: true })
+    .click();
+  expect(await (await response).json()).toMatchObject({
+    provider: "deepseek",
+    model: "deepseek-flash",
+    endpoint: "https://api.deepseek.com/chat/completions",
+  });
+  await page.reload();
+  await page.getByRole("button", { name: "设置", exact: true }).click();
+  await expect(provider).toHaveValue("deepseek");
+  await expect(page.locator('input[name="model"]')).toHaveValue(
+    "deepseek-flash",
+  );
+  await expect(page.locator('input[name="endpoint"]')).toHaveValue(
+    "https://api.deepseek.com/chat/completions",
+  );
+  await expect(page.locator('input[name="apiKey"]')).toHaveValue("");
+  await page.screenshot({
+    path: "test-results/deepseek-provider-settings.png",
+    fullPage: true,
+  });
+});

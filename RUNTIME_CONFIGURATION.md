@@ -43,3 +43,11 @@ systemd 示例的主服务 MemoryHigh=60%、MemoryMax=75%、备份 MemoryMax=10%
 学段来自实际数据库 users CHECK 约束；注册开关来自服务端环境；前端通过 `/api/capabilities` 获取，不另设猜测回退。版本以 `server/version.mjs` 为服务端/部署器/打包流水线来源，发布资产大小、摘要和 Node 架构从实际文件与运行时读取。前端版本与 package/lock 由同步测试核对。
 
 协议标识、加密参数、HTTP 状态码、UI 布局/动画值、测试夹具及明确标注的历史测量值保留。将它们全部改成“从环境推断”会破坏协议和可重复测试。
+
+## 非流式模型的等待与错误边界
+
+API Key 调用仍为 `stream:false`，保留供应商默认思考模式，不猜测或强制修改模型推理能力。`MODEL_REQUEST_TIMEOUT_MS` 默认 60000、硬上限 120000 毫秒；未配置 `MODEL_RESPONSE_IDLE_MS` 时，正文等待与总超时相同。非流式上游可能先发响应头或空行，不能把生成正文所需的等待当成 15 秒上传停滞。手工配置的较短 idle 值仍然有效；旧 `.env` 若显式写了 `MODEL_RESPONSE_IDLE_MS=15000`，应按期望等待时间调整或移除后重启。全局请求信号、模型额度和并发租约不会因此放宽。
+
+模型错误正文只读取最多 16 KiB，用于分类，不将供应商原文回传或记录，避免泄露密钥与作业内容。无效/过大/卡住的错误正文仍保留 HTTP 状态分类。401、402、403、404、429、5xx 提供明确提示；只有限流及 5xx 标为可重试。输出 `finish_reason=length` / `stop_reason=max_tokens` 在结算实际 usage 后明确报截断，禁止把不完整 JSON 当有效批改结果落库，不自动增加输出预算或额外发起付费重试。
+
+协议核对来源：DeepSeek 官方 [Chat Completion](https://api-docs.deepseek.com/api/create-chat-completion)、[Thinking Mode](https://api-docs.deepseek.com/guides/thinking_mode)、[Keep-Alive](https://api-docs.deepseek.com/quick_start/rate_limit)。排障时以用户实际报错为准，最小文本/合成图片调用成功不能证明真实批量作业在其设备上已通过。

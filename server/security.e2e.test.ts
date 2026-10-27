@@ -129,23 +129,27 @@ beforeAll(async () => {
       return Response.json({choices:[{message:{content:JSON.stringify(config.payload)}}]});
     };`,
   );
-  child = spawn(process.execPath, ["--import", pathToFileURL(preload).href, "server/index.mjs"], {
-    cwd: root,
-    env: {
-      ...process.env,
-      DATA_DIR: dir,
-      PORT: String(port),
-      HOST: "127.0.0.1",
-      NODE_ENV: "test",
-      SYSTEM_PRESSURE_ENABLED: "0",
-      CLIENT_TILING_ENABLED: "0",
-      DEEPSEEK_FILES_ENABLED: "0",
-      MODEL_SCHOOL_DAILY_MICRO_CNY: "0",
-      MODEL_USER_DAILY_MICRO_CNY: "0",
-      APP_SECRET: "security-test-only-32-character-secret",
+  child = spawn(
+    process.execPath,
+    ["--import", pathToFileURL(preload).href, "server/index.mjs"],
+    {
+      cwd: root,
+      env: {
+        ...process.env,
+        DATA_DIR: dir,
+        PORT: String(port),
+        HOST: "127.0.0.1",
+        NODE_ENV: "test",
+        SYSTEM_PRESSURE_ENABLED: "0",
+        CLIENT_TILING_ENABLED: "0",
+        DEEPSEEK_FILES_ENABLED: "0",
+        MODEL_SCHOOL_DAILY_MICRO_CNY: "0",
+        MODEL_USER_DAILY_MICRO_CNY: "0",
+        APP_SECRET: "security-test-only-32-character-secret",
+      },
+      stdio: "ignore",
     },
-    stdio: "ignore",
-  });
+  );
   for (let i = 0; i < 100; i++) {
     try {
       if ((await request("/api/health")).ok) break;
@@ -178,6 +182,37 @@ afterAll(async () => {
 });
 
 describe("HTTP authorization regressions (isolated SQLite; no model requests)", () => {
+  it("normalizes copied model credentials and rejects invalid settings without replacing the saved configuration", async () => {
+    const saved = await request("/api/settings/provider", teacher, "PUT", {
+      provider: "deepseek",
+      apiKey: "  mock-only\r\n",
+      model: " deepseek-flash ",
+    });
+    expect(saved.status).toBe(200);
+    expect(await saved.json()).toMatchObject({ model: "deepseek-flash" });
+    for (const settings of [
+      { apiKey: " \r\n " },
+      { apiKey: "a\nb" },
+      { apiKey: "mock-only", model: { unexpected: true } },
+    ]) {
+      expect(
+        (
+          await request("/api/settings/provider", teacher, "PUT", {
+            provider: "deepseek",
+            ...settings,
+          })
+        ).status,
+      ).toBe(400);
+    }
+    const read = await (
+      await request("/api/settings/provider", teacher)
+    ).json();
+    expect(read).toMatchObject({
+      provider: "deepseek",
+      model: "deepseek-flash",
+    });
+    expect(JSON.stringify(read)).not.toContain("mock-only");
+  });
   it("blocks anonymous, peer, unrelated teacher, and other-school access to private files and answers", async () => {
     for (const cookie of ["", peer, peerTeacher, outsider]) {
       expect([401, 404]).toContain(
@@ -680,9 +715,7 @@ describe("HTTP authorization regressions (isolated SQLite; no model requests)", 
     expect(JSON.stringify(own)).not.toContain("PRIVATE_PRACTICE");
     const notebook = await (await request("/api/mistakes", student)).json();
     // v0.2.1 学生错题视图按白名单返回，不再包含 submission_id；用题干定位。
-    const mistake = notebook.find(
-      (m: any) => m.prompt === questions[0].prompt,
-    );
+    const mistake = notebook.find((m: any) => m.prompt === questions[0].prompt);
     expect(mistake.practiceQuestions).toEqual([{ prompt: "new-question" }]);
     fs.writeFileSync(
       path.join(dir, "model-response.json"),
