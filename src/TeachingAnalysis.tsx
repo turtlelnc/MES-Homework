@@ -41,6 +41,7 @@ import {
 } from "./analysis-api";
 
 import { createTeachingScope } from "./teaching-state";
+import { printRegion } from "./print-region";
 
 type Notify = (message: string) => void;
 
@@ -142,7 +143,17 @@ function AiBlock({
 
 /* ----------------------------- 班级教学分析 ----------------------------- */
 
-export function TeachingAnalysis({ notify }: { notify: Notify }) {
+export function TeachingAnalysis({
+  notify,
+  refreshVersion = 0,
+  preferred = null,
+  onAssignmentCreated,
+}: {
+  notify: Notify;
+  refreshVersion?: number;
+  preferred?: { id: string; ticket: number } | null;
+  onAssignmentCreated?: (id: string) => void;
+}) {
   const [assignments, setAssignments] = useState<TeachingAssignment[]>([]);
   const [selected, setSelected] = useState("");
   const [stats, setStats] = useState<TeachingStats | null>(null);
@@ -156,8 +167,13 @@ export function TeachingAnalysis({ notify }: { notify: Notify }) {
   const [student, setStudent] = useState<StudentEntry | null>(null);
 
   const scope = useRef(createTeachingScope()).current;
+  const selectedRef = useRef(selected);
+  const preferredRef = useRef(preferred);
+  selectedRef.current = selected;
+  preferredRef.current = preferred;
   const chooseAssignment = (id: string) => {
     scope.select(id);
+    selectedRef.current = id;
     setSelected(id);
     setStats(null);
     setAnalysis(null);
@@ -176,16 +192,20 @@ export function TeachingAnalysis({ notify }: { notify: Notify }) {
       .then((rows) => {
         if (!active) return;
         setAssignments(rows);
-        chooseAssignment(rows[0]?.id || "");
+        if (!selectedRef.current)
+          chooseAssignment(preferredRef.current?.id || rows[0]?.id || "");
       })
       .catch((error) => {
         if (active) notify((error as Error).message);
       });
     return () => {
       active = false;
-      scope.select("");
     };
-  }, []);
+  }, [refreshVersion]);
+  useEffect(() => () => scope.select(""), []);
+  useEffect(() => {
+    if (preferred) chooseAssignment(preferred.id);
+  }, [preferred?.ticket]);
 
   const reload = (id: string) => {
     const ticket = scope.start("load");
@@ -212,7 +232,7 @@ export function TeachingAnalysis({ notify }: { notify: Notify }) {
 
   useEffect(() => {
     if (selected) reload(selected);
-  }, [selected]);
+  }, [selected, refreshVersion]);
 
   const runAnalysis = async () => {
     if (!selected || loading) return;
@@ -304,6 +324,7 @@ export function TeachingAnalysis({ notify }: { notify: Notify }) {
       notify(
         `已生成新的重练作业《${result.title}》，覆盖 ${result.knowledgePoints.length} 个知识点。`,
       );
+      onAssignmentCreated?.(result.id);
       listTeachingAssignments()
         .then((rows) => {
           if (scope.isCurrent(ticket)) setAssignments(rows);
@@ -333,8 +354,9 @@ export function TeachingAnalysis({ notify }: { notify: Notify }) {
         </div>
         <div className="ta-head-actions">
           <label className="field">
-            <span>选择作业</span>
+            <span>教学分析作业</span>
             <select
+              aria-label="教学分析作业"
               value={selected}
               onChange={(e) => chooseAssignment(e.target.value)}
             >
@@ -454,7 +476,14 @@ export function TeachingAnalysis({ notify }: { notify: Notify }) {
             action={
               <div className="ta-head-actions">
                 {analysis && (
-                  <Button variant="outline" onClick={() => window.print()}>
+                  <Button
+                    variant="outline"
+                    onClick={(event) =>
+                      printRegion(
+                        event.currentTarget.closest("[data-workflow-section]"),
+                      )
+                    }
+                  >
                     <Printer />
                     打印讲评单
                   </Button>
@@ -1274,7 +1303,12 @@ function StudentAnalysisPanel({
             </div>
 
             <footer className="ta-drawer-foot">
-              <Button variant="outline" onClick={() => window.print()}>
+              <Button
+                variant="outline"
+                onClick={(event) =>
+                  printRegion(event.currentTarget.closest(".ta-drawer"))
+                }
+              >
                 <Printer />
                 打印诊断单
               </Button>

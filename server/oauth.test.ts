@@ -229,6 +229,8 @@ function insertConnection(
 const ENV_NAMES = [
   "OAUTH_GEMINI_CLIENT_ID",
   "OAUTH_GEMINI_CLIENT_SECRET",
+  "OAUTH_GEMINI_PROJECT_ID",
+  "OAUTH_GEMINI_SCOPES",
   "OAUTH_GEMINI_TOKEN_URL",
   "OAUTH_GEMINI_MODEL",
   "OAUTH_REDIRECT_BASE",
@@ -325,9 +327,14 @@ describe("OAuth provider catalogue", () => {
 
     const unconfiguredGemini = configuredProvider("gemini", {});
     expect(unconfiguredGemini.configured).toBe(false);
-    expect(unconfiguredGemini.envHint).toEqual(["OAUTH_GEMINI_CLIENT_ID"]);
+    expect(unconfiguredGemini.envHint).toEqual([
+      "OAUTH_GEMINI_CLIENT_ID",
+      "OAUTH_GEMINI_CLIENT_SECRET",
+      "OAUTH_GEMINI_PROJECT_ID",
+    ]);
 
     const gemini = configuredProvider("gemini", {
+      OAUTH_GEMINI_PROJECT_ID: "quota-project",
       OAUTH_GEMINI_CLIENT_ID: "google-client",
       OAUTH_GEMINI_CLIENT_SECRET: "google-secret",
     });
@@ -342,6 +349,7 @@ describe("OAuth provider catalogue", () => {
     expect(gemini.envHint).toEqual([]);
 
     const insecureGemini = configuredProvider("gemini", {
+      OAUTH_GEMINI_PROJECT_ID: "quota-project",
       OAUTH_GEMINI_CLIENT_ID: "google-client",
       OAUTH_GEMINI_TOKEN_URL: "http://evil.test/token",
     });
@@ -393,6 +401,7 @@ describe("PKCE and authorization URL", () => {
 
   it("builds a gemini URL with state, PKCE and no client secret", () => {
     const config = configuredProvider("gemini", {
+      OAUTH_GEMINI_PROJECT_ID: "quota-project",
       OAUTH_GEMINI_CLIENT_ID: "client-id",
       OAUTH_GEMINI_CLIENT_SECRET: "super-secret",
     });
@@ -432,9 +441,27 @@ describe("PKCE and authorization URL", () => {
 describe("gemini token exchange helpers", () => {
   const tokenConfig = () =>
     configuredProvider("gemini", {
+      OAUTH_GEMINI_PROJECT_ID: "quota-project",
       OAUTH_GEMINI_CLIENT_ID: "client-id",
       OAUTH_GEMINI_CLIENT_SECRET: "client-secret",
     });
+
+  it("rejects an identity-only Google grant instead of reporting a model connection", async () => {
+    await expect(
+      exchangeCode({
+        provider: "gemini",
+        config: tokenConfig(),
+        code: "code",
+        verifier: "verifier",
+        redirectUri: "https://school.example/api/oauth/gemini/callback",
+        fetchImpl: async () =>
+          Response.json({
+            access_token: "identity-only",
+            scope: "openid email profile",
+          }),
+      }),
+    ).rejects.toMatchObject({ code: "scope_missing" });
+  });
 
   it("exchanges an authorization code with PKCE", async () => {
     const calls: any[] = [];
@@ -553,6 +580,56 @@ describe("oauthChatText dispatch", () => {
   });
   afterEach(() => db.close());
 
+  it("shares rotating-token refresh across concurrent calls and preserves a connection on transient failures", async () => {
+    insertConnection(db, "t1", "chatgpt", {
+      access: "old-at",
+      refresh: "old-rt",
+      expiresAt: Date.now() - 1000,
+      meta: JSON.stringify({ accountId: "acc" }),
+    });
+    chatgptMock.chatgptRefresh.mockImplementation(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      return {
+        accessToken: "fresh-at",
+        refreshToken: "rotated-rt",
+        expiresAt: Date.now() + 3600000,
+        accountId: "acc",
+      };
+    });
+    chatgptMock.chatgptChat.mockResolvedValue("done");
+    const args = {
+      user: { id: "t1" },
+      provider: "chatgpt",
+      connection: getOAuthConnection(db, "t1", "chatgpt"),
+      prompt: "x",
+      decrypt,
+      encrypt,
+      db,
+      fetchImpl: vi.fn(),
+    };
+    expect(
+      await Promise.all(Array.from({ length: 8 }, () => oauthChatText(args))),
+    ).toEqual(Array(8).fill("done"));
+    expect(chatgptMock.chatgptRefresh).toHaveBeenCalledTimes(1);
+    expect(
+      readOAuthTokens(getOAuthConnection(db, "t1", "chatgpt"), decrypt)
+        .refreshToken,
+    ).toBe("rotated-rt");
+    insertConnection(db, "t1", "chatgpt", {
+      access: "old-at",
+      refresh: "old-rt",
+      expiresAt: Date.now() - 1000,
+    });
+    chatgptMock.chatgptRefresh.mockRejectedValue(
+      Object.assign(new Error("upstream unavailable"), { retryable: true }),
+    );
+    await expect(oauthChatText(args)).rejects.toMatchObject({
+      status: 503,
+      retryable: true,
+    });
+    expect(getOAuthConnection(db, "t1", "chatgpt")?.status).toBe("active");
+  });
+
   it("dispatches to chatgptChat with the account id from meta_json", async () => {
     insertConnection(db, "t1", "chatgpt", {
       access: "cg-at",
@@ -653,14 +730,16 @@ describe("oauthChatText dispatch", () => {
     expect(row.status).toBe("active");
   });
 
-  it("marks the connection invalid when chatgpt refresh fails", async () => {
+  it("marks the connection invalid when upstream confirms an invalid refresh grant", async () => {
     insertConnection(db, "t1", "chatgpt", {
       access: "old-at",
       refresh: "old-rt",
       expiresAt: Date.now() - 60_000,
       meta: JSON.stringify({ accountId: "acc-1" }),
     });
-    chatgptMock.chatgptRefresh.mockRejectedValue(new Error("refresh failed"));
+    chatgptMock.chatgptRefresh.mockRejectedValue(
+      Object.assign(new Error("refresh failed"), { invalidGrant: true }),
+    );
     await expect(
       oauthChatText({
         user: { id: "t1" },
@@ -806,6 +885,8 @@ describe("oauthChatText dispatch", () => {
 
   it("calls the Gemini OpenAI-compatible endpoint", async () => {
     process.env.OAUTH_GEMINI_CLIENT_ID = "gemini-client";
+    process.env.OAUTH_GEMINI_CLIENT_SECRET = "gemini-secret";
+    process.env.OAUTH_GEMINI_PROJECT_ID = "quota-project";
     insertConnection(db, "t1", "gemini", { access: "gemini-at", meta: "{}" });
     const calls: any[] = [];
     const fetchImpl = async (url: string, options: any) => {
@@ -829,12 +910,18 @@ describe("oauthChatText dispatch", () => {
     expect(calls[0].options.headers.authorization).toBe("Bearer gemini-at");
     const body = JSON.parse(String(calls[0].options.body));
     expect(body.model).toBe("gemini-2.5-flash");
+    expect(calls[0].options.headers["x-goog-user-project"]).toBe(
+      "quota-project",
+    );
+    expect(body.stream).toBe(false);
     expect(body.response_format).toEqual({ type: "json_object" });
     expect(body.messages[0].content).toBe("请批改");
   });
 
   it("supports images through the Gemini content array", async () => {
     process.env.OAUTH_GEMINI_CLIENT_ID = "gemini-client";
+    process.env.OAUTH_GEMINI_CLIENT_SECRET = "gemini-secret";
+    process.env.OAUTH_GEMINI_PROJECT_ID = "quota-project";
     insertConnection(db, "t1", "gemini", { access: "gemini-at", meta: "{}" });
     let body: any;
     const fetchImpl = async (_url: string, options: any) => {
@@ -859,6 +946,8 @@ describe("oauthChatText dispatch", () => {
 
   it("maps Gemini 401 responses to a reconnect message", async () => {
     process.env.OAUTH_GEMINI_CLIENT_ID = "gemini-client";
+    process.env.OAUTH_GEMINI_CLIENT_SECRET = "gemini-secret";
+    process.env.OAUTH_GEMINI_PROJECT_ID = "quota-project";
     insertConnection(db, "t1", "gemini", { access: "gemini-at", meta: "{}" });
     await expect(
       oauthChatText({
@@ -874,6 +963,8 @@ describe("oauthChatText dispatch", () => {
 
   it("refreshes an expired Gemini token and persists it", async () => {
     process.env.OAUTH_GEMINI_CLIENT_ID = "gemini-client";
+    process.env.OAUTH_GEMINI_CLIENT_SECRET = "gemini-secret";
+    process.env.OAUTH_GEMINI_PROJECT_ID = "quota-project";
     process.env.OAUTH_GEMINI_CLIENT_SECRET = "gemini-secret";
     insertConnection(db, "t1", "gemini", {
       access: "old-gemini-at",
@@ -1074,6 +1165,79 @@ describe("OAuth routes", () => {
     expect(JSON.stringify(response.body)).not.toContain("secret");
   });
 
+  it("cancels only the owner's attempt and releases the callback port for retry", async () => {
+    const port = await findFreePort();
+    const base = await makeApp({ chatgptCallbackPort: port });
+    const started = await request(
+      base,
+      "/api/oauth/chatgpt/browser/start",
+      "t1",
+      "POST",
+      {},
+    );
+    expect(started.status).toBe(200);
+    const route = `/api/oauth/chatgpt/attempt/${started.body.attemptId}`;
+    expect((await request(base, route, "t2", "DELETE")).status).toBe(404);
+    expect((await request(base, route, "t1", "DELETE")).status).toBe(200);
+    expect((await request(base, route, "t1")).status).toBe(404);
+    expect(
+      (
+        await request(
+          base,
+          "/api/oauth/chatgpt/browser/start",
+          "t1",
+          "POST",
+          {},
+        )
+      ).status,
+    ).toBe(200);
+  });
+
+  it("does not persist a delayed browser grant after its attempt was cancelled", async () => {
+    const port = await findFreePort();
+    const base = await makeApp({ chatgptCallbackPort: port });
+    let release: (value: unknown) => void;
+    let entered: () => void;
+    const waiting = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    chatgptMock.chatgptExchangeCode.mockImplementation(() => {
+      entered();
+      return new Promise((resolve) => {
+        release = resolve;
+      });
+    });
+    const started = await request(
+      base,
+      "/api/oauth/chatgpt/browser/start",
+      "t1",
+      "POST",
+      {},
+    );
+    const state = chatgptMock.chatgptAuthorizeUrl.mock.calls.at(-1)![0].state;
+    const callback = fetch(
+      `http://127.0.0.1:${port}/auth/callback?code=code&state=${state}`,
+    );
+    await waiting;
+    expect(
+      (
+        await request(
+          base,
+          `/api/oauth/chatgpt/attempt/${started.body.attemptId}`,
+          "t1",
+          "DELETE",
+        )
+      ).status,
+    ).toBe(200);
+    release!({
+      accessToken: "late-token",
+      refreshToken: "late-refresh",
+      accountId: "acc",
+    });
+    expect((await callback).status).toBe(409);
+    expect(getOAuthConnection(db, "t1", "chatgpt")).toBeNull();
+  });
+
   it("reports a live connection on the provider card", async () => {
     const base = await makeApp();
     insertConnection(db, "t1", "chatgpt", {
@@ -1177,6 +1341,8 @@ describe("OAuth routes", () => {
 
   it("refuses to start OAuth when the school mode forbids it", async () => {
     process.env.OAUTH_GEMINI_CLIENT_ID = "gemini-client";
+    process.env.OAUTH_GEMINI_CLIENT_SECRET = "gemini-secret";
+    process.env.OAUTH_GEMINI_PROJECT_ID = "quota-project";
     setSchoolMode(db, "school");
     const base = await makeApp();
     const teacher = await request(
@@ -1201,6 +1367,8 @@ describe("OAuth routes", () => {
 
   it("runs the gemini browser flow end to end through the callback", async () => {
     process.env.OAUTH_GEMINI_CLIENT_ID = "gemini-client";
+    process.env.OAUTH_GEMINI_CLIENT_SECRET = "gemini-secret";
+    process.env.OAUTH_GEMINI_PROJECT_ID = "quota-project";
     process.env.OAUTH_GEMINI_CLIENT_SECRET = "gemini-secret";
     const base = await makeApp();
     const started = await request(
@@ -1237,7 +1405,7 @@ describe("OAuth routes", () => {
         refresh_token: "gemini-rt",
         token_type: "Bearer",
         expires_in: 3600,
-        scope: "openid",
+        scope: "openid https://www.googleapis.com/auth/cloud-platform",
       });
     const callback = await request(
       base,
@@ -1276,6 +1444,8 @@ describe("OAuth routes", () => {
 
   it("keeps the legacy gemini start shape for old clients", async () => {
     process.env.OAUTH_GEMINI_CLIENT_ID = "gemini-client";
+    process.env.OAUTH_GEMINI_CLIENT_SECRET = "gemini-secret";
+    process.env.OAUTH_GEMINI_PROJECT_ID = "quota-project";
     const base = await makeApp();
     const response = await request(
       base,
@@ -1294,6 +1464,8 @@ describe("OAuth routes", () => {
 
   it("validates callback state, ownership, expiry and denial", async () => {
     process.env.OAUTH_GEMINI_CLIENT_ID = "gemini-client";
+    process.env.OAUTH_GEMINI_CLIENT_SECRET = "gemini-secret";
+    process.env.OAUTH_GEMINI_PROJECT_ID = "quota-project";
     const base = await makeApp();
     const started = await request(
       base,
@@ -1338,6 +1510,8 @@ describe("OAuth routes", () => {
 
   it("maps a failed gemini exchange to a short reason", async () => {
     process.env.OAUTH_GEMINI_CLIENT_ID = "gemini-client";
+    process.env.OAUTH_GEMINI_CLIENT_SECRET = "gemini-secret";
+    process.env.OAUTH_GEMINI_PROJECT_ID = "quota-project";
     const base = await makeApp();
     const started = await request(
       base,
@@ -1372,6 +1546,8 @@ describe("OAuth routes", () => {
 
   it("expires a pending gemini attempt and rejects its callback", async () => {
     process.env.OAUTH_GEMINI_CLIENT_ID = "gemini-client";
+    process.env.OAUTH_GEMINI_CLIENT_SECRET = "gemini-secret";
+    process.env.OAUTH_GEMINI_PROJECT_ID = "quota-project";
     const base = await makeApp({ geminiTtlMs: 40 });
     const started = await request(
       base,
@@ -1798,6 +1974,8 @@ describe("OAuth routes", () => {
 
   it("never returns another user's or another provider's attempt", async () => {
     process.env.OAUTH_GEMINI_CLIENT_ID = "gemini-client";
+    process.env.OAUTH_GEMINI_CLIENT_SECRET = "gemini-secret";
+    process.env.OAUTH_GEMINI_PROJECT_ID = "quota-project";
     const base = await makeApp();
     const started = await request(
       base,

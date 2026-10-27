@@ -21,6 +21,9 @@ export type OAuthCard = {
   model: string;
   vision: boolean;
   envHint?: string[];
+  verification?: string;
+  setupHint?: string;
+  redirectUri?: string;
   /** rc4 server returns the supported flows; rc3 payloads omit the field. */
   flows?: string[] | null;
 };

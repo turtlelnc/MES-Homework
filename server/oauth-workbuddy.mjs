@@ -1,7 +1,9 @@
+import { oauthFetch } from "./oauth-http.mjs";
 // WorkBuddy provider —— v0.2.1-rc4
 // 浏览器授权 + 服务端轮询（自定义设备码流程）；接口约定见 docs/oauth-flows.md。
 //
-// 协议按 WorkBuddy DSH 插件的实测行为重写：登录三步（state → token → account）
+// 历史协议参考第三方 DSH 兼容插件，尚未由官方第三方 OAuth 文档确认，也未在本项目真实联调。
+// 登录三步（state → token → account）
 // 都走 loginBase，刷新与 chat 走 chatBase；国内版与国际版是两套独立端点。
 // 所有函数都接受 fetchImpl 注入，测试不访问网络；错误信息一律中文，且绝不把
 // access/refresh token 写进错误信息或日志。
@@ -107,39 +109,10 @@ function businessCode(payload) {
   return null;
 }
 
-/** 提取上游可读的错误说明（优先中文 displayMsg），不包含任何令牌。 */
-function upstreamMessage(payload) {
-  if (!isRecord(payload)) return "";
-  const display = payload.displayMsg;
-  if (isRecord(display)) {
-    for (const key of ["zh", "en"]) {
-      const value = display[key];
-      if (typeof value === "string" && value.trim() !== "") {
-        return value.trim();
-      }
-    }
-  }
-  for (const key of ["msg", "message"]) {
-    const value = payload[key];
-    if (typeof value === "string" && value.trim() !== "") {
-      return value.trim();
-    }
-  }
-  const error = payload.error;
-  if (isRecord(error)) {
-    for (const key of ["message", "msg"]) {
-      const value = error[key];
-      if (typeof value === "string" && value.trim() !== "") {
-        return value.trim();
-      }
-    }
-  }
-  return "";
-}
-
 function failureMessage(action, response, payload) {
-  const detail = upstreamMessage(payload);
-  if (detail) return `${action}失败：${detail}`;
+  // Upstream text can echo credentials; only expose numeric status/code.
+  const code = businessCode(payload);
+  if (code !== null && code !== 0) return `${action}失败（业务码 ${code}）`;
   return `${action}失败（HTTP ${response?.status ?? 0}）`;
 }
 
@@ -193,7 +166,12 @@ function resolveFetch(fetchImpl) {
   if (typeof doFetch !== "function") {
     throw new Error("当前运行环境不支持 fetch，无法连接 WorkBuddy");
   }
-  return doFetch;
+  return (url, options) =>
+    oauthFetch(url, options, {
+      request: doFetch,
+      timeoutMs: REQUEST_TIMEOUT_MS,
+      maxBytes: url.endsWith("/v2/chat/completions") ? 2 * 1024 * 1024 : 65536,
+    });
 }
 
 function requestInit(method, headers, body) {
@@ -468,16 +446,10 @@ function chatChunkText(chunk) {
   if (!isRecord(chunk)) return { text: "", fallback: "" };
   const code = businessCode(chunk);
   if (code !== null && code !== 0) {
-    throw new Error(
-      `WorkBuddy 模型接口返回错误：${upstreamMessage(chunk) || `业务码 ${code}`}`,
-    );
+    throw new Error(`WorkBuddy 模型接口返回错误（业务码 ${code}）`);
   }
   if (isRecord(chunk.error)) {
-    const detail =
-      upstreamMessage(chunk.error) ||
-      upstreamMessage(chunk) ||
-      "上游返回未说明的错误";
-    throw new Error(`WorkBuddy 模型接口返回错误：${detail}`);
+    throw new Error("WorkBuddy 模型接口返回错误，请检查账户状态后重试");
   }
   if (isRecord(chunk.data) && !Array.isArray(chunk.choices)) {
     return chatChunkText(chunk.data);
@@ -524,9 +496,7 @@ function parseJsonChatAnswer(payload) {
   }
   const code = businessCode(payload);
   if (code !== null && code !== 0) {
-    throw new Error(
-      `WorkBuddy 模型接口返回错误：${upstreamMessage(payload) || `业务码 ${code}`}`,
-    );
+    throw new Error(`WorkBuddy 模型接口返回错误（业务码 ${code}）`);
   }
   const result = chatChunkText(payload);
   return result.text || result.fallback;
@@ -536,10 +506,7 @@ function chatFailure(response, payload) {
   if (response.status === 401 || response.status === 403) {
     return authorizationError(response.status);
   }
-  const detail = upstreamMessage(payload);
-  const message = detail
-    ? `WorkBuddy 模型接口请求失败（HTTP ${response.status}）：${detail}`
-    : `WorkBuddy 模型接口请求失败（HTTP ${response.status}）`;
+  const message = `WorkBuddy 模型接口请求失败（HTTP ${response.status}）`;
   return Object.assign(new Error(message), {
     status: response.status,
     retryable: response.status === 429 || response.status >= 500,
@@ -557,6 +524,7 @@ export async function workbuddyChat({
   model,
   messages,
   fetchImpl,
+  signal,
 } = {}) {
   if (!isRecord(credential)) {
     throw new Error("WorkBuddy 登录凭据无效，请重新授权");
@@ -583,10 +551,10 @@ export async function workbuddyChat({
 
   let response;
   try {
-    response = await doFetch(
-      `${endpoints.chatBase}/v2/chat/completions`,
-      requestInit("POST", chatHeaders(credential, endpoints), body),
-    );
+    response = await doFetch(`${endpoints.chatBase}/v2/chat/completions`, {
+      ...requestInit("POST", chatHeaders(credential, endpoints), body),
+      ...(signal ? { signal } : {}),
+    });
   } catch {
     throw networkError("WorkBuddy 模型接口连接失败，请稍后重试");
   }
@@ -597,9 +565,7 @@ export async function workbuddyChat({
   // 业务错误即使以 HTTP 200 返回，也要转成中文错误而不是空答案。
   const code = businessCode(payload);
   if (code !== null && code !== 0) {
-    throw new Error(
-      `WorkBuddy 模型接口返回错误：${upstreamMessage(payload) || `业务码 ${code}`}`,
-    );
+    throw new Error(`WorkBuddy 模型接口返回错误（业务码 ${code}）`);
   }
 
   const answer = /^[ \t]*data:/m.test(text)

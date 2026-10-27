@@ -80,12 +80,21 @@ export function OAuthLoginDialog({
     [flow, attempt?.intervalMs],
   );
 
-  const cancel = () => callbacks.current.onClose();
+  const cancelRef = useRef(() => {});
+  const cancel = () => {
+    if (attempt?.attemptId && !finished.current)
+      void api(
+        `/oauth/${encodeURIComponent(card.id)}/attempt/${encodeURIComponent(attempt.attemptId)}`,
+        { method: "DELETE" },
+      ).catch(() => {});
+    callbacks.current.onClose();
+  };
+  cancelRef.current = cancel;
 
   // Escape closes the dialog; unmount clears the polling timer below.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") callbacks.current.onClose();
+      if (event.key === "Escape") cancelRef.current();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -270,6 +279,8 @@ export function OAuthLoginDialog({
     setStage("starting");
     const controller = new AbortController();
     startAbort.current = controller;
+    const popup = window.open("about:blank", "_blank");
+    if (popup) popup.opener = null;
     try {
       const result = await api<OAuthBrowserStartResponse>(
         `/oauth/${encodeURIComponent(card.id)}/browser/start`,
@@ -281,21 +292,8 @@ export function OAuthLoginDialog({
       if (controller.signal.aborted) return;
       if (!result.attemptId) throw new Error("服务端未返回登录尝试编号");
       const url = result.url || result.authorizeUrl || "";
-      let popupBlocked = false;
-      if (url) {
-        const opened = window.open(url, "_blank");
-        if (opened) {
-          try {
-            opened.opener = null;
-          } catch {
-            // Cross-origin opener cleanup is best effort.
-          }
-        } else {
-          popupBlocked = true;
-        }
-      } else {
-        popupBlocked = true;
-      }
+      const popupBlocked = !popup || !url;
+      if (popup && url) popup.location.href = url;
       setAttempt({
         attemptId: result.attemptId,
         verificationUrl: url,
@@ -303,6 +301,7 @@ export function OAuthLoginDialog({
       });
       setStage("waiting");
     } catch (error) {
+      popup?.close();
       if (controller.signal.aborted) return;
       setErrorText(`发起浏览器登录失败：${(error as Error).message}`);
       setStage("error");
@@ -571,7 +570,10 @@ export function OAuthLoginDialog({
                 取消
               </Button>
               {flow === "browser" ? (
-                <Button type="button" onClick={() => void startWorkbuddyBrowser()}>
+                <Button
+                  type="button"
+                  onClick={() => void startWorkbuddyBrowser()}
+                >
                   <Globe size={16} /> 开始浏览器登录
                 </Button>
               ) : (

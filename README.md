@@ -43,7 +43,7 @@
 - **Gemini（Google）**：浏览器 OAuth + PKCE，部署管理员用 `OAUTH_GEMINI_CLIENT_ID/SECRET` 配置 Google OAuth 客户端。
 - **WorkBuddy**：设备码/浏览器轮询登录（国内版默认，可切国际版），点击浏览器授权后服务端自动完成。
 
-已移除 Claude、Qwen（国际版）、千问（国内版）、DeepSeek（Platform）的 OAuth 入口；这些厂商仍可用 API Key。OAuth 令牌在服务端 AES-256-GCM 加密存储，支持自动刷新、自动轮询与断开连接。详见 [docs/oauth-flows.md](docs/oauth-flows.md)。
+已移除 Claude、Qwen（国际版）、千问（国内版）、DeepSeek（Platform）的 OAuth 入口；这些厂商仍可用 API Key。ChatGPT/WorkBuddy 当前为实验性兼容通道，尚未完成本应用官方第三方登录的真实验收。OAuth 令牌在服务端 AES-256-GCM 加密存储，支持自动刷新、自动轮询与断开连接。详见 [docs/oauth-flows.md](docs/oauth-flows.md)。
 
 ### 4. 账号名 + 密码 + 身份选择注册
 
@@ -80,7 +80,7 @@
 OAuth 采用 Authorization Code + PKCE 与设备码（Device Code）两种流程，前端按 provider 支持的方式显示「浏览器登录」/「设备码登录」：
 
 - **ChatGPT**：内置 Codex 公共 PKCE 客户端，无需配置 Client ID；浏览器登录自动监听 `http://localhost:1455/auth/callback`，设备码登录显示 `https://auth.openai.com/codex/device` 与一次性用户码。
-- **Gemini**：在 Google Cloud 创建 OAuth 客户端（Desktop app），启用 Generative Language API，配置 `OAUTH_GEMINI_CLIENT_ID`、`OAUTH_GEMINI_CLIENT_SECRET`（scopes 见 `.env.example`）；未配置时显示「未配置」。
+- **Gemini**：在 Google Cloud 创建 Web application OAuth 客户端，登记页面显示的完整回调 URL，启用 Generative Language API，配置 `OAUTH_GEMINI_CLIENT_ID`、`OAUTH_GEMINI_CLIENT_SECRET`、`OAUTH_GEMINI_PROJECT_ID`（scope 必须包含 `cloud-platform`，见 `.env.example`）；未配置时显示「未配置」。
 - **WorkBuddy**：内置官方授权流程，支持「浏览器登录」（直接打开授权页）与「设备码登录」（显示授权链接），两者底层同一官方轮询流程；`OAUTH_WORKBUDDY_REGION=cn|global` 选择国内版/国际版。
 
 ChatGPT、Gemini 在中国大陆境内不可用，前端会在跳转前提示。OAuth 不影响的 API Key 方式继续可用。完整接口与安全约定见 [docs/oauth-flows.md](docs/oauth-flows.md)。
@@ -181,7 +181,7 @@ npm start
 
 注册方式改为「账号名 + 密码 + 身份选择」，老师/学生/家长可凭学校代码自助注册（需求 4）；如学校希望保持由管理员统一建号，请设置 `ALLOW_PUBLIC_REGISTRATION=0`。学校代码不是身份凭证：学生不能自行修改学段或班级，教师只能看到自己任课作业与本校知识库，家长只能看到自己绑定的孩子，所有查询仍按学校与账号身份隔离。答卷与原件仅允许学生本人、任课教师、绑定家长及本校管理员读取；学生作业详情与错题本不直接返回答案；重新识别须再次人工复核（所选复核方式允许自动完成时除外）。
 
-OAuth 模型连接采用 Authorization Code + PKCE（ChatGPT 另支持设备码/Codex OAuth，WorkBuddy 使用官方浏览器轮询授权），state 一次性校验，令牌使用与 API Key 相同的 AES-256-GCM 加密，支持过期刷新与断开；ChatGPT 本机回调仅监听 `127.0.0.1:1455`，OAuth 授权链接只允许官方域名。回调地址限制在 `APP_ORIGIN`/`OAUTH_REDIRECT_BASE`，不做开放重定向。ChatGPT、Gemini 在中国大陆境内不可用，前端会明确提示。
+OAuth 模型连接采用 Authorization Code + PKCE（ChatGPT 另支持设备码/Codex OAuth，WorkBuddy 使用实验性兼容浏览器轮询授权），state 一次性校验，令牌使用与 API Key 相同的 AES-256-GCM 加密，支持过期刷新与断开；ChatGPT 本机回调仅监听 `127.0.0.1:1455`，OAuth 授权链接只允许官方域名。回调地址限制在 `APP_ORIGIN`/`OAUTH_REDIRECT_BASE`，不做开放重定向。ChatGPT、Gemini 在中国大陆境内不可用，前端会明确提示。
 
 模型接口默认只允许所选厂商的 HTTPS Origin。自定义网关须由部署管理员在 `PROVIDER_ALLOWED_ORIGINS` 配置精确 Origin（逗号分隔）；已有非白名单配置也会在调用时被拒绝。不要把用户可控制的域名或内网地址加入白名单。通过 Worker/反向代理访问时，在源站设置 `APP_ORIGIN=https://你的前端域名`，不要附加路径或末尾斜杠。服务不信任客户端传入的 Forwarded 头。生产环境要求有效 `APP_SECRET` 并使用 HTTPS（会话 Cookie 为 Secure）。
 
@@ -276,3 +276,7 @@ Windows 自定义域名部署会保存与新建隧道匹配的本地凭据，凭
 后台 OCR 队列、并发限制、复核审计、备份恢复及容量/效果评测见 [OPERATIONS.md](OPERATIONS.md)。
 
 Release audit / 发布审核：[PRE_RELEASE_AUDIT.md](PRE_RELEASE_AUDIT.md) · [runtime budgets / 运行预算](RUNTIME_CONFIGURATION.md)
+
+模型连接易用性及 OAuth 官方来源比对：[2026-10-27 审核](docs/oauth-audit-2026-10-27.md)。ChatGPT 当前仍是 Codex 兼容通道，不是已注册的官方第三方 Sign in with ChatGPT；WorkBuddy 尚无本项目真实登录验证。保存 API Key 不会自动发送付费测试请求，同厂商修改可保留已有密钥，“保存并使用”会同时切换实际调用方式。
+
+相关功能已整合为[同页工作流](docs/workflow-pages.md)：教师工作台包含上传、复核、分析、学生、知识库与组卷；学生作业与错题合并，学校成员管理合并。章节控件只定位，不销毁草稿；上传与重练作业会自动交接到本页对应区块。学校模型策略和凭证集中配置，打印仅输出所选文档。

@@ -388,8 +388,12 @@ test("late teaching statistics cannot send another assignment question numbers",
   });
   await page.getByRole("button", { name: "AI 教学分析", exact: true }).click();
   await held.promise;
-  await page.getByLabel("选择作业").selectOption(b.id);
-  await expect(page.getByText("B独有题干1", { exact: true })).toBeVisible();
+  await page.getByLabel("教学分析作业", { exact: true }).selectOption(b.id);
+  await expect(
+    page
+      .getByRole("region", { name: "AI 教学分析", exact: true })
+      .getByText("B独有题干1", { exact: true }),
+  ).toBeVisible();
   const delivered = page.waitForResponse((r) =>
     r.url().endsWith(`/api/teaching/assignments/${a.id}`),
   );
@@ -400,8 +404,14 @@ test("late teaching statistics cannot send another assignment question numbers",
       new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))),
   );
   await page.unroute(`**/api/teaching/assignments/${a.id}`);
-  await expect(page.getByLabel("选择作业")).toHaveValue(b.id);
-  await expect(page.getByText("B独有题干1", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("教学分析作业", { exact: true })).toHaveValue(
+    b.id,
+  );
+  await expect(
+    page
+      .getByRole("region", { name: "AI 教学分析", exact: true })
+      .getByText("B独有题干1", { exact: true }),
+  ).toBeVisible();
   const submitted = page.waitForRequest((r) =>
     r
       .url()
@@ -427,7 +437,7 @@ test("late generated teaching plan cannot appear on another assignment", async (
     a = all.find((x) => x.title === "浏览器作业 A"),
     b = all.find((x) => x.title === "浏览器作业 B");
   await page.getByRole("button", { name: "AI 教学分析", exact: true }).click();
-  await page.getByLabel("选择作业").selectOption(a.id);
+  await page.getByLabel("教学分析作业", { exact: true }).selectOption(a.id);
   await expect(page.locator(".ta-metrics")).toBeVisible();
   const held = deferred(),
     release = deferred();
@@ -446,8 +456,12 @@ test("late generated teaching plan cannot appear on another assignment", async (
     .getByRole("button", { name: "生成 AI 教学方案", exact: true })
     .click();
   await held.promise;
-  await page.getByLabel("选择作业").selectOption(b.id);
-  await expect(page.getByText("B独有题干1", { exact: true })).toBeVisible();
+  await page.getByLabel("教学分析作业", { exact: true }).selectOption(b.id);
+  await expect(
+    page
+      .getByRole("region", { name: "AI 教学分析", exact: true })
+      .getByText("B独有题干1", { exact: true }),
+  ).toBeVisible();
   const delivered = page.waitForResponse((r) =>
     r.url().endsWith(`/api/teaching/assignments/${a.id}/analyze`),
   );
@@ -597,6 +611,7 @@ test("switching API vendors clears old endpoint and model overrides before savin
   await page.getByRole("button", { name: "设置", exact: true }).click();
   const provider = page.locator('select[name="provider"]');
   await expect(provider).toHaveValue("openai");
+  await page.getByText("高级设置：模型名称与接口地址", { exact: true }).click();
   await page
     .locator('input[name="endpoint"]')
     .fill("https://api.openai.com/v1/chat/completions");
@@ -611,7 +626,7 @@ test("switching API vendors clears old endpoint and model overrides before savin
       r.request().method() === "PUT",
   );
   await page
-    .getByRole("button", { name: "加密保存 API Key", exact: true })
+    .getByRole("button", { name: "保存并使用 API Key", exact: true })
     .click();
   expect(await (await response).json()).toMatchObject({
     provider: "deepseek",
@@ -631,5 +646,415 @@ test("switching API vendors clears old endpoint and model overrides before savin
   await page.screenshot({
     path: "test-results/deepseek-provider-settings.png",
     fullPage: true,
+  });
+});
+
+test("existing model settings reuse the encrypted key and distinguish save from activation", async ({
+  page,
+}) => {
+  await login(page);
+  await configure(page);
+  await page.getByRole("button", { name: "设置", exact: true }).click();
+  await expect(page.locator('select[name="provider"]')).toHaveValue("openai");
+  await expect(page.locator('input[name="apiKey"]')).not.toHaveAttribute(
+    "required",
+  );
+  await page.getByText("高级设置：模型名称与接口地址", { exact: true }).click();
+  await page.locator('input[name="model"]').fill("custom-fixture-model");
+  const saved = page.waitForResponse(
+    (r) =>
+      r.url().endsWith("/api/settings/provider") &&
+      r.request().method() === "PUT",
+  );
+  await page.getByRole("button", { name: "仅保存配置", exact: true }).click();
+  expect(await (await saved).json()).toMatchObject({
+    model: "custom-fixture-model",
+    activated: false,
+  });
+  const activated = page.waitForResponse(
+    (r) =>
+      r.url().endsWith("/api/settings/provider") &&
+      r.request().method() === "PUT",
+  );
+  await page
+    .getByRole("button", { name: "保存并使用 API Key", exact: true })
+    .click();
+  expect(await (await activated).json()).toMatchObject({ activated: true });
+  await expect(page.getByRole("status")).toContainText("已保存并切换");
+  await page.screenshot({
+    path: "test-results/model-key-reuse.png",
+    fullPage: true,
+  });
+});
+
+test("model settings read failures offer a real retry without overwriting saved credentials", async ({
+  page,
+}) => {
+  await login(page);
+  await configure(page);
+  await page.route("**/api/settings/provider", (route) =>
+    route.request().method() === "GET"
+      ? route.fulfill({
+          status: 503,
+          json: { error: "fixture temporarily busy" },
+        })
+      : route.continue(),
+  );
+  await page.getByRole("button", { name: "设置", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText("无法读取模型设置");
+  await expect(
+    page.getByRole("button", { name: "保存并使用 API Key", exact: true }),
+  ).toBeDisabled();
+  await page.unroute("**/api/settings/provider");
+  await page.getByRole("button", { name: "刷新状态", exact: true }).click();
+  await expect(page.locator('select[name="provider"]')).toHaveValue("openai");
+  await expect(
+    page.getByRole("button", { name: "保存并使用 API Key", exact: true }),
+  ).toBeEnabled();
+});
+
+test("cancelling OAuth sends cancellation for the actual attempt", async ({
+  page,
+}) => {
+  await login(page);
+  await page.route("**/api/oauth/providers", (route) =>
+    route.fulfill({
+      json: {
+        authMode: "api_key",
+        provider: null,
+        providers: [
+          {
+            id: "chatgpt",
+            name: "ChatGPT（Codex OAuth）",
+            region: "global",
+            mainlandUnavailable: true,
+            configured: true,
+            connected: false,
+            connectedAt: null,
+            description: "Offline fixture",
+            model: "gpt-5.4",
+            vision: false,
+            flows: ["device"],
+          },
+        ],
+      },
+    }),
+  );
+  await page.route("**/api/oauth/chatgpt/device/start", (route) =>
+    route.fulfill({
+      json: {
+        attemptId: "fixture-attempt",
+        userCode: "TEST-CODE",
+        verificationUrl: "https://auth.openai.com/codex/device",
+        intervalMs: 5000,
+      },
+    }),
+  );
+  await page.route("**/api/oauth/chatgpt/attempt/fixture-attempt", (route) =>
+    route.fulfill({
+      json:
+        route.request().method() === "DELETE"
+          ? { ok: true }
+          : { status: "pending" },
+    }),
+  );
+  await page.getByRole("button", { name: "设置", exact: true }).click();
+  await page.getByRole("button", { name: "设备码登录", exact: true }).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  const cancelled = page.waitForRequest(
+    (r) =>
+      r.url().endsWith("/api/oauth/chatgpt/attempt/fixture-attempt") &&
+      r.method() === "DELETE",
+  );
+  await page.keyboard.press("Escape");
+  await cancelled;
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
+test("teacher chapters preserve assignment drafts and refresh knowledge without replacing the page", async ({
+  page,
+}) => {
+  await login(page);
+  const chapters = page.getByRole("navigation", {
+    name: "教学工作台章节定位",
+    exact: true,
+  });
+  await expect(chapters.getByRole("button")).toHaveCount(7);
+  await chapters
+    .getByRole("button", { name: "作业与上传", exact: true })
+    .click();
+  const assignmentsRegion = page.getByRole("region", {
+    name: "作业与上传",
+    exact: true,
+  });
+  await assignmentsRegion
+    .getByRole("button", { name: "新增作业", exact: true })
+    .click();
+  await assignmentsRegion
+    .getByLabel("作业名称", { exact: true })
+    .fill("同页保留的作业草稿");
+  await chapters.getByRole("button", { name: "知识库", exact: true }).click();
+  const knowledge = page.getByRole("region", { name: "知识库", exact: true });
+  await knowledge
+    .getByLabel("知识点名称", { exact: true })
+    .fill("同页新增知识点");
+  await knowledge
+    .getByRole("button", { name: "保存知识点", exact: true })
+    .click();
+  await expect(
+    knowledge.getByText("同页新增知识点", { exact: true }),
+  ).toBeVisible();
+  await chapters.getByRole("button", { name: "错题组卷", exact: true }).click();
+  await page
+    .getByRole("region", { name: "错题组卷", exact: true })
+    .getByLabel("试卷名称", { exact: true })
+    .fill("未提交的组卷草稿");
+  await chapters
+    .getByRole("button", { name: "作业与上传", exact: true })
+    .click();
+  await expect(
+    assignmentsRegion.getByLabel("作业名称", { exact: true }),
+  ).toHaveValue("同页保留的作业草稿");
+  await expect(
+    assignmentsRegion.getByRole("option", {
+      name: "同页新增知识点",
+      exact: true,
+    }),
+  ).toHaveCount(1);
+  await chapters.getByRole("button", { name: "错题组卷", exact: true }).click();
+  await expect(
+    page
+      .getByRole("region", { name: "错题组卷", exact: true })
+      .getByLabel("试卷名称", { exact: true }),
+  ).toHaveValue("未提交的组卷草稿");
+  await page.screenshot({
+    path: "test-results/teacher-single-workspace.png",
+    fullPage: true,
+  });
+});
+
+test("teacher uploads open the actual answer sheet in the same document", async ({
+  page,
+}) => {
+  await login(page);
+  await configure(page);
+  await page.getByRole("button", { name: "作业与上传", exact: true }).click();
+  const a = (await assignments(page)).find((x) => x.title === "浏览器作业 A");
+  const student = (await (await page.request.get("/api/students")).json()).find(
+    (x) => x.email === "lin@fixture.test",
+  );
+  await page.getByLabel("对应的正式作业").selectOption(a.id);
+  await page.getByLabel("关联学生账户").selectOption(student.id);
+  await page.locator(".upload-box input[type=file]").setInputFiles({
+    name: "same-page.png",
+    mimeType: "image/png",
+    buffer: png,
+  });
+  const uploaded = page.waitForResponse(
+    (r) =>
+      r.url().endsWith(`/api/assignments/${a.id}/submissions`) &&
+      r.request().method() === "POST",
+  );
+  await page
+    .getByRole("button", { name: "保存并进入识别队列", exact: true })
+    .click();
+  const [result] = await (await uploaded).json();
+  const expected = await (
+    await page.request.get(`/api/submissions/${result.id}`)
+  ).json();
+  const region = page.getByRole("region", { name: "识别与复核", exact: true });
+  await expect(region.locator(".review-detail a")).toHaveCount(1);
+  await expect(region.locator(".review-detail a")).toHaveAttribute(
+    "href",
+    expected.files[0].url,
+  );
+  await expect(region.locator(".review-detail")).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "作业与上传", exact: true }),
+  ).toBeAttached();
+  await page.screenshot({
+    path: "test-results/same-page-upload-review.png",
+    fullPage: true,
+  });
+});
+
+test("school member forms stay together and model policies share the credential page", async ({
+  page,
+}) => {
+  await login(page, "admin@fixture.test");
+  const chapters = page.getByRole("navigation", {
+    name: "学校管理章节定位",
+    exact: true,
+  });
+  await page.getByLabel("教师姓名", { exact: true }).fill("保留的教师草稿");
+  await chapters.getByRole("button", { name: "学生管理", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "注册单个学生", exact: true }),
+  ).toBeVisible();
+  await chapters
+    .getByRole("button", { name: "学校仪表盘", exact: true })
+    .click();
+  await expect(page.getByLabel("教师姓名", { exact: true })).toHaveValue(
+    "保留的教师草稿",
+  );
+  await page.getByRole("button", { name: "账户设置", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "模型调用模式", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "模型与授权", exact: true }),
+  ).toBeAttached();
+  await expect(
+    page.getByRole("button", { name: "识别与复核", exact: true }),
+  ).toHaveCount(0);
+  await page.screenshot({
+    path: "test-results/school-models-one-page.png",
+    fullPage: true,
+  });
+});
+
+test("student work and mistakes share a page while keeping the chosen upload", async ({
+  page,
+}) => {
+  await login(page, "lin@fixture.test");
+  const chapters = page.getByRole("navigation", {
+    name: "学习工作台章节定位",
+    exact: true,
+  });
+  await chapters.getByRole("button", { name: "我的作业", exact: true }).click();
+  await page.locator(".upload-box input[type=file]").setInputFiles({
+    name: "draft-answer.png",
+    mimeType: "image/png",
+    buffer: png,
+  });
+  await chapters.getByRole("button", { name: "我的错题", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "我的错题", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "刷新错题", exact: true }),
+  ).toBeVisible();
+  await chapters.getByRole("button", { name: "我的作业", exact: true }).click();
+  await expect(
+    page.getByText("同一份答卷：已选择 1 个文件", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "识别与复核", exact: true }),
+  ).toHaveCount(0);
+  await page.screenshot({
+    path: "test-results/student-single-workspace.png",
+    fullPage: true,
+  });
+});
+
+test("mobile chapter navigation remains available after jumping down the workspace", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await login(page);
+  const chapters = page.getByRole("navigation", {
+    name: "教学工作台章节定位",
+    exact: true,
+  });
+  await chapters.getByRole("button", { name: "知识库", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "校本知识库", exact: true }),
+  ).toBeInViewport();
+  await expect(chapters).toBeInViewport();
+  await chapters
+    .getByRole("button", { name: "作业与上传", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "作业与上传", exact: true }),
+  ).toBeInViewport();
+  await expect(chapters).toBeInViewport();
+  await page.screenshot({
+    path: "test-results/mobile-single-workspace.png",
+    fullPage: true,
+  });
+});
+
+test("saving an account profile stays on the combined settings page", async ({
+  page,
+}) => {
+  await login(page);
+  await page.getByRole("button", { name: "设置", exact: true }).click();
+  await page.getByRole("button", { name: "保存设置", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "模型与授权", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "账户信息", exact: true }),
+  ).toBeAttached();
+  await expect(page.locator(".rc4-sidebar button.active")).toHaveText("设置");
+});
+
+test("printing a saved paper excludes other chapters and restores the page afterwards", async ({
+  page,
+}) => {
+  await login(page);
+  const created = await page.request.post("/api/papers/generate", {
+    data: { title: "同页打印专用卷", count: 2 },
+  });
+  expect(created.status()).toBe(200);
+  await page.getByRole("button", { name: "作业与上传", exact: true }).click();
+  await page.getByRole("button", { name: "学生管理", exact: true }).click();
+  await page.getByRole("button", { name: "错题组卷", exact: true }).click();
+  await page.getByRole("button", { name: /同页打印专用卷 ·/ }).click();
+  await page.evaluate(() => {
+    window.print = () => {};
+  });
+  await page
+    .getByRole("button", { name: "打印 / 保存 PDF", exact: true })
+    .click();
+  await page.emulateMedia({ media: "print" });
+  await expect(page.locator(".paper")).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "学生管理", exact: true }),
+  ).toBeHidden();
+  await expect(
+    page.getByRole("region", { name: "作业与上传", exact: true }),
+  ).toBeHidden();
+  await expect(
+    page.getByRole("navigation", { name: "教学工作台章节定位", exact: true }),
+  ).toBeHidden();
+  await page.screenshot({
+    path: "test-results/workspace-paper-print.png",
+    fullPage: true,
+  });
+  await page.evaluate(() => window.dispatchEvent(new Event("afterprint")));
+  await page.emulateMedia({ media: "screen" });
+  await expect(
+    page.getByRole("region", { name: "学生管理", exact: true }),
+  ).toBeAttached();
+  await expect(page.locator("body")).not.toHaveAttribute("data-print-active");
+});
+
+test("changing school policy refreshes permissions without clearing an unsaved key", async ({
+  page,
+}) => {
+  await login(page, "admin@fixture.test");
+  const original = (
+    await (await page.request.get("/api/school/model-mode")).json()
+  ).mode;
+  page.on("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "账户设置", exact: true }).click();
+  await page
+    .locator('input[name="apiKey"]')
+    .fill("unsaved-browser-fixture-key");
+  const refreshed = page.waitForResponse((r) =>
+    r.url().endsWith("/api/model/access"),
+  );
+  await page.getByRole("button", { name: /全校统一模式/ }).click();
+  expect((await refreshed).status()).toBe(200);
+  await expect(page.locator('input[name="apiKey"]')).toHaveValue(
+    "unsaved-browser-fixture-key",
+  );
+  const actual = (
+    await (await page.request.get("/api/school/model-mode")).json()
+  ).mode;
+  expect(actual).toBe("school");
+  await page.request.put("/api/school/model-mode", {
+    data: { mode: original },
   });
 });

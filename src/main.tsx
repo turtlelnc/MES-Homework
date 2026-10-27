@@ -44,6 +44,8 @@ import { ProviderSettings } from "./ProviderSettings";
 import { SchoolModelPanel } from "./SchoolModelPanel";
 import { StudentMistakes } from "./StudentMistakes";
 import { VERSION_LABEL } from "./version";
+import { WorkflowPage, type SectionRequest } from "./WorkflowPage";
+import { printRegion } from "./print-region";
 import "./styles.css";
 type User = {
   id: string;
@@ -112,23 +114,15 @@ type DraftQuestion = {
   knowledgeGenerated?: boolean;
 };
 const teacherNav = [
-  ["overview", "总览", BookOpen],
-  ["teaching", "AI 教学分析", BarChart3],
-  ["assignments", "作业与上传", FilePlus2],
-  ["review", "识别与复核", ClipboardCheck],
-  ["students", "学生管理", Users],
-  ["knowledge", "知识库", Library],
-  ["papers", "错题组卷", FileText],
+  ["work", "教学工作台", BookOpen],
   ["settings", "设置", Settings],
 ] as const;
 const adminNav = [
-  ["school", "学校仪表盘", School],
-  ["students", "学生管理", Users],
+  ["school", "学校管理", School],
   ["settings", "账户设置", Settings],
 ] as const;
 const studentNav = [
-  ["assignments", "我的作业", FilePlus2],
-  ["mistakes", "我的错题", ClipboardCheck],
+  ["learning", "学习工作台", BookOpen],
   ["settings", "账户设置", Settings],
 ] as const;
 const parentNav = [
@@ -138,26 +132,60 @@ const parentNav = [
 function App() {
   const [user, setUser] = useState<User | null>(null),
     [loading, setLoading] = useState(true),
-    [view, setView] = useState("overview"),
+    [view, setView] = useState("work"),
     [toast, setToast] = useState("");
   const [sessionError, setSessionError] = useState("");
+  const [sectionRequest, setSectionRequest] = useState<SectionRequest>(null);
+  const navigationTicket = useRef(0);
+  const navigate = (destination: string) => {
+    const groups: Record<string, string> = {
+      overview: "work",
+      assignments: "work",
+      review: "work",
+      teaching: "work",
+      students: "work",
+      knowledge: "work",
+      papers: "work",
+    };
+    setView(groups[destination] || destination);
+    const firstSection: Record<string, string> = {
+      work: "overview",
+      learning: "assignments",
+    };
+    setSectionRequest({
+      id: firstSection[destination] || destination,
+      ticket: ++navigationTicket.current,
+    });
+  };
   const refreshGeneration = useRef(0);
-  const refresh = async (expectSession = false) => {
+  const refresh = async (expectSession = false, preserveView = false) => {
     const generation = ++refreshGeneration.current;
     try {
       const u = await api<User>("/me");
       if (generation !== refreshGeneration.current) return;
       setSessionError("");
       setUser(u);
-      setView(
-        u.is_school_admin
-          ? "school"
-          : u.role === "teacher"
-            ? "overview"
-            : u.role === "parent"
-              ? "parent"
-              : "assignments",
-      );
+      if (!preserveView) {
+        setView(
+          u.is_school_admin
+            ? "school"
+            : u.role === "teacher"
+              ? "work"
+              : u.role === "parent"
+                ? "parent"
+                : "learning",
+        );
+        setSectionRequest({
+          id: u.is_school_admin
+            ? "school"
+            : u.role === "teacher"
+              ? "overview"
+              : u.role === "student"
+                ? "assignments"
+                : "parent",
+          ticket: ++navigationTicket.current,
+        });
+      }
     } catch (error) {
       if (generation !== refreshGeneration.current) return;
       if (error instanceof ApiError && error.status === 401) {
@@ -192,6 +220,9 @@ function App() {
   useEffect(() => {
     void refresh();
   }, []);
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, [view]);
   // OAuth 回调会带 ?oauth_status=connected|error|denied 返回单页应用。
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -289,7 +320,7 @@ function App() {
               <button
                 key={id}
                 className={view === id ? "active" : ""}
-                onClick={() => setView(id)}
+                onClick={() => navigate(id)}
               >
                 <Icon size={19} />
                 {label}
@@ -321,27 +352,52 @@ function App() {
             </div>
           )}
           {view === "school" && (
-            <SchoolDashboard user={user} notify={setToast} />
+            <SchoolWorkspace
+              user={user}
+              notify={setToast}
+              request={sectionRequest}
+            />
           )}{" "}
-          {view === "overview" && <Overview user={user} navigate={setView} />}{" "}
+          {view === "work" &&
+            user.role === "teacher" &&
+            !user.is_school_admin && (
+              <TeacherWorkspace
+                user={user}
+                notify={setToast}
+                navigate={navigate}
+                request={sectionRequest}
+              />
+            )}
           {view === "parent" && (
             <ParentDashboard user={user} notify={setToast} />
           )}{" "}
-          {view === "teaching" && <TeachingAnalysis notify={setToast} />}{" "}
-          {view === "assignments" && (
-            <Assignments user={user} notify={setToast} />
-          )}{" "}
-          {view === "review" && <Review notify={setToast} />}{" "}
-          {view === "students" && (
-            <StudentsPage user={user} notify={setToast} />
-          )}{" "}
-          {view === "knowledge" && (
-            <KnowledgeBase user={user} notify={setToast} />
-          )}{" "}
-          {view === "papers" && <Papers notify={setToast} />}{" "}
-          {view === "mistakes" && <StudentMistakes notify={setToast} />}{" "}
+          {view === "learning" &&
+            user.role === "student" &&
+            !user.is_school_admin && (
+              <WorkflowPage
+                id="learning"
+                label="学习工作台"
+                request={sectionRequest}
+                sections={[
+                  {
+                    id: "assignments",
+                    label: "我的作业",
+                    content: <Assignments user={user} notify={setToast} />,
+                  },
+                  {
+                    id: "mistakes",
+                    label: "我的错题",
+                    content: <StudentMistakes notify={setToast} />,
+                  },
+                ]}
+              />
+            )}
           {view === "settings" && (
-            <AccountSettings user={user} refresh={refresh} notify={setToast} />
+            <AccountSettings
+              user={user}
+              refresh={() => void refresh(false, true)}
+              notify={setToast}
+            />
           )}
         </main>
       </div>
@@ -354,6 +410,158 @@ function App() {
     </div>
   );
 }
+function TeacherWorkspace({
+  user,
+  notify,
+  navigate,
+  request,
+}: {
+  user: User;
+  notify: (message: string) => void;
+  navigate: (view: string) => void;
+  request: SectionRequest;
+}) {
+  const [revision, setRevision] = useState(0);
+  const [reviewTarget, setReviewTarget] = useState<{
+    id: string;
+    ticket: number;
+  } | null>(null);
+  const [analysisTarget, setAnalysisTarget] = useState<{
+    id: string;
+    ticket: number;
+  } | null>(null);
+  const [assignmentTarget, setAssignmentTarget] = useState<{
+    id: string;
+    ticket: number;
+  } | null>(null);
+  const [section, setSection] = useState(request);
+  const ticket = useRef(0);
+  useEffect(() => setSection(request), [request]);
+  const changed = () => setRevision((value) => value + 1);
+  return (
+    <WorkflowPage
+      id="teaching"
+      label="教学工作台"
+      request={section}
+      sections={[
+        {
+          id: "overview",
+          label: "总览",
+          content: (
+            <Overview user={user} navigate={navigate} revision={revision} />
+          ),
+        },
+        {
+          id: "assignments",
+          label: "作业与上传",
+          content: (
+            <Assignments
+              user={user}
+              notify={notify}
+              revision={revision}
+              preferred={assignmentTarget}
+              onSubmitted={(id) => {
+                changed();
+                setReviewTarget({ id, ticket: ++ticket.current });
+                setSection({ id: "review", ticket: -ticket.current });
+              }}
+            />
+          ),
+        },
+        {
+          id: "review",
+          label: "识别与复核",
+          content: (
+            <Review
+              notify={notify}
+              revision={revision}
+              preferred={reviewTarget}
+              onReviewed={(id, bank) => {
+                changed();
+                if (bank) setAnalysisTarget({ id, ticket: ++ticket.current });
+              }}
+            />
+          ),
+        },
+        {
+          id: "teaching",
+          label: "AI 教学分析",
+          content: (
+            <TeachingAnalysis
+              notify={notify}
+              refreshVersion={revision}
+              preferred={analysisTarget}
+              onAssignmentCreated={(id) => {
+                changed();
+                setAssignmentTarget({ id, ticket: ++ticket.current });
+                setSection({ id: "assignments", ticket: -ticket.current });
+              }}
+            />
+          ),
+        },
+        {
+          id: "students",
+          label: "学生管理",
+          content: (
+            <StudentsPage user={user} notify={notify} onChanged={changed} />
+          ),
+        },
+        {
+          id: "knowledge",
+          label: "知识库",
+          content: (
+            <KnowledgeBase user={user} notify={notify} onChanged={changed} />
+          ),
+        },
+        {
+          id: "papers",
+          label: "错题组卷",
+          content: <Papers notify={notify} />,
+        },
+      ]}
+    />
+  );
+}
+
+function SchoolWorkspace({
+  user,
+  notify,
+  request,
+}: {
+  user: User;
+  notify: (message: string) => void;
+  request: SectionRequest;
+}) {
+  const [revision, setRevision] = useState(0);
+  return (
+    <WorkflowPage
+      id="school"
+      label="学校管理"
+      request={request}
+      sections={[
+        {
+          id: "school",
+          label: "学校仪表盘",
+          content: (
+            <SchoolDashboard user={user} notify={notify} revision={revision} />
+          ),
+        },
+        {
+          id: "students",
+          label: "学生管理",
+          content: (
+            <StudentsPage
+              user={user}
+              notify={notify}
+              onChanged={() => setRevision((value) => value + 1)}
+            />
+          ),
+        },
+      ]}
+    />
+  );
+}
+
 function Brand() {
   return (
     <div className="rc4-brand">
@@ -432,26 +640,38 @@ function Empty({ text }: { text: string }) {
 function SchoolDashboard({
   user,
   notify,
+  revision = 0,
 }: {
   user: User;
   notify: (s: string) => void;
+  revision?: number;
 }) {
   const [summary, setSummary] = useState<any>(null);
   const [operations, setOperations] = useState<any>(null);
   const [teachers, setTeachers] = useState<TeacherAccount[]>([]);
-  const load = () =>
-    Promise.all([
+  const loadGeneration = useRef(0);
+  const load = () => {
+    const generation = ++loadGeneration.current;
+    return Promise.all([
       api<any>("/school/summary"),
       api<TeacherAccount[]>("/teachers"),
       api<any>("/operations"),
     ]).then(([schoolSummary, teacherRows, status]) => {
+      if (generation !== loadGeneration.current) return;
       setOperations(status);
       setSummary(schoolSummary);
       setTeachers(teacherRows);
     });
+  };
   useEffect(() => {
-    load();
-  }, []);
+    void load().catch((error) => notify(error.message));
+  }, [revision]);
+  useEffect(
+    () => () => {
+      ++loadGeneration.current;
+    },
+    [],
+  );
   const addTeacher = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -490,7 +710,6 @@ function SchoolDashboard({
           </div>
         ))}
       </div>
-      <SchoolModelPanel notify={notify} />
       <section className="rc4-panel">
         <div className="detail-head">
           <h2>本校任务运行状态</h2>
@@ -628,33 +847,40 @@ function SchoolDashboard({
 function Overview({
   user,
   navigate,
+  revision = 0,
 }: {
   user: User;
   navigate: (v: string) => void;
+  revision?: number;
 }) {
   const [a, setA] = useState<Assignment[]>([]),
     [s, setS] = useState<Submission[]>([]),
     [k, setK] = useState<Knowledge[]>([]),
     [students, setStudents] = useState<Student[]>([]);
   useEffect(() => {
+    let active = true;
     Promise.all([
       api<Assignment[]>("/assignments"),
       api<Submission[]>("/submissions"),
       api<Knowledge[]>("/knowledge"),
       api<Student[]>("/students"),
     ]).then(([aa, ss, kk, uu]) => {
+      if (!active) return;
       setA(aa);
       setS(ss);
       setK(kk);
       setStudents(uu);
     });
-  }, []);
+    return () => {
+      active = false;
+    };
+  }, [revision]);
   return (
     <>
       <Title
         eyebrow="TEACHING WORKSPACE"
         title={`${user.name}老师，今天从真实作业开始。`}
-        desc={`${user.stage} · ${user.subject} · ${user.class_name}。复核完成后到「AI 教学分析」生成讲评方案与跟进名单。`}
+        desc={`${user.stage} · ${user.subject} · ${user.class_name}。在本页完成作业上传、识别复核与教学分析。`}
       />
       <div className="metric-grid">
         {[
@@ -713,9 +939,15 @@ function Overview({
 function Assignments({
   user,
   notify,
+  revision = 0,
+  preferred = null,
+  onSubmitted,
 }: {
   user: User;
   notify: (s: string) => void;
+  revision?: number;
+  preferred?: { id: string; ticket: number } | null;
+  onSubmitted?: (id: string) => void;
 }) {
   const [items, setItems] = useState<Assignment[]>([]),
     [knowledge, setKnowledge] = useState<Knowledge[]>([]),
@@ -730,22 +962,30 @@ function Assignments({
     [uploadProgress, setUploadProgress] = useState("");
   const uploadController = useRef<AbortController | null>(null);
   const uploadSession = useRef<string | null>(null);
-  const load = () =>
-    Promise.all([
+  const fileInput = useRef<HTMLInputElement>(null);
+  const loadGeneration = useRef(0);
+  const load = () => {
+    const generation = ++loadGeneration.current;
+    return Promise.all([
       api<Assignment[]>("/assignments"),
       api<Knowledge[]>("/knowledge"),
       user.role === "teacher"
         ? api<Student[]>("/students")
         : Promise.resolve([]),
     ]).then(([aa, kk, ss]) => {
+      if (generation !== loadGeneration.current) return;
       setItems(aa);
       setKnowledge(kk);
       setStudents(ss);
       setSelected((v) => v || aa[0]?.id || "");
     });
+  };
   useEffect(() => {
-    load();
-  }, []);
+    void load().catch((error) => notify(error.message));
+  }, [revision]);
+  useEffect(() => {
+    if (preferred) setSelected(preferred.id);
+  }, [preferred?.ticket]);
   useEffect(() => {
     let active = true;
     void api<{ clientTiling: boolean }>("/upload-capabilities")
@@ -755,6 +995,7 @@ function Assignments({
       .catch(() => {});
     return () => {
       active = false;
+      ++loadGeneration.current;
       uploadController.current?.abort();
     };
   }, []);
@@ -775,14 +1016,18 @@ function Assignments({
     className?: string;
     questions?: DraftQuestion[];
   }) => {
-    await api("/assignments", json("POST", payload));
+    const created = await api<{ id: string }>(
+      "/assignments",
+      json("POST", payload),
+    );
     setCreating(false);
     notify(
       payload.gradingMode === "direct"
         ? "已发布「无需原题 · AI 直接批改」作业，学生上传答卷后即可批改。"
         : "作业已发布。",
     );
-    load();
+    await load();
+    setSelected(created.id);
   };
   const send = async () => {
     if (!selected) {
@@ -796,30 +1041,47 @@ function Assignments({
     const controller = new AbortController();
     uploadController.current = controller;
     try {
+      let submittedId = "";
       if (useTiling) {
-        await uploadTiledSubmission(Array.from(files), selected, studentId, {
-          signal: controller.signal,
-          progress: setUploadProgress,
-          sessionId: uploadSession.current,
-          remember: (id) => {
-            uploadSession.current = id;
+        const uploaded = await uploadTiledSubmission(
+          Array.from(files),
+          selected,
+          studentId,
+          {
+            signal: controller.signal,
+            progress: setUploadProgress,
+            sessionId: uploadSession.current,
+            remember: (id) => {
+              uploadSession.current = id;
+            },
           },
-        });
+        );
+        submittedId = uploaded.id || "";
       } else {
         setUploadProgress("正在上传原件…");
         const body = new FormData();
         Array.from(files).forEach((file) => body.append("files", file));
         if (studentId) body.append("studentId", studentId);
-        await api(`/assignments/${selected}/submissions`, {
-          method: "POST",
-          body,
-          signal: controller.signal,
-        });
+        const uploaded = await api<{ id: string }[]>(
+          `/assignments/${selected}/submissions`,
+          {
+            method: "POST",
+            body,
+            signal: controller.signal,
+          },
+        );
+        submittedId = uploaded[0]?.id || "";
       }
       uploadSession.current = null;
-      notify("原件已上传，可前往识别与复核开始 OCR。");
+      notify(
+        user.role === "teacher"
+          ? "原件已上传，可在本页下方识别与复核。"
+          : "作业已提交。",
+      );
       setFiles(null);
+      if (fileInput.current) fileInput.current.value = "";
       setUploadProgress("");
+      if (submittedId) onSubmitted?.(submittedId);
     } finally {
       setUploading(false);
     }
@@ -861,6 +1123,7 @@ function Assignments({
                 <button
                   key={x.id}
                   className={selected === x.id ? "active" : ""}
+                  disabled={uploading || !!uploadSession.current}
                   onClick={() => setSelected(x.id)}
                 >
                   <div>
@@ -926,6 +1189,7 @@ function Assignments({
             </strong>
             <span>请按页序选择同一位学生的全部答卷文件，再由教师开始 OCR</span>
             <input
+              ref={fileInput}
               type="file"
               accept="image/jpeg,image/png,image/webp,application/pdf,.docx,.doc,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
               multiple
@@ -1257,9 +1521,11 @@ function AssignmentForm({
 function StudentsPage({
   user,
   notify,
+  onChanged,
 }: {
   user: User;
   notify: (s: string) => void;
+  onChanged?: () => void;
 }) {
   const [students, setStudents] = useState<Student[]>([]),
     [result, setResult] = useState<any>(null),
@@ -1279,6 +1545,7 @@ function StudentsPage({
       form.reset();
       notify("学生账户已注册。");
       load();
+      onChanged?.();
     } catch (err) {
       notify((err as Error).message);
     }
@@ -1295,6 +1562,7 @@ function StudentsPage({
         `导入完成：成功 ${d.created.length} 人，失败 ${d.errors.length} 人。`,
       );
       load();
+      onChanged?.();
     } catch (err) {
       notify((err as Error).message);
     } finally {
@@ -1422,7 +1690,17 @@ function StudentsPage({
     </>
   );
 }
-function Review({ notify }: { notify: (s: string) => void }) {
+function Review({
+  notify,
+  revision = 0,
+  preferred = null,
+  onReviewed,
+}: {
+  notify: (s: string) => void;
+  revision?: number;
+  preferred?: { id: string; ticket: number } | null;
+  onReviewed?: (assignmentId: string, bank: boolean) => void;
+}) {
   const [items, setItems] = useState<Submission[]>([]),
     [detail, setDetail] = useState<any>(null),
     [busy, setBusy] = useState<Record<string, string>>({}),
@@ -1460,11 +1738,14 @@ function Review({ notify }: { notify: (s: string) => void }) {
   };
   useEffect(() => {
     void load();
-    return () => {
+  }, [revision]);
+  useEffect(
+    () => () => {
       guard.select(null);
       ++listGeneration.current;
-    };
-  }, []);
+    },
+    [],
+  );
   const select = async (id: string) => {
     const ticket = guard.select(id);
     setAttentionOnly(modeRef.current === "uncertain");
@@ -1480,6 +1761,9 @@ function Review({ notify }: { notify: (s: string) => void }) {
       if (guard.isCurrent(ticket)) setLoading(false);
     }
   };
+  useEffect(() => {
+    if (preferred) void select(preferred.id);
+  }, [preferred?.ticket]);
   // Poll only active jobs. Selection tickets prevent a late response replacing another draft.
   useEffect(() => {
     if (!items.some((item) => ["queued", "recognizing"].includes(item.status)))
@@ -1509,6 +1793,11 @@ function Review({ notify }: { notify: (s: string) => void }) {
         setDetail(normalizeReviewDetail(result));
         if (!["queued", "recognizing"].includes(result.status)) {
           void load();
+          if (result.teacher_reviewed && result.assignment_id)
+            onReviewed?.(
+              result.assignment_id,
+              result.grading_mode !== "direct",
+            );
           return;
         }
       } catch (error) {
@@ -1618,6 +1907,8 @@ function Review({ notify }: { notify: (s: string) => void }) {
         }),
       );
       notify("复核完成，错题已写入学生账户。");
+      if (draft.assignment_id)
+        onReviewed?.(draft.assignment_id, draft.grading_mode !== "direct");
       if (guard.current().id === draft.id) {
         guard.select(null);
         setDetail(null);
@@ -1917,9 +2208,11 @@ const statusName = (s: string) =>
 function KnowledgeBase({
   user,
   notify,
+  onChanged,
 }: {
   user: User;
   notify: (s: string) => void;
+  onChanged?: () => void;
 }) {
   const [items, setItems] = useState<Knowledge[]>([]);
   const load = () => api<Knowledge[]>("/knowledge").then(setItems);
@@ -1937,6 +2230,7 @@ function KnowledgeBase({
       form.reset();
       notify("知识点已保存。");
       await load();
+      onChanged?.();
     } catch (error) {
       notify((error as Error).message);
     }
@@ -2091,7 +2385,12 @@ function Papers({ notify }: { notify: (s: string) => void }) {
             <Empty text="请选择历史试卷或创建新试卷。" />
           )}
           {!!current?.questions?.length && (
-            <Button variant="outline" onClick={() => window.print()}>
+            <Button
+              variant="outline"
+              onClick={(event) =>
+                printRegion(event.currentTarget.closest(".paper"))
+              }
+            >
               打印 / 保存 PDF
             </Button>
           )}
@@ -2109,6 +2408,7 @@ function AccountSettings({
   refresh: () => void;
   notify: (s: string) => void;
 }) {
+  const [modelRevision, setModelRevision] = useState(0);
   const profile = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     try {
@@ -2128,6 +2428,19 @@ function AccountSettings({
         title="设置"
         desc="账号名注册与登录；模型凭证按学校选择的调用模式生效。审核方式、OAuth 授权与 API Key 都集中在这里。"
       />
+      {!!user.is_school_admin && (
+        <SchoolModelPanel
+          notify={notify}
+          onChanged={() => setModelRevision((value) => value + 1)}
+        />
+      )}
+      {(user.is_school_admin || user.role !== "student") && (
+        <ProviderSettings
+          configurationRevision={modelRevision}
+          user={user}
+          notify={notify}
+        />
+      )}
       <div className="two-col">
         <form className="rc4-panel" onSubmit={profile}>
           <h2>账户信息</h2>
@@ -2181,17 +2494,14 @@ function AccountSettings({
             <h2>模型凭证由谁配置</h2>
             <p className="panel-intro">
               {user.is_school_admin
-                ? "你是学校管理员：全校统一模式下由你配置学校凭证；也可以在「学校仪表盘」切换为老师分开/家长单独模式。"
+                ? "你是学校管理员：在本页选择全校模型调用模式、配置班主任及学校凭证。"
                 : user.role === "parent"
-                  ? "家长账号可在「孩子看板」查看已绑定孩子的数据；在「老师分开 + 家长单独」模式下，可在下方配置自己的 API Key 或 OAuth 连接。"
+                  ? "家长账号可在「孩子看板」查看已绑定孩子的数据；在「老师分开 + 家长单独」模式下，可在本页配置自己的 API Key 或 OAuth 连接。"
                   : "你的模型凭证是否生效取决于学校选择的调用模式：全校统一模式使用学校管理员的凭证；老师分开模式使用你自己的凭证，学生与家长使用班主任的凭证。"}
             </p>
           </section>
         )}
       </div>
-      {(user.is_school_admin || user.role !== "student") && (
-        <ProviderSettings user={user} notify={notify} />
-      )}
     </>
   );
 }

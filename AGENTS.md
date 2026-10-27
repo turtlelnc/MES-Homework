@@ -11,6 +11,7 @@
   - 模型凭证与 OAuth：`src/ProviderSettings.tsx`、`src/OAuthLoginDialog.tsx`、`src/oauth-flows.ts`。
   - 学生引导式错题本：`src/StudentMistakes.tsx`；可复用 UI 在 `src/components/`。
   - 版本标识：`src/version.ts`（与服务端 `server/version.mjs` 同步）。
+  - 同页工作流：`src/WorkflowPage.tsx` 首次访问挂载并保留章节，`src/print-region.ts` 限定试卷/讲评/诊断打印范围；结构与验证见 `docs/workflow-pages.md`。
 - **后端（Express 5 + `node:sqlite`）**：`server/`。
   - `index.mjs` 负责路由装配、模型调用编排、识别/复核流程；`schema.sql` 定义新库；`migrations.mjs` 启动时原地迁移旧库。
   - 账号/注册/登录：`accounts.mjs`、`security.mjs`；家长端：`parent.mjs`；学情分析：`analysis.mjs` 等。
@@ -75,7 +76,7 @@
 ## Security & Data Handling
 
 - 不提交 API Key、`.env`、SQLite 数据库、上传的学生作业/答卷、生成的临时文件或截图中的真实账号信息。
-- OAuth：授权码 + PKCE（ChatGPT 另支持设备码/Codex OAuth；WorkBuddy 使用官方浏览器/设备码轮询），一次性 state、AES-256-GCM 加密令牌、自动刷新/断开；ChatGPT 本机回调仅监听 `127.0.0.1:1455`，授权链接只允许官方域名。
+- OAuth：授权码 + PKCE（ChatGPT 另支持设备码/Codex OAuth；WorkBuddy 使用实验性兼容浏览器/设备码轮询），一次性 state、AES-256-GCM 加密令牌、自动刷新/断开；ChatGPT 本机回调仅监听 `127.0.0.1:1455`，授权链接只允许官方域名。
 - 上传文件必须校验 MIME/大小；AI 批改结果保留教师复核流程（按学校所选复核模式）；直接批改模式的题目快照不参与班级 AI 教学分析。
 - 服务器版部署器安装服务/放行防火墙必须显式提权（UAC/pkexec/osascript），不得静默提权；生产环境需要 HTTPS 反向代理（Secure Cookie）。
 - 外部 OAuth/模型上游协议（Codex OAuth、WorkBuddy 非公开接口）存在变更风险；修改相关端点/请求头后必须更新测试与文档，并说明真实联调状态。
@@ -122,3 +123,18 @@
 - HTTP 失败诊断限 16 KiB，providerHttpError 仅返回静态分类文案，不回显上游错误原文。截断输出须先结算实际 usage，再报明确错误，不自动提高预算或发起额外收费重试。
 - 保存凭证去除首尾空白、拒绝空 Key/内部换行与非字符串模型名；历史已存 Key 在请求构建时兼容首尾空白。测试仅使用 mock 凭证，真实排障密钥不得落盘或提交。
 - 模型厂商选择必须由异步读取的已保存配置同步控制；切换厂商清空旧接口/模型覆盖值，避免显示厂商与实际请求目标不一致。浏览器回归覆盖保存配置回显及 DeepSeek 切换。
+
+## 模型设置与 OAuth 来源核对（2026-10-27）
+
+- 设置页优先显示模型连接；默认厂商/模型来自后端目录，模型/接口覆盖收进高级设置。同厂商修改可留空保留密钥，换厂商必须提供新密钥。activate:true 在事务中保存并切换 API Key；缺省仅保存。读取失败必须展示重试，不能当成未配置。
+- Gemini 使用 Web application OAuth 客户端、精确回调 URL、CLIENT_ID/SECRET/PROJECT_ID，默认 scope 包含 cloud-platform，模型请求带 x-goog-user-project。旧身份 scope 需重新授权；403 不一概判为 token 失效。
+- ChatGPT 当前为 Codex 兼容连接，**不是本应用的官方第三方 SIWC 注册实现**；最新官方 SIWC 要动态客户端/主机注册、nonce 与 JWKS 身份验证、plan usage scope、公共 Responses API。WorkBuddy 的第三方授权协议尚无足够官方证据。两者在 UI 标为实验性，不得把 mock 测试或 Codex 源码匹配称为真实登录验收。证据见 docs/oauth-audit-2026-10-27.md。
+- OAuth JSON/SSE 使用 oauth-http.mjs 限制完整响应体积/总时间，错误不回显上游原文。Codex 兼容 SSE 必须收到 response.completed。DELETE attempt 只取消发起者自己的尝试，释放监听/轮询；迟到回调/刷新不能复活旧连接。
+- 同一连接并发刷新须合并；暂时故障保留 active，新的登录不继承旧账号 refresh token，刷新未轮换时仍保留原 token。外部真实账号授权不在自动化测试中进行。
+
+## 同页工作流维护
+
+- 教师的总览、作业上传、识别复核、教学分析、学生管理、知识库、组卷同属教学工作台；学生作业/错题同属学习工作台；学校教师/学生/运行状态同属学校管理。章节定位滚动到原组件，不能改为互斥页签或通过 key 重挂载丢弃草稿。
+- 首次访问才挂载区块，访问后保持。列表刷新保留当前表单与记录选择，用请求票据排除旧响应。上传成功使用接口返回的真实答卷 ID 打开本页复核；题库复核完成刷新对应分析；重练作业创建后定位并选择真实新作业 ID。直批不进入班级题库分析。
+- 学校模型策略/班主任与凭证集中在账户设置，策略变动重读权限/OAuth 状态但不清空未提交密钥；账户保存后留在原设置页。家长看板的孩子选择和学生答案解锁边界保持。
+- 打印按钮须用 printRegion，只输出所选试卷/讲评/学生诊断，afterprint 恢复布局，不把同页学生名单或其他作业一起输出。浏览器测试覆盖章节间草稿/文件保留、上下游更新、移动端定位、权限和打印媒体隔离。

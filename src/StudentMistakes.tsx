@@ -57,15 +57,11 @@ function EmptyState({ text }: { text: string }) {
   );
 }
 
-export function StudentMistakes({
-  notify,
-}: {
-  notify: (s: string) => void;
-}) {
+export function StudentMistakes({ notify }: { notify: (s: string) => void }) {
   const [items, setItems] = useState<StudentMistake[]>([]);
-  const [attemptAnswers, setAttemptAnswers] = useState<
-    Record<string, string>
-  >({});
+  const [attemptAnswers, setAttemptAnswers] = useState<Record<string, string>>(
+    {},
+  );
   const [attemptResults, setAttemptResults] = useState<
     Record<string, AttemptResult>
   >({});
@@ -193,18 +189,13 @@ export function StudentMistakes({
     const reveal = attemptResults[item.id]?.reveal;
     const canCompare =
       solved || item.progress.revealed === 1 || item.mastery === 1;
-    const practiceUnlocked =
-      canCompare || item.practiceQuestions.length > 0;
+    const practiceUnlocked = canCompare || item.practiceQuestions.length > 0;
     return (
       <section className="rc4-panel mistake-real" key={item.id}>
         <div>
           <strong>{item.knowledge_title || "自动归纳知识点"}</strong>
           <span className={solved || item.mastery ? "mastered" : "learning"}>
-            {solved
-              ? "重做已掌握"
-              : item.mastery
-                ? "练习已过关"
-                : "待过关"}
+            {solved ? "重做已掌握" : item.mastery ? "练习已过关" : "待过关"}
           </span>
         </div>
         <h2>{item.prompt || "（题目内容待补充）"}</h2>
@@ -414,9 +405,13 @@ export function StudentMistakes({
           <span className="eyebrow">GUIDED REVIEW</span>
           <h1>我的错题</h1>
           <p>
-            先想一想，再看提示，独立重做原题；AI 判断你已经掌握后，才会显示参考答案与解析。
+            先想一想，再看提示，独立重做原题；AI
+            判断你已经掌握后，才会显示参考答案与解析。
           </p>
         </div>
+        <Button type="button" disabled={!!busy} onClick={() => void load()}>
+          刷新错题
+        </Button>
       </div>
       {error && <p style={{ color: "#b45a4c", marginBottom: 14 }}>{error}</p>}
       {items.length ? (

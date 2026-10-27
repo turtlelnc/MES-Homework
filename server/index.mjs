@@ -679,8 +679,15 @@ app.put(
     const p =
       Object.hasOwn(providers, req.body.provider) &&
       providers[req.body.provider];
-    if (!p || !req.body.apiKey)
-      return res.status(400).json({ error: "请选择厂商并填写 API Key" });
+    if (!p) return res.status(400).json({ error: "请选择模型厂商" });
+    const existing = db
+      .prepare("SELECT * FROM provider_settings WHERE user_id=?")
+      .get(req.user.id);
+    const reuseKey =
+      (req.body.apiKey === "" || req.body.apiKey == null) &&
+      existing?.provider === req.body.provider;
+    if (req.body.activate != null && typeof req.body.activate !== "boolean")
+      return res.status(400).json({ error: "使用方式参数无效" });
     let endpoint;
     try {
       endpoint = providerEndpoint(req.body.endpoint || p.endpoint, p);
@@ -688,10 +695,11 @@ app.put(
       return res.status(400).json({ error: error.message });
     }
     if (
-      typeof req.body.apiKey !== "string" ||
-      req.body.apiKey.length > 8192 ||
-      !req.body.apiKey.trim() ||
-      /[\r\n]/.test(req.body.apiKey.trim())
+      !reuseKey &&
+      (typeof req.body.apiKey !== "string" ||
+        req.body.apiKey.length > 8192 ||
+        !req.body.apiKey.trim() ||
+        /[\r\n]/.test(req.body.apiKey.trim()))
     )
       return res.status(400).json({ error: "API Key 格式无效" });
     // Reject endpoints whose DNS resolves to internal addresses before saving,
@@ -706,21 +714,40 @@ app.put(
       (typeof req.body.model !== "string" || req.body.model.length > 256)
     )
       return res.status(400).json({ error: "模型名称格式无效" });
-    const [key, iv] = encrypt(req.body.apiKey.trim());
+    const [key, iv] = reuseKey
+      ? [existing.encrypted_key, existing.iv]
+      : encrypt(req.body.apiKey.trim());
     const model = req.body.model?.trim() || p.model;
-    db.prepare(
-      "INSERT INTO provider_settings(id,user_id,provider,endpoint,model,encrypted_key,iv,updated_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET provider=excluded.provider,endpoint=excluded.endpoint,model=excluded.model,encrypted_key=excluded.encrypted_key,iv=excluded.iv,updated_at=excluded.updated_at",
-    ).run(
-      uid(),
-      req.user.id,
-      req.body.provider,
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      db.prepare(
+        "INSERT INTO provider_settings(id,user_id,provider,endpoint,model,encrypted_key,iv,updated_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET provider=excluded.provider,endpoint=excluded.endpoint,model=excluded.model,encrypted_key=excluded.encrypted_key,iv=excluded.iv,updated_at=excluded.updated_at",
+      ).run(
+        uid(),
+        req.user.id,
+        req.body.provider,
+        endpoint,
+        model,
+        key,
+        iv,
+        iso(),
+      );
+      if (req.body.activate === true)
+        db.prepare(
+          "UPDATE users SET model_auth_mode='api_key',oauth_provider=NULL WHERE id=?",
+        ).run(req.user.id);
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+    res.json({
+      ok: true,
+      provider: req.body.provider,
       endpoint,
       model,
-      key,
-      iv,
-      iso(),
-    );
-    res.json({ ok: true, provider: req.body.provider, endpoint, model });
+      activated: req.body.activate === true,
+    });
   },
 );
 app.get("/api/knowledge", auth, (req, res) =>
