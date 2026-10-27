@@ -959,14 +959,14 @@ test("mobile chapter navigation remains available after jumping down the workspa
   await chapters.getByRole("button", { name: "知识库", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "校本知识库", exact: true }),
-  ).toBeVisible();
+  ).toBeInViewport();
   await expect(chapters).toBeInViewport();
   await chapters
     .getByRole("button", { name: "作业与上传", exact: true })
     .click();
   await expect(
     page.getByRole("heading", { name: "作业与上传", exact: true }),
-  ).toBeVisible();
+  ).toBeInViewport();
   await expect(chapters).toBeInViewport();
   await page.screenshot({
     path: "test-results/mobile-single-workspace.png",

@@ -148,7 +148,14 @@ function App() {
       papers: "work",
     };
     setView(groups[destination] || destination);
-    setSectionRequest({ id: destination, ticket: ++navigationTicket.current });
+    const firstSection: Record<string, string> = {
+      work: "overview",
+      learning: "assignments",
+    };
+    setSectionRequest({
+      id: firstSection[destination] || destination,
+      ticket: ++navigationTicket.current,
+    });
   };
   const refreshGeneration = useRef(0);
   const refresh = async (expectSession = false, preserveView = false) => {
@@ -158,7 +165,7 @@ function App() {
       if (generation !== refreshGeneration.current) return;
       setSessionError("");
       setUser(u);
-      if (!preserveView)
+      if (!preserveView) {
         setView(
           u.is_school_admin
             ? "school"
@@ -168,6 +175,17 @@ function App() {
                 ? "parent"
                 : "learning",
         );
+        setSectionRequest({
+          id: u.is_school_admin
+            ? "school"
+            : u.role === "teacher"
+              ? "overview"
+              : u.role === "student"
+                ? "assignments"
+                : "parent",
+          ticket: ++navigationTicket.current,
+        });
+      }
     } catch (error) {
       if (generation !== refreshGeneration.current) return;
       if (error instanceof ApiError && error.status === 401) {
@@ -202,6 +220,9 @@ function App() {
   useEffect(() => {
     void refresh();
   }, []);
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, [view]);
   // OAuth 回调会带 ?oauth_status=connected|error|denied 返回单页应用。
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -356,6 +377,7 @@ function App() {
               <WorkflowPage
                 id="learning"
                 label="学习工作台"
+                request={sectionRequest}
                 sections={[
                   {
                     id: "assignments",
