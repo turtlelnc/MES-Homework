@@ -11,6 +11,7 @@
   - 模型凭证与 OAuth：`src/ProviderSettings.tsx`、`src/OAuthLoginDialog.tsx`、`src/oauth-flows.ts`。
   - 学生引导式错题本：`src/StudentMistakes.tsx`；可复用 UI 在 `src/components/`。
   - 版本标识：`src/version.ts`（与服务端 `server/version.mjs` 同步）。
+  - 同页工作流：`src/WorkflowPage.tsx` 首次访问挂载并保留章节，`src/print-region.ts` 限定试卷/讲评/诊断打印范围；结构与验证见 `docs/workflow-pages.md`。
 - **后端（Express 5 + `node:sqlite`）**：`server/`。
   - `index.mjs` 负责路由装配、模型调用编排、识别/复核流程；`schema.sql` 定义新库；`migrations.mjs` 启动时原地迁移旧库。
   - 账号/注册/登录：`accounts.mjs`、`security.mjs`；家长端：`parent.mjs`；学情分析：`analysis.mjs` 等。
@@ -130,3 +131,10 @@
 - ChatGPT 当前为 Codex 兼容连接，**不是本应用的官方第三方 SIWC 注册实现**；最新官方 SIWC 要动态客户端/主机注册、nonce 与 JWKS 身份验证、plan usage scope、公共 Responses API。WorkBuddy 的第三方授权协议尚无足够官方证据。两者在 UI 标为实验性，不得把 mock 测试或 Codex 源码匹配称为真实登录验收。证据见 docs/oauth-audit-2026-10-27.md。
 - OAuth JSON/SSE 使用 oauth-http.mjs 限制完整响应体积/总时间，错误不回显上游原文。Codex 兼容 SSE 必须收到 response.completed。DELETE attempt 只取消发起者自己的尝试，释放监听/轮询；迟到回调/刷新不能复活旧连接。
 - 同一连接并发刷新须合并；暂时故障保留 active，新的登录不继承旧账号 refresh token，刷新未轮换时仍保留原 token。外部真实账号授权不在自动化测试中进行。
+
+## 同页工作流维护
+
+- 教师的总览、作业上传、识别复核、教学分析、学生管理、知识库、组卷同属教学工作台；学生作业/错题同属学习工作台；学校教师/学生/运行状态同属学校管理。章节定位滚动到原组件，不能改为互斥页签或通过 key 重挂载丢弃草稿。
+- 首次访问才挂载区块，访问后保持。列表刷新保留当前表单与记录选择，用请求票据排除旧响应。上传成功使用接口返回的真实答卷 ID 打开本页复核；题库复核完成刷新对应分析；重练作业创建后定位并选择真实新作业 ID。直批不进入班级题库分析。
+- 学校模型策略/班主任与凭证集中在账户设置，策略变动重读权限/OAuth 状态但不清空未提交密钥；账户保存后留在原设置页。家长看板的孩子选择和学生答案解锁边界保持。
+- 打印按钮须用 printRegion，只输出所选试卷/讲评/学生诊断，afterprint 恢复布局，不把同页学生名单或其他作业一起输出。浏览器测试覆盖章节间草稿/文件保留、上下游更新、移动端定位、权限和打印媒体隔离。

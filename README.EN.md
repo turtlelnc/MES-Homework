@@ -202,3 +202,5 @@ Release audit / 发布审核：[PRE_RELEASE_AUDIT.md](PRE_RELEASE_AUDIT.md) · [
 Native installation now uses Windows MSI, Linux DEB/RPM and macOS PKG. The former custom deployment GUI is retired from builds/releases. See [native installer documentation](tools/installer/README.md). Application data and APP_SECRET are retained on removal; migrate legacy paths explicitly before first launch.
 
 OAuth source comparison and verification limits: [2026-10-27 audit](docs/oauth-audit-2026-10-27.md). The ChatGPT adapter remains a Codex compatibility client, not this app’s registered official Sign in with ChatGPT integration. WorkBuddy has not been validated with a real account. Saving API-key settings does not perform paid inference; same-vendor edits can retain the encrypted key, and “save and use” activates it atomically.
+
+[Single-page workflows](docs/workflow-pages.md) keep related teacher tools, student assignments/mistakes, and school member management together. Chapter controls scroll without discarding drafts; upload/review/reassignment handoffs use real record IDs. School model policy and credentials share settings, and print actions isolate the chosen document.

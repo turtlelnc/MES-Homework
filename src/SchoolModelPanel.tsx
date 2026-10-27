@@ -41,7 +41,13 @@ const FALLBACK_MODES: ModeInfo[] = [
   },
 ];
 
-export function SchoolModelPanel({ notify }: { notify: (s: string) => void }) {
+export function SchoolModelPanel({
+  notify,
+  onChanged,
+}: {
+  notify: (s: string) => void;
+  onChanged?: () => void;
+}) {
   const [mode, setMode] = useState("school");
   const [modes, setModes] = useState<ModeInfo[]>(FALLBACK_MODES);
   const [classes, setClasses] = useState<ClassRow[]>([]);
@@ -91,6 +97,7 @@ export function SchoolModelPanel({ notify }: { notify: (s: string) => void }) {
       setMode(next.id);
       notify(`模型调用模式已切换为「${next.label}」。`);
       await load();
+      onChanged?.();
     } catch (error) {
       notify(`切换失败：${(error as Error).message}`);
     } finally {
@@ -113,6 +120,7 @@ export function SchoolModelPanel({ notify }: { notify: (s: string) => void }) {
           : `已清除「${row.className}」的班主任设置。`,
       );
       await load();
+      onChanged?.();
     } catch (error) {
       notify(`保存班主任失败：${(error as Error).message}`);
     } finally {

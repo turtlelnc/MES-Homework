@@ -278,3 +278,5 @@ Windows 自定义域名部署会保存与新建隧道匹配的本地凭据，凭
 Release audit / 发布审核：[PRE_RELEASE_AUDIT.md](PRE_RELEASE_AUDIT.md) · [runtime budgets / 运行预算](RUNTIME_CONFIGURATION.md)
 
 模型连接易用性及 OAuth 官方来源比对：[2026-10-27 审核](docs/oauth-audit-2026-10-27.md)。ChatGPT 当前仍是 Codex 兼容通道，不是已注册的官方第三方 Sign in with ChatGPT；WorkBuddy 尚无本项目真实登录验证。保存 API Key 不会自动发送付费测试请求，同厂商修改可保留已有密钥，“保存并使用”会同时切换实际调用方式。
+
+相关功能已整合为[同页工作流](docs/workflow-pages.md)：教师工作台包含上传、复核、分析、学生、知识库与组卷；学生作业与错题合并，学校成员管理合并。章节控件只定位，不销毁草稿；上传与重练作业会自动交接到本页对应区块。学校模型策略和凭证集中配置，打印仅输出所选文档。

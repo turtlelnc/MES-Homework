@@ -67,6 +67,7 @@ type SavedProvider = {
 type Props = {
   user: { id?: string; role?: string; is_school_admin?: number; name?: string };
   notify: (s: string) => void;
+  configurationRevision?: number;
 };
 
 const ROLE_LABELS: Record<string, string> = {
@@ -141,7 +142,11 @@ function Field(
   );
 }
 
-export function ProviderSettings({ user, notify }: Props) {
+export function ProviderSettings({
+  user,
+  notify,
+  configurationRevision = 0,
+}: Props) {
   const [access, setAccess] = useState<ModelAccess | null>(null);
   const [presets, setPresets] = useState<ProviderPreset[]>([]);
   const [saved, setSaved] = useState<SavedProvider>(null);
@@ -210,6 +215,14 @@ export function ProviderSettings({ user, notify }: Props) {
     setReviewAvailable(true);
     setReviewError("");
   };
+  const observedRevision = React.useRef(configurationRevision);
+  useEffect(() => {
+    if (observedRevision.current === configurationRevision) return;
+    observedRevision.current = configurationRevision;
+    void Promise.all([loadAccess(), loadOAuth()]).catch((error) =>
+      notify(error.message),
+    );
+  }, [configurationRevision]);
 
   useEffect(() => {
     let active = true;
