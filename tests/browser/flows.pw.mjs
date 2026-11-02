@@ -1113,3 +1113,68 @@ test("rc1 teacher data dashboard uses real records and keeps chapter directory o
     fullPage: false,
   });
 });
+
+test("question figures can be attached, removed and published without changing other fields", async ({
+  page,
+}) => {
+  await login(page);
+  await page
+    .getByRole("navigation", { name: "教学工作台章节定位", exact: true })
+    .getByRole("button", { name: "作业与上传", exact: true })
+    .click();
+  const region = page.getByRole("region", { name: "作业与上传", exact: true });
+  await region.getByRole("button", { name: "新增作业", exact: true }).click();
+  const form = region.locator(".assignment-form");
+  await form.getByLabel("作业名称", { exact: true }).fill("题图类型回归作业");
+  await form
+    .getByLabel("真实题干", { exact: true })
+    .fill("选择题：根据附图选择答案。");
+  await form
+    .getByLabel("参考答案（客观题仅填答案）", { exact: true })
+    .fill("A");
+  await form
+    .getByRole("combobox", { name: "知识点", exact: true })
+    .selectOption({ index: 1 });
+  await form.getByLabel("分值", { exact: true }).fill("5");
+  const input = form.locator(
+    'input[type="file"][accept="image/png,image/jpeg,image/webp"]',
+  );
+  const picture = {
+    name: "question-figure.png",
+    mimeType: "image/png",
+    buffer: png,
+  };
+  await input.setInputFiles(picture);
+  await expect(
+    form.getByRole("img", { name: "原题附图", exact: true }),
+  ).toBeVisible();
+  await form.getByRole("button", { name: "移除附图", exact: true }).click();
+  await expect(
+    form.getByRole("img", { name: "原题附图", exact: true }),
+  ).toHaveCount(0);
+  await input.setInputFiles(picture);
+  await expect(
+    form.getByRole("img", { name: "原题附图", exact: true }),
+  ).toBeVisible();
+  const saved = page.waitForResponse(
+    (r) =>
+      r.url().endsWith("/api/assignments") && r.request().method() === "POST",
+  );
+  await form
+    .getByRole("button", { name: "核对完成并发布", exact: true })
+    .click();
+  const response = await saved;
+  expect(response.status()).toBe(200);
+  const { id } = await response.json();
+  const detail = await (
+    await page.request.get(`/api/assignments/${id}`)
+  ).json();
+  expect(detail.questions[0]).toMatchObject({
+    prompt: "选择题：根据附图选择答案。",
+    standard_answer: "A",
+    score: 5,
+  });
+  expect(detail.questions[0].figure.image).toBe(
+    `data:image/png;base64,${png.toString("base64")}`,
+  );
+});

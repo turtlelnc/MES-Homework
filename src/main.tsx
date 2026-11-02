@@ -1259,7 +1259,11 @@ function AssignmentForm({
     [busy, setBusy] = useState(false),
     [submitting, setSubmitting] = useState(false),
     [warnings, setWarnings] = useState<string[]>([]);
-  const patch = (i: number, key: keyof DraftQuestion, value: string | number) =>
+  const patch = <K extends keyof DraftQuestion>(
+    i: number,
+    key: K,
+    value: DraftQuestion[K],
+  ) =>
     setQuestions((list) =>
       list.map((q, n) => (n === i ? { ...q, [key]: value } : q)),
     );

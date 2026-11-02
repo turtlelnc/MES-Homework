@@ -33,7 +33,7 @@
 - `npm install` 安装锁定依赖；`npm ci` 用于 CI。
 - `npm run dev`：Vite 开发服务器（127.0.0.1:5173）。
 - `npm run dev:server`：监听式 API 服务（8787）。
-- `npm run build`：严格 TypeScript 检查 + Vite 生产构建（`dist/`）。
+- `npm run build`：强制重新执行严格 TypeScript 检查（`tsc -b --force`）+ Vite 生产构建（`dist/`），避免旧增量缓存跳过类型检查。
 - `npm test`：Vitest 全量测试（含 e2e）。
 - `npm start`：生产 API + 已构建前端（默认 127.0.0.1:8787）。
 - `npm run verify:teaching`：真实服务 + mock 模型的 AI 教学分析 API 校验。
