@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { createHash } from "node:crypto";
 const png = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
   "base64",
@@ -26,7 +27,13 @@ const deferred = () => {
   const promise = new Promise((r) => (resolve = r));
   return { promise, resolve };
 };
-test.beforeEach(async ({ page }) => {
+test.beforeEach(async ({ page }, testInfo) => {
+  // Model independent clients, so the whole suite does not consume one IP's
+  // login allowance. A retry keeps its identity and still exercises throttling.
+  const client = createHash("sha256").update(testInfo.testId).digest();
+  await page.context().setExtraHTTPHeaders({
+    "X-Forwarded-For": `198.18.${client[0]}.${client[1]}`,
+  });
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   page.__errors = errors;

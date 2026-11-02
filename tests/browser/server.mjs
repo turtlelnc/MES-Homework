@@ -22,6 +22,9 @@ process.env.DATA_DIR = data;
 process.env.HOST = "127.0.0.1";
 process.env.PORT = process.env.FIXTURE_PORT || "18877";
 process.env.NODE_ENV = "test";
+// Only this loopback fixture accepts forwarded client identities. Browser
+// cases use separate synthetic clients while production rate limits stay on.
+process.env.TRUST_PROXY_HOPS = "1";
 process.env.SYSTEM_PRESSURE_ENABLED = "0";
 process.env.APP_SECRET = "browser-test-only-not-a-real-production-secret";
 fs.mkdirSync(path.join(data, "uploads"));

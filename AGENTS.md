@@ -63,6 +63,7 @@
 - Vitest 测试放在被测模块旁，命名 `*.test.ts`（如 `server/oauth.test.ts`、`server/model-access.test.ts`）。覆盖授权边界、SQLite 迁移、文件解析、provider 行为与 OAuth 流程。
 - OAuth/模型相关测试一律 mock `fetch`/provider 模块，不调用付费模型、不进行真实 OAuth 登录、不触真实上游网络。
 - 浏览器流程用 `tests/browser/*.pw.mjs` + Playwright；涉及 UI 的改动建议补充或更新截图（`docs/screenshots-v0.2.1/`），CI 会运行 Chromium。
+- 浏览器隔离服务仅在测试入口启用单层代理信任，各用例使用独立的合成客户端地址，避免整套测试共用一个 IP 耗尽登录次数；不得为测试关闭生产登录限流。
 - 原生包：Windows launcher CTest + MSI 实际安装/修复/卸载；Linux DEB 实装/systemd/卸载及 RPM 检查；Mac PKG 实装/.app 启动/保留数据。安装器可视界面和签名/公证未验证时需明确记录。
 - 提交前至少运行：`npm test`（或相关子集）、`npm run build`、相关 OAuth/迁移测试；改动部署器时再构建并运行 CTest/自检。
 
