@@ -1,3 +1,4 @@
+import { QuestionFigure, type Figure } from "./QuestionFigure";
 import { useEffect, useState } from "react";
 import { api } from "./api";
 type Detail = {
@@ -5,6 +6,7 @@ type Detail = {
   description: string;
   grading_mode: string;
   questions: {
+    figure?: Figure | null;
     id: string;
     number: number;
     prompt: string;
@@ -49,6 +51,7 @@ export function AssignmentDetails({ id }: { id: string }) {
                   第 {q.number} 题 · {q.score} 分
                 </strong>
                 <p>{q.prompt}</p>
+                <QuestionFigure figure={q.figure} />
                 {q.standard_answer !== undefined && (
                   <details>
                     <summary>教师参考答案</summary>

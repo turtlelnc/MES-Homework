@@ -785,7 +785,7 @@ describe("buildParentDashboard（确定性看板纯函数）", () => {
     ).toEqual(
       [
         { label: "审题偏差", count: 1, share: 50 },
-        { label: "计算粗心", count: 1, share: 50 },
+        { label: "计算粗心，单位看错", count: 1, share: 50 },
       ].sort((a, b) => a.label.localeCompare(b.label, "zh-CN")),
     );
     expect(

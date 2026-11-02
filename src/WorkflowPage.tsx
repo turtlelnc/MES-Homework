@@ -23,12 +23,14 @@ export function WorkflowPage({
   const [opened, setOpened] = useState<Record<string, boolean>>({
     [sections[0].id]: true,
   });
+  const [active, setActive] = useState(sections[0].id);
   const root = useRef<HTMLDivElement>(null);
   const frame = useRef<number | null>(null);
   const visited = useRef(new Set([sections[0].id]));
   const sectionIds = sections.map((section) => section.id).join("|");
   const jump = (sectionId: string) => {
     if (!sectionIds.split("|").includes(sectionId)) return;
+    setActive(sectionId);
     visited.current.add(sectionId);
     setOpened((current) => ({ ...current, [sectionId]: true }));
     if (frame.current !== null) cancelAnimationFrame(frame.current);
@@ -89,11 +91,12 @@ export function WorkflowPage({
     <div className="workflow-page" ref={root}>
       <nav className="workflow-chapters" aria-label={`${label}章节定位`}>
         <strong>{label}</strong>
-        <span>同页处理 · 点击定位</span>
+        <span>按目录逐步操作</span>
         {sections.map((section) => (
           <button
             key={section.id}
             type="button"
+            aria-current={active === section.id ? "location" : undefined}
             onClick={() => jump(section.id)}
           >
             {section.label}

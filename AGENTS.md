@@ -1,6 +1,6 @@
 # Repository Guidelines
 
-本文件面向在此仓库中工作的自动化代理/贡献者。当前产品版本：**v0.2.1-rc4（build 26102501）**。
+本文件面向在此仓库中工作的自动化代理/贡献者。当前产品版本：**v0.2.2-rc1（build 26110101）**。
 新增或修改功能后请同步更新本文件。
 
 ## Project Structure & Module Organization
@@ -24,7 +24,7 @@
   - `build.mjs`/`assemble.mjs` 组装实际平台运行时；`targets.json` 是支持矩阵；`runtime/` 管理私有配置、实例锁、IPC、启动/停止；`windows/` 是 Win32 启动/服务宿主（CMake + 静态 CRT），不绘制安装 UI。
   - `smoke-installed.mjs`/`smoke-service.mjs`/`windows/smoke-msi.ps1` 验证实际包，说明见 `tools/installer/README.md`。
   - `tools/deployer/` 仅保留历史源码/兼容组装工具；不重新启用旧 GUI 发布，也不恢复 campus-deploy。
-- **文档/截图/发布**：`README.md` / `README.EN.md`（顶部徽章）、`docs/oauth-flows.md`（OAuth 接口契约）、`docs/releases/v0.2.1-rc4.md`、`docs/screenshots-v0.2.1/`、`SECURITY_REVIEW.md`、`SAFETY*.md`。
+- **文档/截图/发布**：`README.md` / `README.EN.md`（顶部徽章）、`docs/oauth-flows.md`（OAuth 接口契约）、`docs/releases/v0.2.2-rc1.md`、`docs/screenshots-v0.2.1/`、`SECURITY_REVIEW.md`、`SAFETY*.md`。
 - **静态资源/构建产物**：`public/`、`dist/`；运行数据在 `data/`（禁止提交）。
 - **Cloudflare**：`cloudflare-worker.mjs`、`wrangler.jsonc`。
 
@@ -138,3 +138,11 @@
 - 首次访问才挂载区块，访问后保持。列表刷新保留当前表单与记录选择，用请求票据排除旧响应。上传成功使用接口返回的真实答卷 ID 打开本页复核；题库复核完成刷新对应分析；重练作业创建后定位并选择真实新作业 ID。直批不进入班级题库分析。
 - 学校模型策略/班主任与凭证集中在账户设置，策略变动重读权限/OAuth 状态但不清空未提交密钥；账户保存后留在原设置页。家长看板的孩子选择和学生答案解锁边界保持。
 - 打印按钮须用 printRegion，只输出所选试卷/讲评/学生诊断，afterprint 恢复布局，不把同页学生名单或其他作业一起输出。浏览器测试覆盖章节间草稿/文件保留、上下游更新、移动端定位、权限和打印媒体隔离。
+
+## v0.2.2-rc1 迭代约定（优先于上方历史 OAuth 说明）
+
+- 产品运行时仅使用 API Key；不恢复 OAuth 页面、授权路由或调用分支。历史 OAuth 模块仅作旧协议回归参考，不由应用加载。
+- 逐题等级统一使用 src/grades.ts：95% A+、85% A、75% B+、60% B，其余 C；未评分显示待评定。教师复核保留数值输入。
+- 独立题图使用 question_figures 表的受限矢量描述；仅允许线段、圆、文字，禁止 HTML/SVG 字符串或外部资源。旧题图不会自动补造。
+- 自动学生匹配限制本校、作业学段与班级、唯一姓名；已关联账户不被 OCR 覆盖。同名或无法辨认必须人工选择。
+- 家长看板保留复核可见边界；移除已复核作业指标和学科表现。周筛选按北京时间自然周；比较依据和样本不足必须明示。

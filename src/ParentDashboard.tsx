@@ -1,7 +1,8 @@
+import { QuestionFigure } from "./QuestionFigure";
+import { questionGrade } from "./grades";
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent, InputHTMLAttributes, ReactNode } from "react";
 import {
-  BarChart3,
   BookOpen,
   BrainCircuit,
   ChevronRight,
@@ -25,7 +26,9 @@ function pct(value: unknown) {
 function dateText(value?: string) {
   if (!value) return "";
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "" : date.toLocaleDateString("zh-CN");
+  return Number.isNaN(date.getTime())
+    ? ""
+    : date.toLocaleDateString("zh-CN", { timeZone: "Asia/Shanghai" });
 }
 
 function dateTimeText(value?: string) {
@@ -33,7 +36,10 @@ function dateTimeText(value?: string) {
   const date = new Date(value);
   return Number.isNaN(date.getTime())
     ? ""
-    : date.toLocaleString("zh-CN", { hour12: false });
+    : date.toLocaleString("zh-CN", {
+        hour12: false,
+        timeZone: "Asia/Shanghai",
+      });
 }
 
 function Title({
@@ -128,9 +134,6 @@ function InsightContent({ content }: { content: any }) {
   const weaknesses = Array.isArray(insight.weaknesses)
     ? insight.weaknesses
     : [];
-  const subjects = Array.isArray(insight.subjectAnalysis)
-    ? insight.subjectAnalysis
-    : [];
   const habits = Array.isArray(insight.studyHabits) ? insight.studyHabits : [];
   const actions = Array.isArray(insight.homeActions) ? insight.homeActions : [];
   return (
@@ -175,25 +178,6 @@ function InsightContent({ content }: { content: any }) {
                     建议：{item.suggestion}
                   </p>
                 )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-      {subjects.length > 0 && (
-        <div>
-          <h3 style={{ marginBottom: 8 }}>学科表现</h3>
-          <div className="data-table">
-            <div>
-              <b>学科</b>
-              <b>水平</b>
-              <b style={{ gridColumn: "span 2" }}>说明</b>
-            </div>
-            {subjects.map((item: any, index: number) => (
-              <div key={index}>
-                <span>{item.subject}</span>
-                <span>{item.level}</span>
-                <span style={{ gridColumn: "span 2" }}>{item.detail}</span>
               </div>
             ))}
           </div>
@@ -247,8 +231,12 @@ export function ParentDashboard({
   user: any;
   notify: (s: string) => void;
 }) {
+  const [range, setRange] = useState("all");
+  const [start, setStart] = useState("");
+  const [end, setEnd] = useState("");
   const [children, setChildren] = useState<any[]>([]);
   const [selectedId, setSelectedId] = useState("");
+  const [dashboardError, setDashboardError] = useState("");
   const [dashboard, setDashboard] = useState<any>(null);
   const [detail, setDetail] = useState<any>(null);
   const [insight, setInsight] = useState<any>(null);
@@ -263,8 +251,11 @@ export function ParentDashboard({
 
   const loadChildData = async (studentId: string) => {
     const ticket = ++generation.current;
+    setDashboardError("");
     const [dashboardData, insightData] = await Promise.all([
-      api<any>(`/parent/children/${studentId}/dashboard`),
+      api<any>(
+        `/parent/children/${studentId}/dashboard?${new URLSearchParams({ range, start, end })}`,
+      ),
       api<any>(`/parent/children/${studentId}/insights`),
     ]);
     if (ticket !== generation.current) return;
@@ -301,11 +292,11 @@ export function ParentDashboard({
     setDetailLoading(false);
     setDashboard(null);
     setInsight(null);
-    void loadChildData(selectedId).catch((error) =>
-      notify((error as Error).message),
-    );
+    void loadChildData(selectedId).catch((error) => {
+      setDashboardError((error as Error).message);
+    });
     // selectedId 变化时重新拉取该孩子的看板与分析。
-  }, [selectedId]);
+  }, [selectedId, range, start, end]);
 
   const bindChild = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -356,7 +347,7 @@ export function ParentDashboard({
         { method: "POST" },
       );
       setInsight(result.insight);
-      if (result.stats) setDashboard(result.stats);
+      await loadChildData(selectedId);
       notify("AI 学情分析已生成。");
     } catch (error) {
       notify(`${(error as Error).message}。请到「设置」中完成模型配置后再试。`);
@@ -382,7 +373,7 @@ export function ParentDashboard({
     <Title
       eyebrow="PARENT WORKSPACE"
       title={selected ? `${selected.name}的学习看板` : "家长看板"}
-      desc={`${user?.name || "家长"}，这里只展示已绑定孩子、且教师已复核的作业数据。`}
+      desc={`${user?.name || "家长"}，在这里查看孩子的进步、作业与具体错因。`}
       action={
         <Button
           variant="outline"
@@ -416,7 +407,7 @@ export function ParentDashboard({
             <ClipboardCheck size={19} /> 绑定后可查看
           </h2>
           <p className="panel-intro">
-            已复核作业、逐题批改结果与参考答案、薄弱知识点、错因分布、成绩趋势，以及
+            作业、逐题批改结果与参考答案、薄弱知识点、错因分布、成绩趋势，以及
             AI 学情分析。
           </p>
         </section>
@@ -431,12 +422,19 @@ export function ParentDashboard({
     masteryRate: 0,
   };
   const metrics: [string, string, string][] = [
-    ["已复核作业", String(summary.reviewedSubmissions || 0), "份"],
+    [
+      "成长趋势",
+      dashboard?.growth
+        ? `${dashboard.growth.delta > 0 ? "+" : ""}${Math.round(dashboard.growth.delta * 100)} 个百分点`
+        : "暂无可比试卷",
+      "",
+    ],
+    ["班级水平", dashboard?.position?.classLevel || "数据不足", ""],
+    ["年级水平", dashboard?.position?.gradeLevel || "数据不足", ""],
     ["平均得分率", pct(summary.averageScoreRate), ""],
     ["错题数", String(summary.mistakeCount || 0), "道"],
     ["已掌握率", pct(summary.masteryRate), ""],
   ];
-  const subjects = Array.isArray(dashboard?.subjects) ? dashboard.subjects : [];
   const recent = Array.isArray(dashboard?.recent) ? dashboard.recent : [];
   const knowledge = Array.isArray(dashboard?.knowledge)
     ? dashboard.knowledge
@@ -447,6 +445,14 @@ export function ParentDashboard({
   return (
     <>
       {header}
+      {dashboardError && (
+        <p role="alert">
+          看板加载失败：{dashboardError}{" "}
+          <Button variant="outline" onClick={() => void refresh()}>
+            重试
+          </Button>
+        </p>
+      )}
       <section className="rc4-panel" style={{ marginBottom: 20 }}>
         <div className="detail-head" style={{ marginBottom: 0 }}>
           <div>
@@ -514,8 +520,7 @@ export function ParentDashboard({
                 <div>
                   <strong>第 {item.number} 题</strong>
                   <span className={item.isCorrect ? "" : "low"}>
-                    {item.isCorrect ? "正确" : "错误"} · {item.score ?? 0}/
-                    {item.maxScore ?? "—"} 分
+                    {questionGrade(item.score, item.maxScore)}
                   </span>
                 </div>
                 {item.prompt && (
@@ -524,6 +529,7 @@ export function ParentDashboard({
                     {item.prompt}
                   </p>
                 )}
+                <QuestionFigure figure={item.figure} />
                 <div className="answer-grid" style={{ marginTop: 10 }}>
                   <p>
                     <b>学生作答</b>
@@ -565,7 +571,43 @@ export function ParentDashboard({
           )}
         </section>
       )}
-      <div className="metric-grid">
+      <section className="rc4-panel" style={{ marginBottom: 20 }}>
+        <h2>作业看板 · 时间范围</h2>
+        <label className="field">
+          <span>查看范围</span>
+          <select value={range} onChange={(e) => setRange(e.target.value)}>
+            <option value="all">总览</option>
+            <option value="week">本周</option>
+            <option value="lastWeek">上周</option>
+            <option value="custom">自选日期</option>
+          </select>
+        </label>
+        {range === "custom" && (
+          <div className="field-row">
+            <Field
+              label="开始日期"
+              type="date"
+              value={start}
+              max={end || undefined}
+              onChange={(e) => setStart(e.target.value)}
+            />
+            <Field
+              label="结束日期"
+              type="date"
+              value={end}
+              min={start || undefined}
+              onChange={(e) => setEnd(e.target.value)}
+            />
+          </div>
+        )}
+        {dashboard?.growth && (
+          <p>
+            与《{dashboard.growth.previousTitle}》比较：{dashboard.growth.basis}
+          </p>
+        )}
+        <small>{dashboard?.position?.basis}；样本不足时不估算水平。</small>
+      </section>
+      <div className="metric-grid parent-metrics">
         {metrics.map(([label, value, unit]) => (
           <div className="metric" key={label}>
             <span>{label}</span>
@@ -576,32 +618,7 @@ export function ParentDashboard({
           </div>
         ))}
       </div>
-      <div className="two-col">
-        <section className="rc4-panel">
-          <h2>
-            <BarChart3 size={19} /> 学科表现
-          </h2>
-          {subjects.length ? (
-            <div className="data-table">
-              <div>
-                <b>学科</b>
-                <b>已复核</b>
-                <b>平均得分率</b>
-                <b>错题数</b>
-              </div>
-              {subjects.map((subject: any) => (
-                <div key={subject.subject}>
-                  <span>{subject.subject}</span>
-                  <span>{subject.reviewedSubmissions} 份</span>
-                  <span>{pct(subject.averageScoreRate)}</span>
-                  <span>{subject.mistakeCount} 道</span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="panel-intro">还没有已复核的作业。</p>
-          )}
-        </section>
+      <div className="parent-recent">
         <section className="rc4-panel">
           <h2>
             <ClipboardCheck size={19} /> 近期作业
@@ -636,7 +653,7 @@ export function ParentDashboard({
               ))}
             </div>
           ) : (
-            <p className="panel-intro">还没有已复核的作业。</p>
+            <p className="panel-intro">暂时没有可展示的作业。</p>
           )}
         </section>
       </div>
@@ -753,7 +770,7 @@ export function ParentDashboard({
             ))}
           </div>
         ) : (
-          <p className="panel-intro">积累更多已复核作业后可以看到成绩趋势。</p>
+          <p className="panel-intro">积累更多作业后可以看到成绩趋势。</p>
         )}
       </section>
       <section className="rc4-panel" style={{ marginTop: 20 }}>

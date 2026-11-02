@@ -418,22 +418,22 @@ describe("describeModelAccess", () => {
     expect(inherited.hint).toContain("学校管理员");
   });
 
-  it("flags a stale OAuth mode with an actionable hint", () => {
+  it("ignores legacy OAuth credentials and requires an API Key", () => {
     db.prepare(
       "UPDATE users SET model_auth_mode='oauth', oauth_provider='deepseek' WHERE id='admin1'",
     ).run();
     const stale = describeModelAccess(db, user(db, "t1"));
     expect(stale.configured).toBe(false);
-    expect(stale.authMode).toBe("oauth");
-    expect(stale.provider).toBe("deepseek");
+    expect(stale.authMode).toBe("api_key");
+    expect(stale.provider).toBe(null);
     expect(stale.hasOAuth).toBe(false);
-    expect(stale.hint).toBe("OAuth 授权已失效，请重新连接或改用 API Key");
+    expect(stale.hint).toContain("API Key");
 
     insertOAuth(db, "admin1", "deepseek");
     const live = describeModelAccess(db, user(db, "t1"));
-    expect(live.configured).toBe(true);
-    expect(live.hasOAuth).toBe(true);
-    expect(live.hint).toBe("");
+    expect(live.configured).toBe(false);
+    expect(live.hasOAuth).toBe(false);
+    expect(live.hint).toContain("API Key");
   });
 
   it("explains a fallback owner when no head teacher is assigned", () => {

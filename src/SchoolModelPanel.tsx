@@ -27,7 +27,7 @@ const FALLBACK_MODES: ModeInfo[] = [
   {
     id: "school",
     label: "全校统一模式",
-    desc: "仅学校管理员配置 API Key / OAuth，全校教师、学生、家长统一使用学校凭证。",
+    desc: "仅学校管理员配置 API Key，全校教师、学生、家长统一使用学校凭证。",
   },
   {
     id: "teacher_class",
@@ -136,7 +136,7 @@ export function SchoolModelPanel({
           <h1>模型调用模式</h1>
           <p>
             决定全校师生调用模型时使用谁的凭证。切换后立即生效，并影响之后的每一次
-            AI 调用；已保存的 API Key / OAuth 连接不会被删除，可随时切回。
+            AI 调用；已保存的 API Key 连接不会被删除，可随时切回。
           </p>
         </div>
         <Button

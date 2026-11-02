@@ -1,3 +1,7 @@
+import { DirectTeachingAnalysis } from "./DirectTeachingAnalysis";
+import { TeacherDashboard } from "./TeacherDashboard";
+import { questionGrade } from "./grades";
+import { QuestionFigure, type Figure } from "./QuestionFigure";
 import { ReviewHistory } from "./ReviewHistory";
 import { AssignmentDetails } from "./AssignmentDetails";
 import { CapabilitiesProvider, useCapabilities } from "./capabilities";
@@ -105,6 +109,7 @@ type Provider = {
   vision: boolean;
 };
 type DraftQuestion = {
+  figure?: Figure | null;
   prompt: string;
   standardAnswer: string;
   score: number;
@@ -223,28 +228,7 @@ function App() {
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: "auto" });
   }, [view]);
-  // OAuth 回调会带 ?oauth_status=connected|error|denied 返回单页应用。
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const status = params.get("oauth_status");
-    if (!status) return;
-    const provider = params.get("oauth_provider") || "";
-    const labels: Record<string, string> = {
-      connected: `OAuth 授权成功（${provider}），可在设置中选择使用。`,
-      denied: "已取消 OAuth 授权。",
-      error: "OAuth 授权未完成，请重试或改用 API Key。",
-    };
-    setToast(labels[status] || "OAuth 授权状态已更新。");
-    params.delete("oauth_status");
-    params.delete("oauth_provider");
-    params.delete("oauth_reason");
-    const query = params.toString();
-    window.history.replaceState(
-      null,
-      "",
-      `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`,
-    );
-  }, []);
+
   useEffect(() => {
     if (!toast) return;
     const id = setTimeout(() => setToast(""), 4500);
@@ -879,7 +863,7 @@ function Overview({
     <>
       <Title
         eyebrow="TEACHING WORKSPACE"
-        title={`${user.name}老师，今天从真实作业开始。`}
+        title={`${user.name}，教学工作台`}
         desc={`${user.stage} · ${user.subject} · ${user.class_name}。在本页完成作业上传、识别复核与教学分析。`}
       />
       <div className="metric-grid">
@@ -902,6 +886,7 @@ function Overview({
           </div>
         ))}
       </div>
+      <TeacherDashboard revision={revision} />
       <section className="real-flow">
         {[
           ["01", "导入学生", "注册或导入真实学生账户", "students"],
@@ -1171,7 +1156,7 @@ function Assignments({
                 disabled={uploading || !!uploadSession.current}
                 onChange={(e) => setStudentId(e.target.value)}
               >
-                <option value="">请选择本校学生</option>
+                <option value="">自动识别卷面姓名并匹配（也可手动选择）</option>
                 {students.map((s) => (
                   <option value={s.id} key={s.id}>
                     {s.name} · {s.stage} · {s.class_name}
@@ -1220,11 +1205,7 @@ function Assignments({
           )}
           <Button
             className="full"
-            disabled={
-              uploading ||
-              !files?.length ||
-              (user.role === "teacher" && !studentId)
-            }
+            disabled={uploading || !files?.length || false}
             onClick={() => send().catch((e) => notify(e.message))}
           >
             {uploading
@@ -1459,8 +1440,50 @@ function AssignmentForm({
                 onChange={(e) => patch(i, "prompt", e.target.value)}
               />
             </label>
+            <div className="field">
+              <QuestionFigure figure={q.figure} />
+              <label>
+                补充原题附图（仅图形本身，PNG/JPG/WebP，最大 250 KB）
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (!file) return;
+                    if (
+                      !["image/png", "image/jpeg", "image/webp"].includes(
+                        file.type,
+                      )
+                    )
+                      return notify("请选择 PNG、JPG 或 WebP 原题附图。");
+                    if (file.size > 250 * 1024)
+                      return notify(
+                        "附图过大，请选择不超过 250 KB 的题目图形。",
+                      );
+                    const reader = new FileReader();
+                    reader.onload = () =>
+                      patch(i, "figure", {
+                        shapes: [],
+                        caption: "原题附图",
+                        image: String(reader.result),
+                      });
+                    reader.onerror = () => notify("附图读取失败，请重试。");
+                    reader.readAsDataURL(file);
+                  }}
+                />
+              </label>
+              {q.figure && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => patch(i, "figure", null)}
+                >
+                  移除附图
+                </Button>
+              )}
+            </div>
             <label className="field">
-              <span>标准答案 / 评分要点</span>
+              <span>参考答案（客观题仅填答案）</span>
               <textarea
                 rows={4}
                 value={q.standardAnswer}
@@ -1708,6 +1731,35 @@ function Review({
     [attentionOnly, setAttentionOnly] = useState(false),
     [reviewMode, setReviewMode] = useState<"all" | "uncertain" | "none">("all"),
     [confirmed, setConfirmed] = useState<Record<string, boolean>>({});
+  const [linkStudents, setLinkStudents] = useState<Student[]>([]);
+  useEffect(() => {
+    void api<Student[]>("/students")
+      .then(setLinkStudents)
+      .catch((e) => notify(e.message));
+  }, []);
+  const linkStudent = async (studentId: string) => {
+    const target = detail?.id;
+    if (!studentId || !target) return;
+    try {
+      const result = await api<any>(
+        `/submissions/${target}/student`,
+        json("PATCH", { studentId }),
+      );
+      setDetail((current: any) =>
+        current?.id === target
+          ? {
+              ...current,
+              student_id: result.studentId,
+              student_name: result.studentName,
+            }
+          : current,
+      );
+      void load();
+      notify("已关联学生，作业和错题已同步到该学生账户。");
+    } catch (e) {
+      notify((e as Error).message);
+    }
+  };
   const guard = useRef(createReviewGuard()).current;
   const listGeneration = useRef(0);
   const modeRef = useRef<"all" | "uncertain" | "none">("all");
@@ -1978,6 +2030,24 @@ function Review({
                   <h2>{detail.student_name}</h2>
                   <p>
                     {statusName(detail.status)}
+                    {!detail.student_id && (
+                      <label className="field">
+                        <span>尚未匹配学生：请选择作业班级内的账号</span>
+                        <select
+                          value=""
+                          disabled={detail.status === "recognizing"}
+                          onChange={(e) => void linkStudent(e.target.value)}
+                        >
+                          <option value="">选择学生以同步作业与错题</option>
+                          {linkStudents.map((student) => (
+                            <option key={student.id} value={student.id}>
+                              {student.name} · {student.class_name} ·{" "}
+                              {student.username}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
                     {detail.grading_mode === "direct"
                       ? " · 无需原题 · AI 直接批改"
                       : ""}
@@ -2054,6 +2124,14 @@ function Review({
                   <textarea rows={7} value={detail.ocr_text} readOnly />
                 </label>
               )}
+              {detail.grading_mode === "direct" &&
+                !!detail.teacher_reviewed && (
+                  <DirectTeachingAnalysis
+                    key={detail.id}
+                    id={detail.id}
+                    initial={detail.analysis?.teachingAnalysis}
+                  />
+                )}
               {detail.analysis && review.error && (
                 <p role="alert">{review.error}</p>
               )}
@@ -2077,7 +2155,8 @@ function Review({
                   >
                     <div>
                       <strong>
-                        第 {question.number} 题 · 满分 {question.score}
+                        第 {question.number} 题 · 等级{" "}
+                        {questionGrade(x.score, question.score)}
                         {x.isCorrect ? " · 判为正确" : " · 判为错误"}
                         {isSuspect ? " · 存疑" : " · AI 高置信度"}
                       </strong>
@@ -2092,6 +2171,7 @@ function Review({
                       </span>
                     </div>
                     <p>{question.prompt}</p>
+                    <QuestionFigure figure={question.figure} />
                     {question.standard_answer && (
                       <p>教师标准答案：{question.standard_answer}</p>
                     )}
@@ -2374,6 +2454,8 @@ function Papers({ notify }: { notify: (s: string) => void }) {
                 <strong>
                   {i + 1}. {q.prompt}
                 </strong>
+                <QuestionFigure figure={q.figure} />
+                <div className="paper-answer-space" aria-label="作答区" />
                 <p>{q.knowledge_title || "未绑定知识点"}</p>
                 <details>
                   <summary>参考答案</summary>
@@ -2426,7 +2508,7 @@ function AccountSettings({
       <Title
         eyebrow="ACCOUNT & SECURITY"
         title="设置"
-        desc="账号名注册与登录；模型凭证按学校选择的调用模式生效。审核方式、OAuth 授权与 API Key 都集中在这里。"
+        desc="账号名注册与登录；模型凭证按学校选择的调用模式生效。审核方式与 API Key 都集中在这里。"
       />
       {!!user.is_school_admin && (
         <SchoolModelPanel
@@ -2496,7 +2578,7 @@ function AccountSettings({
               {user.is_school_admin
                 ? "你是学校管理员：在本页选择全校模型调用模式、配置班主任及学校凭证。"
                 : user.role === "parent"
-                  ? "家长账号可在「孩子看板」查看已绑定孩子的数据；在「老师分开 + 家长单独」模式下，可在本页配置自己的 API Key 或 OAuth 连接。"
+                  ? "家长账号可在「孩子看板」查看已绑定孩子的数据；在「老师分开 + 家长单独」模式下，可在本页配置自己的 API Key。"
                   : "你的模型凭证是否生效取决于学校选择的调用模式：全校统一模式使用学校管理员的凭证；老师分开模式使用你自己的凭证，学生与家长使用班主任的凭证。"}
             </p>
           </section>

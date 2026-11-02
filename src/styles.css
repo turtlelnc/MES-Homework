@@ -4687,3 +4687,88 @@ footer {
     display: none !important;
   }
 }
+
+/* rc1: a stable table of contents and clear type hierarchy. */
+body {
+  font-family: "Inter", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+h1,
+h2 {
+  font-family: "Noto Serif SC", "Songti SC", "SimSun", serif;
+  letter-spacing: 0.025em;
+}
+.metric strong {
+  font-family: "DIN Alternate", "Arial", sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+.workflow-chapters button {
+  text-align: left;
+  min-height: 44px;
+}
+.workflow-chapters button:active {
+  transform: scale(0.98);
+}
+@media (min-width: 1100px) {
+  .workflow-page {
+    grid-template-columns: 176px minmax(0, 1fr);
+    align-items: start;
+    column-gap: 24px;
+  }
+  .workflow-chapters {
+    grid-column: 1;
+    grid-row: 1 / span 30;
+    flex-direction: column;
+    align-items: stretch;
+    top: 90px;
+  }
+  .workflow-chapters > span {
+    margin: 0 0 8px;
+  }
+  .workflow-section {
+    grid-column: 2;
+    scroll-margin-top: 90px;
+  }
+}
+@media print {
+  .workflow-page {
+    display: block;
+  }
+}
+.question-figure {
+  margin: 16px 0;
+  max-width: 360px;
+  color: #182a42;
+}
+.question-figure svg {
+  width: 100%;
+  max-height: 300px;
+}
+.question-figure figcaption {
+  font-size: 13px;
+  color: #627187;
+}
+.paper-answer-space {
+  min-height: 110px;
+  border-bottom: 1px dotted #bec9d7;
+  margin: 16px 0;
+}
+.question-figure img {
+  display: block;
+  max-width: 100%;
+  max-height: 360px;
+  object-fit: contain;
+}
+.workflow-chapters button[aria-current="location"] {
+  background: #e9f1fc;
+  border-color: #8cb5e6;
+  color: #164e93;
+  font-weight: 650;
+}
+.parent-recent {
+  display: block;
+}
+@media (min-width: 1100px) {
+  .parent-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}

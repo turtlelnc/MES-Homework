@@ -77,8 +77,9 @@ export const publicPractice = (questions) =>
 
 export function studentAnalysis(analysis) {
   if (!analysis || typeof analysis !== "object") return null;
+  const { teachingAnalysis, ...visible } = analysis;
   return {
-    ...analysis,
+    ...visible,
     items: Array.isArray(analysis.items)
       ? analysis.items.map((item) => ({
           ...item,

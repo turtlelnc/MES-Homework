@@ -1,4 +1,6 @@
+import type { Figure } from "./QuestionFigure";
 export type ReviewQuestion = {
+  figure?: Figure | null;
   id: string;
   number: number;
   prompt: string;
