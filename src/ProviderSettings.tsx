@@ -10,22 +10,6 @@ import {
 } from "lucide-react";
 import { api, json } from "./api";
 import { Button } from "./components/ui/button";
-import { OAuthLoginDialog } from "./OAuthLoginDialog";
-import {
-  CHATGPT_DEVICE_VERIFICATION_URL,
-  formatConnectedAt,
-  isVisibleOAuthProvider,
-  oauthFlowsFor,
-  oauthProviderShortName,
-  visibleOAuthProviders,
-  type OAuthBrowserStartResponse,
-  type OAuthCard,
-  type OAuthDeviceStartResponse,
-  type OAuthFlow,
-  type OAuthPayload,
-  type OAuthStartInfo,
-} from "./oauth-flows";
-
 type ModeInfo = { id: string; label: string; desc: string };
 type ModelAccess = {
   mode: string;
@@ -50,11 +34,6 @@ type ProviderPreset = {
   endpoint: string;
   model: string;
   vision: boolean;
-};
-type OAuthState = {
-  providers: OAuthCard[];
-  authMode: string;
-  provider: string | null;
 };
 type ReviewModeInfo = { id: string; label: string; desc: string };
 type ReviewPayload = { mode: string; modes: ReviewModeInfo[] };
@@ -95,41 +74,6 @@ const FALLBACK_REVIEW_MODES: ReviewModeInfo[] = [
   },
 ];
 
-function regionLabel(region: string) {
-  return region === "cn" ? "中国区服务" : "国际区服务";
-}
-
-const CONNECTED_BADGE: React.CSSProperties = {
-  fontSize: 12,
-  padding: "2px 9px",
-  borderRadius: 999,
-  color: "#347854",
-  background: "#eef9f2",
-  border: "1px solid #d5ecdd",
-};
-const DISCONNECTED_BADGE: React.CSSProperties = {
-  fontSize: 12,
-  padding: "2px 9px",
-  borderRadius: 999,
-  color: "#7c8796",
-  background: "#f4f6f9",
-  border: "1px solid #e4e8ee",
-};
-const UNCONFIGURED_BADGE: React.CSSProperties = {
-  fontSize: 12,
-  padding: "2px 9px",
-  borderRadius: 999,
-  color: "#b7514a",
-  background: "#fdf0ee",
-  border: "1px solid #f3d6d1",
-};
-
-function oauthBadgeStyle(card: OAuthCard): React.CSSProperties {
-  if (card.connected) return CONNECTED_BADGE;
-  if (!card.configured) return UNCONFIGURED_BADGE;
-  return DISCONNECTED_BADGE;
-}
-
 function Field(
   props: React.InputHTMLAttributes<HTMLInputElement> & { label: string },
 ) {
@@ -155,11 +99,6 @@ export function ProviderSettings({
   const [endpointDraft, setEndpointDraft] = useState("");
   const [apiKeyDraft, setApiKeyDraft] = useState("");
   const [apiKeyStatus, setApiKeyStatus] = useState("");
-  const [oauth, setOauth] = useState<OAuthState>({
-    providers: [],
-    authMode: "api_key",
-    provider: null,
-  });
   const [review, setReview] = useState<ReviewPayload>({
     mode: "all",
     modes: FALLBACK_REVIEW_MODES,
@@ -167,48 +106,12 @@ export function ProviderSettings({
   const [reviewAvailable, setReviewAvailable] = useState(true);
   const [reviewError, setReviewError] = useState("");
   const [reviewBusy, setReviewBusy] = useState("");
-  const [authModeDraft, setAuthModeDraft] = useState("api_key");
-  const [oauthDraft, setOauthDraft] = useState("");
-  const [pendingMainland, setPendingMainland] = useState<{
-    card: OAuthCard;
-    flow: OAuthFlow;
-  } | null>(null);
-  const [session, setSession] = useState<{
-    card: OAuthCard;
-    flow: OAuthFlow;
-    start: OAuthStartInfo | null;
-  } | null>(null);
   const [busy, setBusy] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
 
-  // Keep only the rc4 providers (chatgpt/gemini/workbuddy) and make sure the
-  // "使用方式" provider select never points at a removed/disconnected card.
-  const applyOAuthPayload = (data: OAuthPayload | null | undefined) => {
-    const providers = visibleOAuthProviders(data?.providers);
-    const connected = providers.filter((card) => card.connected);
-    const providerId =
-      data?.provider && isVisibleOAuthProvider(data.provider)
-        ? data.provider
-        : null;
-    const preferred =
-      (providerId && connected.some((card) => card.id === providerId)
-        ? providerId
-        : connected[0]?.id) || "";
-    setOauth({
-      providers,
-      authMode: data?.authMode === "oauth" ? "oauth" : "api_key",
-      provider: providerId,
-    });
-    setAuthModeDraft(data?.authMode === "oauth" ? "oauth" : "api_key");
-    setOauthDraft(preferred);
-  };
-
   const loadAccess = async () => {
     setAccess(await api<ModelAccess>("/model/access"));
-  };
-  const loadOAuth = async () => {
-    applyOAuthPayload(await api<OAuthPayload>("/oauth/providers"));
   };
   const loadReview = async () => {
     setReview(await api<ReviewPayload>("/settings/review-mode"));
@@ -219,20 +122,17 @@ export function ProviderSettings({
   useEffect(() => {
     if (observedRevision.current === configurationRevision) return;
     observedRevision.current = configurationRevision;
-    void Promise.all([loadAccess(), loadOAuth()]).catch((error) =>
-      notify(error.message),
-    );
+    void Promise.all([loadAccess()]).catch((error) => notify(error.message));
   }, [configurationRevision]);
 
   useEffect(() => {
     let active = true;
     (async () => {
       try {
-        const [accessData, presetData, oauthData, savedData, reviewData] =
+        const [accessData, presetData, savedData, reviewData] =
           await Promise.all([
             api<ModelAccess>("/model/access"),
             api<ProviderPreset[]>("/providers"),
-            api<OAuthPayload>("/oauth/providers"),
             api<SavedProvider>("/settings/provider"),
             api<ReviewPayload>("/settings/review-mode").catch((error) => {
               if (active) setReviewError(error.message);
@@ -242,7 +142,6 @@ export function ProviderSettings({
         if (!active) return;
         setAccess(accessData);
         setPresets(presetData);
-        applyOAuthPayload(oauthData);
         setSaved(savedData);
         setApiProviderDraft(savedData?.provider || presetData[0]?.id || "");
         setModelDraft(savedData?.model || "");
@@ -263,36 +162,11 @@ export function ProviderSettings({
     };
   }, []);
 
-  // OAuth provider callbacks land on "/" with query flags; consume them once.
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const status = params.get("oauth_status");
-    if (!status) return;
-    const providerId = params.get("oauth_provider") || "";
-    const providerName = oauthProviderShortName(providerId);
-    if (status === "connected")
-      notify(`${providerName} OAuth 授权已连接，可以切换为 OAuth 使用方式。`);
-    else if (status === "denied") notify("已取消 OAuth 授权，未做任何更改。");
-    else
-      notify(
-        `OAuth 授权未完成（${params.get("oauth_reason") || "unknown"}），请重试或继续使用 API Key。`,
-      );
-    for (const key of ["oauth_status", "oauth_provider", "oauth_reason"])
-      params.delete(key);
-    const query = params.toString();
-    window.history.replaceState(
-      {},
-      "",
-      `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`,
-    );
-  }, []);
-
   const refreshAll = async () => {
     setLoading(true);
     try {
-      const [, , , nextPresets, nextSaved] = await Promise.all([
+      const [, , nextPresets, nextSaved] = await Promise.all([
         loadAccess(),
-        loadOAuth(),
         loadReview(),
         api<ProviderPreset[]>("/providers"),
         api<SavedProvider>("/settings/provider"),
@@ -334,165 +208,10 @@ export function ProviderSettings({
         : "配置已保存，当前使用方式未更改。";
       setApiKeyStatus(message);
       notify(message);
-      await Promise.all([loadAccess(), loadOAuth()]);
+      await Promise.all([loadAccess()]);
     } catch (error) {
       setApiKeyStatus(`保存失败：${(error as Error).message}`);
       notify(`保存失败：${(error as Error).message}`);
-    } finally {
-      setBusy("");
-    }
-  };
-
-  const saveAuthMode = async () => {
-    setBusy("auth-mode");
-    try {
-      await api(
-        "/model/auth-mode",
-        json("PUT", {
-          mode: authModeDraft,
-          ...(authModeDraft === "oauth" ? { provider: oauthDraft } : {}),
-        }),
-      );
-      notify(
-        authModeDraft === "oauth"
-          ? "已切换为 OAuth 授权方式。"
-          : "已切换为 API Key 方式。",
-      );
-      await Promise.all([loadAccess(), loadOAuth()]);
-    } catch (error) {
-      notify(`切换失败：${(error as Error).message}`);
-    } finally {
-      setBusy("");
-    }
-  };
-
-  // Begin a browser or device attempt. WorkBuddy device login needs the
-  // region choice first, so the dialog creates that attempt itself.
-  const launchFlow = async (card: OAuthCard, flow: OAuthFlow) => {
-    setPendingMainland(null);
-    if (card.id === "workbuddy") {
-      // WorkBuddy 的浏览器登录/设备码登录都需要先选国内版或国际版；
-      // 对话框在用户选择后自行发起 attempt。
-      setSession({ card, flow, start: null });
-      return;
-    }
-    setBusy(`oauth-${card.id}`);
-    let popup: Window | null = null;
-    try {
-      if (flow === "browser") {
-        popup = window.open("about:blank", "_blank");
-        if (popup) popup.opener = null;
-        const result = await api<OAuthBrowserStartResponse>(
-          `/oauth/${encodeURIComponent(card.id)}/browser/start`,
-          json("POST", {}),
-        );
-        const url = result.url || result.authorizeUrl || "";
-        if (!result.attemptId) {
-          // v0.2.1-rc3 compatibility: the old endpoint only returned a URL.
-          if (url) {
-            window.location.href = url;
-            return;
-          }
-          throw new Error("服务端未返回授权链接");
-        }
-        const popupBlocked = !popup || !url;
-        if (popup && url) popup.location.href = url;
-        setSession({
-          card,
-          flow,
-          start: {
-            attemptId: result.attemptId,
-            verificationUrl: url,
-            popupBlocked,
-          },
-        });
-      } else {
-        const result = await api<OAuthDeviceStartResponse>(
-          `/oauth/${encodeURIComponent(card.id)}/device/start`,
-          json("POST", {}),
-        );
-        if (!result.attemptId) throw new Error("服务端未返回登录尝试编号");
-        setSession({
-          card,
-          flow,
-          start: {
-            attemptId: result.attemptId,
-            verificationUrl:
-              result.verificationUrl ||
-              (card.id === "chatgpt" ? CHATGPT_DEVICE_VERIFICATION_URL : ""),
-            userCode: result.userCode,
-            intervalMs: result.intervalMs,
-          },
-        });
-      }
-    } catch (error) {
-      popup?.close();
-      notify(`发起 OAuth 登录失败：${(error as Error).message}`);
-    } finally {
-      setBusy("");
-    }
-  };
-
-  const startFlow = (card: OAuthCard, flow: OAuthFlow) => {
-    if (!card.configured) {
-      notify(
-        `${card.name} 尚未配置，需设置环境变量：${(card.envHint || []).join("、") || "请联系部署管理员"}`,
-      );
-      return;
-    }
-    if (!access?.canConfigure) {
-      notify("当前模式与角色不允许本账户配置 OAuth，请联系学校管理员。");
-      return;
-    }
-    if (card.mainlandUnavailable && flow === "browser") {
-      // Legacy guard kept for the browser flow (README: 跳转前提示); device
-      // login warns inside the dialog because the user opens the page manually.
-      setPendingMainland({ card, flow });
-      return;
-    }
-    void launchFlow(card, flow);
-  };
-
-  const retrySession = async () => {
-    const current = session;
-    if (!current) return;
-    if (current.start?.attemptId) {
-      try {
-        await api(
-          `/oauth/${current.card.id}/attempt/${current.start.attemptId}`,
-          { method: "DELETE" },
-        );
-      } catch {
-        /* Expired attempts are already closed by the server. */
-      }
-    }
-    setSession(null);
-    if (current.card.mainlandUnavailable && current.flow === "browser") {
-      setPendingMainland({ card: current.card, flow: current.flow });
-      return;
-    }
-    void launchFlow(current.card, current.flow);
-  };
-
-  const handleOAuthConnected = async () => {
-    try {
-      await Promise.all([loadAccess(), loadOAuth()]);
-    } catch (error) {
-      notify(`刷新授权状态失败：${(error as Error).message}`);
-    }
-  };
-
-  const disconnect = async (card: OAuthCard) => {
-    setBusy(`oauth-${card.id}`);
-    try {
-      await api(
-        `/oauth/${encodeURIComponent(card.id)}/disconnect`,
-        json("POST", {}),
-      );
-      notify(`已断开 ${card.name} 的 OAuth 连接。`);
-      await Promise.all([loadAccess(), loadOAuth()]);
-    } catch (error) {
-      notify(`断开失败：${(error as Error).message}`);
     } finally {
       setBusy("");
     }
@@ -537,11 +256,10 @@ export function ProviderSettings({
     <div style={{ display: "grid", gap: 20, alignContent: "start" }}>
       <div className="rc4-title">
         <div>
-          <span className="eyebrow">MODEL ACCESS · OAUTH</span>
+          <span className="eyebrow">MODEL SETTINGS</span>
           <h1>模型与授权</h1>
           <p>
-            API Key 与 OAuth
-            双通道；密钥与令牌只在服务端加密保存，任何页面都不会回显。
+            选择模型厂商，填入 API Key 后保存即可。密钥仅在服务端加密保存。
             当前账户：{user?.name || ""}
             {outerRole ? `（${outerRole}）` : ""}。
           </p>
@@ -593,7 +311,7 @@ export function ProviderSettings({
             <div className="metric">
               <span>使用方式</span>
               <strong>
-                {access.authMode === "oauth" ? "OAuth 授权" : "API Key"}
+                API Key
                 {access.provider ? ` · ${access.provider}` : ""}
               </strong>
             </div>
@@ -727,226 +445,7 @@ export function ProviderSettings({
             </p>
           )}
         </form>
-
-        <section className="rc4-panel">
-          <h2>
-            <Link2 /> 当前使用方式
-          </h2>
-          <p className="panel-intro">
-            API Key 与 OAuth 可共存；这里选择当前实际用于模型调用的通道。 OAuth
-            方式要求对应 provider 已连接。
-          </p>
-          <label className="field">
-            <span>使用方式</span>
-            <select
-              value={authModeDraft}
-              onChange={(e) => setAuthModeDraft(e.target.value)}
-              disabled={!access?.canConfigure || busy === "auth-mode"}
-            >
-              <option value="api_key">API Key</option>
-              <option value="oauth">OAuth 授权</option>
-            </select>
-          </label>
-          {authModeDraft === "oauth" && (
-            <label className="field">
-              <span>OAuth 提供方</span>
-              <select
-                value={oauthDraft}
-                onChange={(e) => setOauthDraft(e.target.value)}
-                disabled={!access?.canConfigure || busy === "auth-mode"}
-              >
-                <option value="">请选择已连接的 provider</option>
-                {oauth.providers
-                  .filter((card) => card.connected)
-                  .map((card) => (
-                    <option value={card.id} key={card.id}>
-                      {card.name}
-                    </option>
-                  ))}
-              </select>
-            </label>
-          )}
-          <Button
-            className="full"
-            type="button"
-            onClick={() => void saveAuthMode()}
-            disabled={!access?.canConfigure || busy === "auth-mode"}
-          >
-            {busy === "auth-mode" ? "正在保存…" : "保存使用方式"}
-          </Button>
-        </section>
       </div>
-
-      <section className="rc4-panel">
-        <h2>
-          <Link2 /> OAuth 授权方式
-        </h2>
-        <p className="panel-intro">
-          登录完成后点击“使用此连接”启用。Gemini 需要部署方配置；ChatGPT 与
-          WorkBuddy
-          为实验性兼容入口，适用条件见各卡片。授权令牌仅在服务器加密保存。
-        </p>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-            gap: 12,
-          }}
-        >
-          {oauth.providers.map((card) => {
-            const flows = oauthFlowsFor(card);
-            const cardBusy = busy === `oauth-${card.id}`;
-            const envHints = card.envHint || [];
-            return (
-              <div
-                key={card.id}
-                style={{
-                  border: "1px solid #e4e8ee",
-                  borderRadius: 13,
-                  padding: 16,
-                  display: "grid",
-                  gap: 10,
-                  alignContent: "start",
-                  background: "linear-gradient(160deg, #ffffff, #f8fbff)",
-                  boxShadow: "0 1px 2px rgba(16, 40, 72, 0.04)",
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    gap: 8,
-                    alignItems: "center",
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <strong>{card.name}</strong>
-                  <span style={oauthBadgeStyle(card)}>
-                    {card.connected
-                      ? "已连接"
-                      : card.configured
-                        ? "未连接"
-                        : "未配置"}
-                  </span>
-                </div>
-                <p style={{ color: "#8491a3", fontSize: 13, lineHeight: 1.7 }}>
-                  {card.description}
-                </p>
-                {card.setupHint && (
-                  <p className="panel-intro">{card.setupHint}</p>
-                )}
-                {card.verification === "experimental" && (
-                  <strong>实验性兼容连接 · 尚未验证真实登录</strong>
-                )}
-                {card.redirectUri && (
-                  <small>
-                    Google 控制台回调地址：
-                    <code style={{ overflowWrap: "anywhere" }}>
-                      {card.redirectUri}
-                    </code>
-                  </small>
-                )}
-                <small style={{ color: "#7c8796", lineHeight: 1.7 }}>
-                  默认模型：{card.model || "—"}
-                  {card.vision ? " · 支持图片" : " · 仅文本"} ·{" "}
-                  {regionLabel(card.region)}
-                  {card.mainlandUnavailable ? " · 大陆可能不可用" : ""}
-                </small>
-                {card.connected && (
-                  <small style={{ color: "#347854", lineHeight: 1.7 }}>
-                    已连接
-                    {card.connectedAt
-                      ? ` · ${formatConnectedAt(card.connectedAt)}`
-                      : ""}
-                  </small>
-                )}
-                {!card.configured && (
-                  <small style={{ color: "#b7514a", lineHeight: 1.7 }}>
-                    未配置，需设置环境变量：
-                    {envHints.length
-                      ? envHints.join("、")
-                      : "（请联系部署管理员）"}
-                  </small>
-                )}
-                <div
-                  className="form-actions"
-                  style={{
-                    justifyContent: "flex-start",
-                    flexWrap: "wrap",
-                    marginTop: 2,
-                  }}
-                >
-                  {card.connected ? (
-                    <>
-                      <Button
-                        type="button"
-                        disabled={
-                          cardBusy || !access?.canConfigure || !card.configured
-                        }
-                        onClick={async () => {
-                          setBusy(`oauth-${card.id}`);
-                          try {
-                            await api(
-                              "/model/auth-mode",
-                              json("PUT", { mode: "oauth", provider: card.id }),
-                            );
-                            await Promise.all([loadAccess(), loadOAuth()]);
-                            notify(`当前已使用 ${card.name}。`);
-                          } catch (error) {
-                            notify((error as Error).message);
-                          } finally {
-                            setBusy("");
-                          }
-                        }}
-                      >
-                        {oauth.authMode === "oauth" &&
-                        oauth.provider === card.id
-                          ? "当前正在使用"
-                          : "使用此连接"}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        type="button"
-                        onClick={() => void disconnect(card)}
-                        disabled={cardBusy}
-                      >
-                        {cardBusy ? "正在断开…" : "断开连接"}
-                      </Button>
-                    </>
-                  ) : (
-                    flows.map((flow) => (
-                      <Button
-                        key={flow}
-                        type="button"
-                        variant={flow === "browser" ? "default" : "outline"}
-                        onClick={() => startFlow(card, flow)}
-                        disabled={
-                          cardBusy || !card.configured || !access?.canConfigure
-                        }
-                      >
-                        {flow === "browser" ? (
-                          <>
-                            <Globe size={16} />
-                            {cardBusy ? "正在申请…" : "浏览器登录"}
-                          </>
-                        ) : (
-                          <>
-                            <Smartphone size={16} />
-                            {cardBusy ? "正在申请…" : "设备码登录"}
-                          </>
-                        )}
-                      </Button>
-                    ))
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-        {oauth.providers.length === 0 && (
-          <p className="panel-intro">暂无可用的 OAuth provider。</p>
-        )}
-      </section>
 
       {user.role === "teacher" && !user.is_school_admin && (
         <section className="rc4-panel">
@@ -1012,68 +511,6 @@ export function ProviderSettings({
             </p>
           )}
         </section>
-      )}
-
-      {pendingMainland && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(9, 31, 58, 0.55)",
-            display: "grid",
-            placeItems: "center",
-            padding: 20,
-            zIndex: 1000,
-          }}
-        >
-          <div className="rc4-panel" style={{ maxWidth: 520, width: "100%" }}>
-            <h2>
-              <ShieldAlert /> 中国大陆境内不可用确认
-            </h2>
-            <p className="panel-intro">
-              {pendingMainland.card.name}{" "}
-              在中国大陆境内不可用，继续将打开境外授权页，
-              可能无法完成授权或连接不稳定。
-            </p>
-            <p className="save-status">
-              即将以{regionLabel(pendingMainland.card.region)}方式连接
-              {pendingMainland.flow === "browser" ? "浏览器授权" : "设备码登录"}
-              （{pendingMainland.card.name}）。
-            </p>
-            <div className="form-actions">
-              <Button
-                variant="outline"
-                type="button"
-                onClick={() => setPendingMainland(null)}
-              >
-                取消
-              </Button>
-              <Button
-                type="button"
-                onClick={() =>
-                  void launchFlow(pendingMainland.card, pendingMainland.flow)
-                }
-              >
-                仍要继续
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {session && (
-        <OAuthLoginDialog
-          key={`${session.card.id}-${session.flow}-${session.start?.attemptId || "new"}`}
-          card={session.card}
-          flow={session.flow}
-          start={session.start}
-          notify={notify}
-          onClose={() => setSession(null)}
-          onRetry={retrySession}
-          onConnected={handleOAuthConnected}
-        />
       )}
     </div>
   );

@@ -1,5 +1,7 @@
+import { normalizeFigure } from "../shared/figure.mjs";
+import { referenceAnswer } from "../shared/reference-answer.mjs";
 // 无原题直批：教师不上传原题，只上传学生答卷（图片/PDF/Word），
-// 由模型按学生卷面切分题目、给出参考答案与评分要点，再逐题判分。
+// 由模型按学生卷面切分题目、给出参考答案（选择、填空题只写答案，不含评分要点），再逐题判分。
 // 这一层负责：提示词、模型 JSON 的强校验归一化、知识点落库关联。
 
 const INVALID_FORMAT = "模型返回的批改结果格式无效，请重试";
@@ -21,7 +23,7 @@ function numberValue(value) {
 function buildGuidancePromptLines() {
   return [
     "1. 按学生卷面顺序切分题目；题号尽量按卷面，原卷没有题号时按顺序编号。",
-    "2. 每题给出可判分的参考答案与评分要点；无法确定答案时写“参考要点：…”，不得编造分数。",
+    "2. 每题给出可判分的参考答案（选择、填空题只写答案，不含评分要点）；无法确定答案时写“参考要点：…”，不得编造分数。",
     "3. 逐题判分，并用 reasoning 具体说明判断依据（对照了哪些答案要素、为什么对/错），不能只写“答案正确/错误”。",
     "4. 错题要给 reason（错因）、correction（订正答案）、explanation（分步解析）、2 道同类练习、guidance（引导思考，不给最终答案）。",
     "5. 无法辨认的作答写 [无法辨认]，并把 confidence 降到 0.5 以下。",
@@ -53,7 +55,7 @@ export function buildDirectGradingPrompt({
 ${source}
 批改要求：
 ${buildGuidancePromptLines()}
-只返回 JSON：{"ocrText":"整份答卷识别原文","questions":[{"number":1,"prompt":"题干（含学生作答上下文；原卷无题干时按学生答案推断并标注[推断]）","referenceAnswer":"参考答案/评分要点","score":10,"knowledgeTitle":"知识点"}],"items":[{"number":1,"studentAnswer":"学生答案","isCorrect":false,"score":0,"reason":"错误原因（错因归类文案）","correction":"订正答案","explanation":"分步解析","reasoning":"判断依据：对照答案要素、为什么对/错","confidence":0.9,"practiceQuestions":[{"prompt":"同类题","answer":"答案","explanation":"解析"}],"guidance":{"keyQuestion":"引导思考的关键问题（不给答案）","hints":["提示1（思路）","提示2（步骤）","提示3（关键一步）"],"selfCheck":["自检问题"]}}],"warnings":["需要教师注意的问题"]}`;
+从卷面姓名栏读取studentName，无法辨认则留空，不猜测。题图必须独立重建为600×600坐标的figure:{caption,shapes:[{type:"line/circle/text",x,y,x2,y2,r,text}]}，无图或不能忠实重建时figure=null并提示教师，不输出屏幕截图。只返回 JSON：{"studentName":"卷面姓名","ocrText":"整份答卷识别原文","questions":[{"questionType":"choice/fill/subjective","number":1,"figure":null,"prompt":"题干（含学生作答上下文；原卷无题干时按学生答案推断并标注[推断]）","referenceAnswer":"参考答案/评分要点","score":10,"knowledgeTitle":"知识点"}],"items":[{"number":1,"studentAnswer":"学生答案","isCorrect":false,"score":0,"reason":"错误原因（错因归类文案）","correction":"订正答案","explanation":"分步解析","reasoning":"判断依据：对照答案要素、为什么对/错","confidence":0.9,"practiceQuestions":[{"prompt":"同类题","answer":"答案","explanation":"解析"}],"guidance":{"keyQuestion":"引导思考的关键问题（不给答案）","hints":["提示1（思路）","提示2（步骤）","提示3（关键一步）"],"selfCheck":["自检问题"]}}],"warnings":["需要教师注意的问题"]}`;
 }
 
 function normalizePracticeQuestions(value) {
@@ -119,7 +121,9 @@ export function normalizeDirectGrading(parsed) {
     if (warnings.length < MAX_WARNINGS) warnings.push(text(message, 500));
   };
   if (rawQuestions.length > MAX_QUESTIONS)
-    pushWarning(`模型返回题目超过 ${MAX_QUESTIONS} 道，已截断为前 ${MAX_QUESTIONS} 道。`);
+    pushWarning(
+      `模型返回题目超过 ${MAX_QUESTIONS} 道，已截断为前 ${MAX_QUESTIONS} 道。`,
+    );
   const listed = rawQuestions.slice(0, MAX_QUESTIONS);
 
   const questions = listed.map((raw, index) => {
@@ -130,16 +134,24 @@ export function normalizeDirectGrading(parsed) {
     if (!prompt) pushWarning(`第 ${number} 题缺少题干，已标记为待补充。`);
     let score = 0;
     const rawScore = numberValue(source.score);
-    if (rawScore !== null && rawScore >= 0 && rawScore <= 1000) score = rawScore;
+    if (rawScore !== null && rawScore >= 0 && rawScore <= 1000)
+      score = rawScore;
     else if (rawScore !== null)
       pushWarning(`第 ${number} 题分值超出 0–1000 范围，已按 0 分处理。`);
     return {
+      figure: normalizeFigure(source.figure),
       id: `dq${number}`,
       number,
       prompt: prompt || `（第 ${number} 题题干缺失，待教师补充）`,
-      standardAnswer: text(
-        source.referenceAnswer ?? source.standardAnswer ?? source.standard_answer,
-        4000,
+      standardAnswer: referenceAnswer(
+        text(
+          source.referenceAnswer ??
+            source.standardAnswer ??
+            source.standard_answer,
+          4000,
+        ),
+        prompt,
+        source.questionType,
       ),
       score,
       knowledgeTitle: text(
@@ -163,8 +175,7 @@ export function normalizeDirectGrading(parsed) {
       byNumber.set(sourceNumber, question);
   });
   for (const question of questions)
-    if (!byNumber.has(question.number))
-      byNumber.set(question.number, question);
+    if (!byNumber.has(question.number)) byNumber.set(question.number, question);
   const byId = new Map(questions.map((question) => [question.id, question]));
 
   const items = questions.map((question) => defaultItem(question));
@@ -227,7 +238,9 @@ export function normalizeDirectGrading(parsed) {
     target.reasoning = text(raw.reasoning, 4000);
     target.confidence =
       confidence === null ? -1 : Math.min(1, Math.max(0, confidence));
-    target.practiceQuestions = normalizePracticeQuestions(raw.practiceQuestions);
+    target.practiceQuestions = normalizePracticeQuestions(
+      raw.practiceQuestions,
+    );
     target.guidance = normalizeGuidance(raw.guidance);
   });
 
@@ -294,10 +307,7 @@ export function linkQuestions(ctx, { assignment, questions, teacherId } = {}) {
   return questions.map((question) => {
     const item =
       question && typeof question === "object" ? { ...question } : {};
-    const title = text(
-      item.knowledgeTitle ?? item.knowledge_title,
-      120,
-    );
+    const title = text(item.knowledgeTitle ?? item.knowledge_title, 120);
     let knowledgeId = null;
     if (schoolId && title) {
       knowledgeId = knowledgeByTitle.get(title) || null;

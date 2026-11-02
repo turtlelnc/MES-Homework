@@ -8,7 +8,7 @@ import path from "node:path";
 import net from "node:net";
 import { pathToFileURL } from "node:url";
 
-// v0.2.1-rc4 端到端验收：真实启动服务，模型调用由 preload 的假 fetch 按顺序返回
+// v0.2.2-rc1 端到端验收：真实启动服务，模型调用由 preload 的假 fetch 按顺序返回
 // 预置 JSON。覆盖四身份注册、模型模式与凭证归属、三种复核方式、无原题直批、
 // 引导式错题本、家长端看板/学情分析与 OAuth 目录。
 
@@ -76,21 +76,29 @@ async function login(body: Record<string, unknown>) {
   };
 }
 async function start() {
-  child = spawn(process.execPath, ["--import", pathToFileURL(path.join(dir, "mock.mjs")).href, "server/index.mjs"], {
-    cwd: root,
-    env: {
-      ...process.env,
-      DATA_DIR: dir,
-      PORT: String(port),
-      HOST: "127.0.0.1",
-      NODE_ENV: "test",
-      SYSTEM_PRESSURE_ENABLED: "0",
-      APP_SECRET: "v021-e2e-test-only-secret-32-characters",
-      OAUTH_CHATGPT_CLIENT_ID: "test-client-id",
-      OAUTH_CHATGPT_CLIENT_SECRET: "test-client-secret",
+  child = spawn(
+    process.execPath,
+    [
+      "--import",
+      pathToFileURL(path.join(dir, "mock.mjs")).href,
+      "server/index.mjs",
+    ],
+    {
+      cwd: root,
+      env: {
+        ...process.env,
+        DATA_DIR: dir,
+        PORT: String(port),
+        HOST: "127.0.0.1",
+        NODE_ENV: "test",
+        SYSTEM_PRESSURE_ENABLED: "0",
+        APP_SECRET: "v021-e2e-test-only-secret-32-characters",
+        OAUTH_CHATGPT_CLIENT_ID: "test-client-id",
+        OAUTH_CHATGPT_CLIENT_SECRET: "test-client-secret",
+      },
+      stdio: ["ignore", "pipe", "pipe"],
     },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  );
   let serverLog = "";
   child.stdout?.on("data", (chunk) => (serverLog += chunk));
   child.stderr?.on("data", (chunk) => (serverLog += chunk));
@@ -186,12 +194,12 @@ afterAll(async () => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-describe("v0.2.1-rc4 (mock model only)", () => {
+describe("v0.2.2-rc1 (mock model only)", () => {
   it("reports the new version and build number", async () => {
     const health = await (await request("/api/health")).json();
-    expect(health.version).toBe("v0.2.1-rc4");
-    expect(health.build).toBe("26102501");
-    expect(health.versionLabel).toBe("v0.2.1-rc4 (build26102501)");
+    expect(health.version).toBe("v0.2.2-rc1");
+    expect(health.build).toBe("26110101");
+    expect(health.versionLabel).toBe("v0.2.2-rc1 (build26110101)");
   });
 
   it("registers school / teacher / student / parent with account names", async () => {
@@ -278,14 +286,12 @@ describe("v0.2.1-rc4 (mock model only)", () => {
       ).response.status,
     ).toBe(400);
 
-    adminId = String(
-      (await (await request("/api/me", admin)).json()).id,
-    );
-    studentId = String(
-      (await (await request("/api/me", student)).json()).id,
-    );
+    adminId = String((await (await request("/api/me", admin)).json()).id);
+    studentId = String((await (await request("/api/me", student)).json()).id);
     const teachers = await (await request("/api/teachers", admin)).json();
-    teacherId = String(teachers.find((row: any) => row.username === "wanglaoshi").id);
+    teacherId = String(
+      teachers.find((row: any) => row.username === "wanglaoshi").id,
+    );
   });
 
   it("assigns the class head teacher and switches the school model mode", async () => {
@@ -377,7 +383,11 @@ describe("v0.2.1-rc4 (mock model only)", () => {
             reasoning: "对照参考答案 2，学生作答 3，判定为计算错误。",
             confidence: 0.93,
             practiceQuestions: [
-              { prompt: "1+2 等于多少？", answer: "3", explanation: "逐个数。" },
+              {
+                prompt: "1+2 等于多少？",
+                answer: "3",
+                explanation: "逐个数。",
+              },
             ],
             guidance: {
               keyQuestion: "你能再检查一次这个加法吗？",
@@ -390,7 +400,8 @@ describe("v0.2.1-rc4 (mock model only)", () => {
     ]);
     await recognize(submissionId);
     const result = await waitFor(
-      async () => (await request(`/api/submissions/${submissionId}`, teacher)).json(),
+      async () =>
+        (await request(`/api/submissions/${submissionId}`, teacher)).json(),
       (row: any) => ["completed", "failed"].includes(row.status),
       "bank auto review",
     );
@@ -484,7 +495,8 @@ describe("v0.2.1-rc4 (mock model only)", () => {
     ]);
     await recognize(submissionId);
     const detail = await waitFor(
-      async () => (await request(`/api/submissions/${submissionId}`, teacher)).json(),
+      async () =>
+        (await request(`/api/submissions/${submissionId}`, teacher)).json(),
       (row: any) => row.status === "review",
       "direct recognition",
     );
@@ -503,17 +515,27 @@ describe("v0.2.1-rc4 (mock model only)", () => {
     }));
     expect(
       (
-        await request(`/api/submissions/${submissionId}/review`, teacher, "POST", {
-          items,
-        })
+        await request(
+          `/api/submissions/${submissionId}/review`,
+          teacher,
+          "POST",
+          {
+            items,
+          },
+        )
       ).status,
     ).toBe(400);
     items[0].confirmed = true;
     expect(
       (
-        await request(`/api/submissions/${submissionId}/review`, teacher, "POST", {
-          items,
-        })
+        await request(
+          `/api/submissions/${submissionId}/review`,
+          teacher,
+          "POST",
+          {
+            items,
+          },
+        )
       ).status,
     ).toBe(200);
     const completed = await (
@@ -540,9 +562,9 @@ describe("v0.2.1-rc4 (mock model only)", () => {
     expect(text).not.toContain("correction");
     expect(text).not.toContain("explanation");
     expect(text).not.toContain("standard_answer");
-    expect(direct.practiceQuestions.every((row: any) => !("answer" in row))).toBe(
-      true,
-    );
+    expect(
+      direct.practiceQuestions.every((row: any) => !("answer" in row)),
+    ).toBe(true);
     expect(direct.guidance.keyQuestion).toContain("合起来");
 
     const hint = await (
@@ -598,14 +620,22 @@ describe("v0.2.1-rc4 (mock model only)", () => {
         summary: "孩子整体计算基础尚可，但粗心失分明显。",
         strengths: ["加法口算速度不错"],
         weaknesses: [
-          { knowledge: "加法", evidence: "第 1 题算错", suggestion: "每天 5 道口算" },
+          {
+            knowledge: "加法",
+            evidence: "第 1 题算错",
+            suggestion: "每天 5 道口算",
+          },
         ],
         subjectAnalysis: [
           { subject: "物理", level: "稳定", detail: "作业完成度稳定" },
         ],
         studyHabits: ["检查习惯需要加强"],
         homeActions: [
-          { action: "陪孩子检查作业", how: "让孩子先自查再签字", frequency: "每天" },
+          {
+            action: "陪孩子检查作业",
+            how: "让孩子先自查再签字",
+            frequency: "每天",
+          },
         ],
         encouragement: "你已经会做大部分题了，继续保持。",
       },
@@ -635,65 +665,293 @@ describe("v0.2.1-rc4 (mock model only)", () => {
     ).toBe(429);
   });
 
-  it("exposes the rc4 OAuth provider matrix and browser/device flows", async () => {
-    const catalog = await (
-      await request("/api/oauth/providers", teacher)
+  it("keeps independent figures through publishing and paper generation", async () => {
+    const figure = {
+      caption: "三角形 ABC",
+      shapes: [{ type: "line", x: 20, y: 20, x2: 200, y2: 200 }],
+    };
+    const createdResponse = await request("/api/assignments", teacher, "POST", {
+      title: "rc1 图题",
+      questions: [
+        {
+          prompt: "选择题：如图，选择正确结论",
+          standardAnswer: "A\n评分要点：选A得满分",
+          score: 10,
+          figure,
+        },
+      ],
+    });
+    expect(createdResponse.status).toBe(200);
+    const created = await createdResponse.json();
+    const detail = await (
+      await request(`/api/assignments/${created.id}`, teacher)
     ).json();
-    expect(catalog.providers.map((row: any) => row.id).sort()).toEqual([
-      "chatgpt",
-      "gemini",
-      "workbuddy",
-    ]);
-    const byId = new Map(catalog.providers.map((row: any) => [row.id, row]));
-    expect(byId.get("chatgpt")).toMatchObject({
-      configured: true,
-      mainlandUnavailable: true,
-      flows: ["browser", "device"],
-    });
-    expect(byId.get("workbuddy")).toMatchObject({
-      configured: true,
-      flows: ["browser", "device"],
-    });
-    // Gemini 需要部署方配置 Google Cloud OAuth 客户端；e2e 环境未配置。
-    expect(byId.get("gemini")).toMatchObject({
-      configured: false,
-      flows: ["browser"],
-    });
-    expect(byId.get("gemini").envHint).toContain("OAUTH_GEMINI_CLIENT_ID");
+    expect(detail.questions[0].figure.caption).toBe("三角形 ABC");
+    expect(detail.questions[0].standard_answer).toBe("A");
+    const hidden = await (
+      await request(`/api/assignments/${created.id}`, student)
+    ).json();
+    expect(hidden.questions[0].figure.shapes).toHaveLength(1);
+    expect(hidden.questions[0].standard_answer).toBeUndefined();
+    const existing = db
+      .prepare(
+        "SELECT q.id FROM questions q JOIN mistakes m ON m.question_id=q.id LIMIT 1",
+      )
+      .get();
+    db.prepare("INSERT INTO question_figures VALUES(?,?)").run(
+      existing.id,
+      JSON.stringify(figure),
+    );
+    const paper = await (
+      await request("/api/papers/generate", teacher, "POST", {
+        title: "rc1 独立图题",
+        count: 50,
+      })
+    ).json();
+    expect(
+      paper.questions.some((q: any) => q.figure?.caption === "三角形 ABC"),
+    ).toBe(true);
+    expect(JSON.stringify(paper)).not.toContain("screenshot");
+  });
 
-    const started = await request(
-      "/api/oauth/chatgpt/browser/start",
+  it("automatically links a teacher upload from the legible name field and keeps authorization boundaries", async () => {
+    const assignment = db
+      .prepare("SELECT * FROM assignments WHERE title='rc1 图题'")
+      .get();
+    const question = db
+      .prepare("SELECT id FROM questions WHERE assignment_id=?")
+      .get(assignment.id);
+    const name = db
+      .prepare("SELECT name FROM users WHERE id=?")
+      .get(studentId).name;
+    const id = await upload(assignment.id, teacher);
+    queueModels([
+      {
+        studentName: name,
+        ocrText: `姓名：${name}`,
+        items: [
+          {
+            questionId: question.id,
+            studentAnswer: "A",
+            isCorrect: true,
+            score: 10,
+            confidence: 0.99,
+            reasoning: "答案一致",
+          },
+        ],
+      },
+    ]);
+    await recognize(id);
+    const detail = await waitFor(
+      async () => (await request(`/api/submissions/${id}`, teacher)).json(),
+      (row: any) => ["review", "completed", "failed"].includes(row.status),
+      "automatic student match",
+    );
+    expect(detail.status).not.toBe("failed");
+    expect(detail.student_id).toBe(studentId);
+    expect(
+      (
+        await request(`/api/submissions/${id}/student`, student, "PATCH", {
+          studentId,
+        })
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await request(`/api/submissions/${id}/student`, teacher, "PATCH", {
+          studentId,
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await request(`/api/submissions/${id}/student`, teacher, "PATCH", {
+          studentId: teacherId,
+        })
+      ).status,
+    ).toBe(400);
+  });
+
+  it("supports direct-answer teaching analysis and persists it without changing grading", async () => {
+    const row = db
+      .prepare(
+        "SELECT s.* FROM submissions s JOIN assignments a ON a.id=s.assignment_id WHERE a.grading_mode='direct' AND s.teacher_reviewed=1 LIMIT 1",
+      )
+      .get();
+    queueModels([
+      {
+        brief: "只针对本份答卷的教学建议",
+        keyFindings: [
+          {
+            title: "检查计算",
+            detail: "以已复核结果为依据",
+            action: "逐步验算",
+          },
+        ],
+      },
+    ]);
+    const response = await request(
+      `/api/submissions/${row.id}/teaching-analysis`,
       teacher,
       "POST",
-      {},
     );
-    // 本机 1455 端口可能被其他 ChatGPT/Codex 客户端占用，此时允许 409。
-    expect([200, 409]).toContain(started.status);
-    if (started.status === 200) {
-      const browser = await started.json();
-      expect(browser.mode).toBe("browser");
-      expect(typeof browser.attemptId).toBe("string");
-      const url = new URL(browser.url);
-      expect(url.origin).toBe("https://auth.openai.com");
-      expect(url.searchParams.get("code_challenge_method")).toBe("S256");
-      expect(url.searchParams.get("state")).toBeTruthy();
-      const attempt = await request(
-        `/api/oauth/chatgpt/attempt/${browser.attemptId}`,
-        teacher,
-      );
-      expect(attempt.status).toBe(200);
-      expect((await attempt.json()).status).toBe("pending");
-    } else {
-      const busy = await started.json();
-      expect(String(busy.error)).toContain("1455");
-    }
+    expect(response.status).toBe(200);
+    expect((await response.json()).content.brief).toContain("本份答卷");
+    const after = db
+      .prepare("SELECT * FROM submissions WHERE id=?")
+      .get(row.id);
+    expect(after.score).toBe(row.score);
+    expect(JSON.parse(after.analysis_json).teachingAnalysis.brief).toContain(
+      "本份答卷",
+    );
+    expect(
+      (await (await request(`/api/submissions/${row.id}`, student)).json())
+        .analysis.teachingAnalysis,
+    ).toBeUndefined();
+    expect(
+      (
+        await request(
+          `/api/submissions/${row.id}/teaching-analysis`,
+          student,
+          "POST",
+        )
+      ).status,
+    ).toBe(403);
+  });
 
-    // WorkBuddy 仅支持设备码：旧 start 返回 409；已移除 provider 一律 404。
+  it("filters parent dates, rejects reversed ranges and exposes only the teacher's dashboard", async () => {
+    const empty = await (
+      await request(
+        `/api/parent/children/${studentId}/dashboard?range=custom&start=2099-01-01&end=2099-01-07`,
+        parent,
+      )
+    ).json();
+    expect(empty.recent).toEqual([]);
+    expect(empty.summary.reviewedSubmissions).toBe(0);
+    expect(empty.position.classLevel).toBe(null);
     expect(
-      (await request("/api/oauth/workbuddy/start", teacher, "POST", {})).status,
-    ).toBe(409);
-    expect(
-      (await request("/api/oauth/deepseek/start", teacher, "POST", {})).status,
-    ).toBe(404);
+      (
+        await request(
+          `/api/parent/children/${studentId}/dashboard?range=custom&start=2099-02-01&end=2099-01-01`,
+          parent,
+        )
+      ).status,
+    ).toBe(400);
+    const dashboard = await request("/api/teacher/dashboard", teacher);
+    expect(dashboard.status).toBe(200);
+    expect((await dashboard.json()).assignments).toBeGreaterThan(0);
+    expect((await request("/api/teacher/dashboard", parent)).status).toBe(403);
+  });
+
+  it("generates a teaching plan even when a reviewed bank answer has no mistakes", async () => {
+    const assignment = db
+      .prepare("SELECT id FROM assignments WHERE title='rc1 图题'")
+      .get();
+    db.prepare(
+      "UPDATE submissions SET status='completed',teacher_reviewed=1,score=10 WHERE assignment_id=?",
+    ).run(assignment.id);
+    queueModels([{ brief: "本次全对，安排巩固练习即可" }]);
+    const response = await request(
+      `/api/teaching/assignments/${assignment.id}/analyze`,
+      teacher,
+      "POST",
+    );
+    expect(response.status).toBe(200);
+    expect((await response.json()).analysis.content.brief).toContain("全对");
+  });
+
+  it("compares the previous comparable paper and calculates class and grade levels from real peers", async () => {
+    const template = db
+      .prepare(
+        "SELECT * FROM submissions WHERE student_id=? AND teacher_reviewed=1 LIMIT 1",
+      )
+      .get(studentId);
+    const makeAssignment = (id: string, title: string) =>
+      db
+        .prepare(
+          "INSERT INTO assignments(id,school_id,teacher_id,title,stage,subject,class_name,status,created_at,grading_mode) SELECT ?,school_id,teacher_id,?,stage,subject,class_name,'published',?,'bank' FROM assignments WHERE id=?",
+        )
+        .run(id, title, "2026-10-31T00:00:00Z", template.assignment_id);
+    makeAssignment("rc1-prev", "rc1 同类前卷");
+    makeAssignment("rc1-current", "rc1 同类后卷");
+    for (const id of ["rc1-prev", "rc1-current"])
+      db.prepare("INSERT INTO questions VALUES(?,?,?,?,?,?,?)").run(
+        `${id}-q`,
+        id,
+        1,
+        "选择题",
+        "A",
+        null,
+        10,
+      );
+    const addSubmission = (
+      id: string,
+      assignment: string,
+      student: string,
+      score: number,
+      date: string,
+    ) =>
+      db
+        .prepare(
+          "INSERT INTO submissions(id,assignment_id,student_id,student_name,file_path,file_type,status,teacher_reviewed,score,created_at) VALUES(?,?,?,'测试学生','','image/png','completed',1,?,?)",
+        )
+        .run(id, assignment, student, score, date);
+    addSubmission(
+      "rc1-prev-s",
+      "rc1-prev",
+      studentId,
+      6,
+      "2026-10-31T01:00:00Z",
+    );
+    addSubmission(
+      "rc1-current-s",
+      "rc1-current",
+      studentId,
+      8,
+      "2026-11-01T01:00:00Z",
+    );
+    for (let i = 0; i < 4; i++) {
+      const id = `rc1-peer-${i}`;
+      db.prepare(
+        "INSERT INTO users(id,school_id,role,name,username,password_hash,salt,stage,class_name,created_at) SELECT ?,school_id,'student',?,?,'test-only','test-only',stage,class_name,created_at FROM users WHERE id=?",
+      ).run(id, id, id, studentId);
+      addSubmission(
+        `${id}-s`,
+        "rc1-current",
+        id,
+        [5, 7, 9, 10][i],
+        "2026-11-01T01:00:00Z",
+      );
+    }
+    const response = await request(
+      `/api/parent/children/${studentId}/dashboard?range=custom&start=2026-11-01&end=2026-11-01`,
+      parent,
+    );
+    const dashboard = await response.json();
+    expect(response.status).toBe(200);
+    expect(dashboard.growth.delta).toBe(0.2);
+    expect(dashboard.growth.previousTitle).toBe("rc1 同类前卷");
+    expect(dashboard.position.classLevel).toBe("中等水平");
+    expect(dashboard.position.gradeLevel).toBe("中等水平");
+  });
+
+  it("removes OAuth catalog, authorization and mode switching routes", async () => {
+    for (const [route, method] of [
+      ["/api/oauth/providers", "GET"],
+      ["/api/oauth/chatgpt/browser/start", "POST"],
+      ["/api/oauth/gemini/device/start", "POST"],
+      ["/api/model/auth-mode", "PUT"],
+    ]) {
+      expect(
+        (
+          await request(
+            route,
+            teacher,
+            method,
+            method === "GET" ? undefined : {},
+          )
+        ).status,
+      ).toBe(404);
+    }
   });
 });

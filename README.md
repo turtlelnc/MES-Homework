@@ -1,7 +1,7 @@
 # 校园作业分析 · Smart Campus Homework Analyzer
 
-[![Version](https://img.shields.io/badge/version-v0.2.1--rc4-2ea44f?style=flat)](https://github.com/turtlelnc/MES-Homework/releases)
-[![Build](https://img.shields.io/badge/build-26102501-0A84FF?style=flat)](https://github.com/turtlelnc/MES-Homework/releases)
+[![Version](https://img.shields.io/badge/version-v0.2.2--rc1-2ea44f?style=flat)](https://github.com/turtlelnc/MES-Homework/releases)
+[![Build](https://img.shields.io/badge/build-26110101-0A84FF?style=flat)](https://github.com/turtlelnc/MES-Homework/releases)
 [![Tests](https://img.shields.io/badge/tests-CI%20passing-brightgreen?style=flat&logo=githubactions&logoColor=white)](https://github.com/turtlelnc/MES-Homework/actions)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat)](LICENSE)
 [![Security](https://img.shields.io/badge/security-P0%2FP1%20fixed-success?style=flat)](SECURITY_REVIEW.md)
@@ -11,7 +11,7 @@
 [![Node](https://img.shields.io/badge/node-%E2%89%A524-339933?style=flat&logo=nodedotjs&logoColor=white)](package.json)
 [![](https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness)
 
-**v0.2.1-rc4**（build26102501）｜ MIT License
+**v0.2.2-rc1**（build26110101）｜ MIT License
 
 [English](README.EN.md) | 中文
 
@@ -20,6 +20,11 @@
 ---
 
 这是可在学校或个人服务器运行的全栈版本。账户、学校、学生、知识库、作业、OCR、教师复核、错题本、试卷、家长看板与 AI 教学分析均使用持久化数据。
+
+## v0.2.2-rc1（build26110101）
+
+左侧操作目录与字体层级、逐题五档等级、独立图题组卷、教师数据看板、卷面姓名自动匹配、家长周/日期筛选及成长与同类试卷比较。家长端移除“已复核作业”指标和学科表现；OAuth 已移除。完整口径与升级注意事项见 [版本说明](docs/releases/v0.2.2-rc1.md)。
+
 
 ## v0.2.1 新增（v0.2.1-rc1 起）
 
@@ -35,15 +40,9 @@
 
 识别与复核页、家长端答卷明细都会显示：逐题批改结果、教师参考答案、AI 判断逻辑（`reasoning`：对照答案要素、为什么判对/判错）。学生端不直接展示答案，见第 8 条。
 
-### 3. API Key 之外新增 OAuth 授权链接模型
+### 3. 模型连接（v0.2.2-rc1）
 
-保留原有 10 个厂商的 API Key 方式，新增免 API Key 的 OAuth 登录（v0.2.1-rc4 起）：
-
-- **ChatGPT（Codex OAuth）**：浏览器回调 + PKCE，或设备码（Device Code / Codex OAuth）。用户在浏览器点击授权即可，无需复制 API Key；中国大陆境内不可用，前端会先提示。
-- **Gemini（Google）**：浏览器 OAuth + PKCE，部署管理员用 `OAUTH_GEMINI_CLIENT_ID/SECRET` 配置 Google OAuth 客户端。
-- **WorkBuddy**：设备码/浏览器轮询登录（国内版默认，可切国际版），点击浏览器授权后服务端自动完成。
-
-已移除 Claude、Qwen（国际版）、千问（国内版）、DeepSeek（Platform）的 OAuth 入口；这些厂商仍可用 API Key。ChatGPT/WorkBuddy 当前为实验性兼容通道，尚未完成本应用官方第三方登录的真实验收。OAuth 令牌在服务端 AES-256-GCM 加密存储，支持自动刷新、自动轮询与断开连接。详见 [docs/oauth-flows.md](docs/oauth-flows.md)。
+仅保留 API Key。OAuth 页面、授权路由和模型调度已移除，升级后旧 OAuth 使用模式切回 API Key，请在设置中确认模型配置。
 
 ### 4. 账号名 + 密码 + 身份选择注册
 
@@ -51,7 +50,7 @@
 
 ### 5. 家长端
 
-家长账号可查看已绑定孩子的看板：已复核作业数、平均得分率、错题与掌握率、学科表现、薄弱知识点、错因分布、成绩趋势、近期作业明细（含批改结果、参考答案与 AI 判断逻辑），并在「学情分析」中一键生成 AI 学情分析（优势、薄弱知识点、学习习惯、家庭配合动作与鼓励）。
+家长账号可查看已绑定孩子的看板：成长趋势、班级/年级水平、平均得分率、错题与掌握率、薄弱知识点、具体错因分布、成绩趋势、近期作业明细（含批改结果、参考答案与 AI 判断逻辑），并在「学情分析」中一键生成 AI 学情分析（优势、薄弱知识点、学习习惯、家庭配合动作与鼓励）。
 
 ### 6. 模型调用模式（由学校端设置）
 
@@ -60,7 +59,7 @@
 | 模式 | 谁配置模型凭证 | 学生端/家长端调用谁 |
 | --- | --- | --- |
 | 全校统一模式 | 仅学校管理员 | 学校统一凭证 |
-| 老师分开 + 班费模式 | 每位老师配置自己的 OAuth / API Key | 本班班主任的凭证 |
+| 老师分开 + 班费模式 | 每位老师配置自己的 API Key | 本班班主任的凭证 |
 | 老师分开 + 家长单独模式 | 每位老师、每位家长各自配置 | 学生用绑定家长的凭证，家长用本人凭证 |
 
 学校端同时提供班级/班主任分配，用于「班费模式」定位本班班主任。切换模式立即生效。
@@ -73,19 +72,7 @@
 
 学生端错题本不再直接展示订正答案与解析，而是：关键思考问题 → 逐条提示（不直接给答案）→ 重做原题（AI 判断是否掌握）→ 答对后对照参考答案与解析 → 同类过关练习。连续 3 次未掌握会给出参考答案兜底，避免卡死。
 
-> 说明：AI 直接批改模式的作业使用逐卷解析出的题目快照，暂不参与班级「AI 教学分析」（该分析按全班同一套题号统计）；家长端学情分析不受影响。
-
-### OAuth 模型链接配置（部署管理员）
-
-OAuth 采用 Authorization Code + PKCE 与设备码（Device Code）两种流程，前端按 provider 支持的方式显示「浏览器登录」/「设备码登录」：
-
-- **ChatGPT**：内置 Codex 公共 PKCE 客户端，无需配置 Client ID；浏览器登录自动监听 `http://localhost:1455/auth/callback`，设备码登录显示 `https://auth.openai.com/codex/device` 与一次性用户码。
-- **Gemini**：在 Google Cloud 创建 Web application OAuth 客户端，登记页面显示的完整回调 URL，启用 Generative Language API，配置 `OAUTH_GEMINI_CLIENT_ID`、`OAUTH_GEMINI_CLIENT_SECRET`、`OAUTH_GEMINI_PROJECT_ID`（scope 必须包含 `cloud-platform`，见 `.env.example`）；未配置时显示「未配置」。
-- **WorkBuddy**：内置官方授权流程，支持「浏览器登录」（直接打开授权页）与「设备码登录」（显示授权链接），两者底层同一官方轮询流程；`OAUTH_WORKBUDDY_REGION=cn|global` 选择国内版/国际版。
-
-ChatGPT、Gemini 在中国大陆境内不可用，前端会在跳转前提示。OAuth 不影响的 API Key 方式继续可用。完整接口与安全约定见 [docs/oauth-flows.md](docs/oauth-flows.md)。
-
-![OAuth 登录界面](docs/screenshots-v0.2.1/oauth-settings.png)
+> 直接批改使用逐卷题目快照：复核后可在答卷内生成该学生的 AI 教学分析；班级讲评仍按全班同一套题目统计。
 
 ## v0.2.0-rc1 新增：AI 教学分析
 
@@ -149,7 +136,6 @@ B3组 校园作业分析器
 - 10 个模型厂商预设，API Key 在服务端使用 AES-256-GCM 加密。
 - 更改教师复核作业的逻辑为可以让教师设置全部复核、仅存疑复核、不复核
 - AI批改作业后，既要出现批改结果和参考答案，还要显示为什么这么改（AI批改时的判断逻辑）
-- 保留原来通过 API Key 链接大模型的同时，增加通过 OAuth 登录模型（ChatGPT Codex OAuth 浏览器/设备码、Gemini Google OAuth、WorkBuddy 设备码/浏览器轮询；v0.2.1-rc4 起移除 Claude/Qwen/千问/DeepSeek 的 OAuth 入口，这些厂商改用 API Key）
 - 注册与登陆账号采用“账号名+密码+身份选择（学校/老师/学生/家长）
 - 新增家长端：可以通过看板板块看到学生的数据，还可以在学情分析板块看到（AI生成的）该学生的学情分析
 - 调用模型模式选择（由学校端设置），有3种模式（全校统一模式、老师分开+班费模式、老师分开+家长单独模式），全校统一模式指（仅）API Key由学校设定，老师分开+班费模式指每个老师自己设置自己的Oauth/API Key家长端及学生端的调用由该班的班主任兼某科任老师的老师端设置，老师分开+家长单独模式指每个老师自己设置自己的Oauth/API Key每个家长自己设置自己及自家孩子的Oauth/API Key
@@ -181,7 +167,6 @@ npm start
 
 注册方式改为「账号名 + 密码 + 身份选择」，老师/学生/家长可凭学校代码自助注册（需求 4）；如学校希望保持由管理员统一建号，请设置 `ALLOW_PUBLIC_REGISTRATION=0`。学校代码不是身份凭证：学生不能自行修改学段或班级，教师只能看到自己任课作业与本校知识库，家长只能看到自己绑定的孩子，所有查询仍按学校与账号身份隔离。答卷与原件仅允许学生本人、任课教师、绑定家长及本校管理员读取；学生作业详情与错题本不直接返回答案；重新识别须再次人工复核（所选复核方式允许自动完成时除外）。
 
-OAuth 模型连接采用 Authorization Code + PKCE（ChatGPT 另支持设备码/Codex OAuth，WorkBuddy 使用实验性兼容浏览器轮询授权），state 一次性校验，令牌使用与 API Key 相同的 AES-256-GCM 加密，支持过期刷新与断开；ChatGPT 本机回调仅监听 `127.0.0.1:1455`，OAuth 授权链接只允许官方域名。回调地址限制在 `APP_ORIGIN`/`OAUTH_REDIRECT_BASE`，不做开放重定向。ChatGPT、Gemini 在中国大陆境内不可用，前端会明确提示。
 
 模型接口默认只允许所选厂商的 HTTPS Origin。自定义网关须由部署管理员在 `PROVIDER_ALLOWED_ORIGINS` 配置精确 Origin（逗号分隔）；已有非白名单配置也会在调用时被拒绝。不要把用户可控制的域名或内网地址加入白名单。通过 Worker/反向代理访问时，在源站设置 `APP_ORIGIN=https://你的前端域名`，不要附加路径或末尾斜杠。服务不信任客户端传入的 Forwarded 头。生产环境要求有效 `APP_SECRET` 并使用 HTTPS（会话 Cookie 为 Secure）。
 
@@ -277,6 +262,5 @@ Windows 自定义域名部署会保存与新建隧道匹配的本地凭据，凭
 
 Release audit / 发布审核：[PRE_RELEASE_AUDIT.md](PRE_RELEASE_AUDIT.md) · [runtime budgets / 运行预算](RUNTIME_CONFIGURATION.md)
 
-模型连接易用性及 OAuth 官方来源比对：[2026-10-27 审核](docs/oauth-audit-2026-10-27.md)。ChatGPT 当前仍是 Codex 兼容通道，不是已注册的官方第三方 Sign in with ChatGPT；WorkBuddy 尚无本项目真实登录验证。保存 API Key 不会自动发送付费测试请求，同厂商修改可保留已有密钥，“保存并使用”会同时切换实际调用方式。
 
 相关功能已整合为[同页工作流](docs/workflow-pages.md)：教师工作台包含上传、复核、分析、学生、知识库与组卷；学生作业与错题合并，学校成员管理合并。章节控件只定位，不销毁草稿；上传与重练作业会自动交接到本页对应区块。学校模型策略和凭证集中配置，打印仅输出所选文档。

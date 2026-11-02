@@ -332,7 +332,8 @@ export function buildParentDashboard(rows, student = null) {
       const type = classifyReason(item.reason, {
         studentAnswer: item.studentAnswer,
       });
-      reasonMap.set(type.label, (reasonMap.get(type.label) || 0) + 1);
+      const label = text(item.reason).trim().slice(0, 160) || type.label;
+      reasonMap.set(label, (reasonMap.get(label) || 0) + 1);
     }
   }
   const reasons = shareRows(
@@ -537,6 +538,7 @@ function detailItemOf({ item, index, question, direct, mistake }) {
       text(mistake?.student_answer),
     isCorrect,
     score,
+    figure: direct?.figure || question?.figure || null,
     maxScore: maxScore ?? null,
     correction: text(entry.correction) || text(mistake?.correction),
     standardAnswer:
@@ -568,9 +570,10 @@ function buildSubmissionDetail(ctx, student, submissionId) {
   if (!row) return null;
   const questions = db
     .prepare(
-      "SELECT q.id,q.number,q.prompt,q.standard_answer,q.score,q.knowledge_id,k.title knowledge_title FROM questions q LEFT JOIN knowledge k ON k.id=q.knowledge_id WHERE q.assignment_id=? ORDER BY q.number",
+      "SELECT q.id,q.number,q.prompt,q.standard_answer,q.score,q.knowledge_id,k.title knowledge_title,f.figure_json FROM questions q LEFT JOIN knowledge k ON k.id=q.knowledge_id LEFT JOIN question_figures f ON f.question_id=q.id WHERE q.assignment_id=? ORDER BY q.number",
     )
-    .all(row.assignment_id);
+    .all(row.assignment_id)
+    .map((q) => ({ ...q, figure: parseJson(ctx, q.figure_json, null) }));
   const mistakes = db
     .prepare(
       "SELECT m.*,k.title knowledge_title FROM mistakes m LEFT JOIN knowledge k ON k.id=m.knowledge_id WHERE m.submission_id=? ORDER BY COALESCE(m.question_number,9999),m.created_at",
@@ -812,8 +815,143 @@ export function registerParentRoutes(app, ctx) {
       const student = boundStudent(db, req.user, req.params.studentId);
       if (!student)
         return res.status(404).json({ error: "孩子不存在或未绑定" });
-      const rows = loadReviewedRows(ctx, student.id, student.school_id);
-      res.json(buildParentDashboard(rows, student));
+      const rows = loadReviewedRows(ctx, student.id, student.school_id, -1);
+      const range = String(req.query.range || "all");
+      if (!["all", "week", "lastWeek", "custom"].includes(range))
+        return res.status(400).json({ error: "时间范围无效" });
+      const now = new Date();
+      const start = String(req.query.start || "");
+      const end = String(req.query.end || "");
+      if (
+        (start && !/^\d{4}-\d{2}-\d{2}$/.test(start)) ||
+        (end && !/^\d{4}-\d{2}-\d{2}$/.test(end)) ||
+        (start && end && start > end)
+      )
+        return res.status(400).json({ error: "请选择有效的起止日期" });
+      const selected = rows.filter((row) => {
+        const day = new Date(new Date(row.reviewedAt).getTime() + 8 * 3600000)
+          .toISOString()
+          .slice(0, 10);
+        if (range === "custom")
+          return (!start || day >= start) && (!end || day <= end);
+        if (range === "week" || range === "lastWeek") {
+          // Natural weeks in China Standard Time, Monday through Sunday.
+          const local = new Date(now.getTime() + 8 * 3600000);
+          const monday =
+            Date.UTC(
+              local.getUTCFullYear(),
+              local.getUTCMonth(),
+              local.getUTCDate() - ((local.getUTCDay() + 6) % 7),
+            ) -
+            8 * 3600000;
+          const time = new Date(row.reviewedAt).getTime();
+          const from = monday - (range === "lastWeek" ? 7 * 86400000 : 0);
+          return time >= from && time < from + 7 * 86400000;
+        }
+        return true;
+      });
+      const dashboard = buildParentDashboard(selected, student);
+      const ordered = [...rows].sort((a, b) =>
+        b.reviewedAt.localeCompare(a.reviewedAt),
+      );
+      const latest = [...selected].sort((a, b) =>
+        b.reviewedAt.localeCompare(a.reviewedAt),
+      )[0];
+      const previous =
+        latest &&
+        ordered.find(
+          (row) =>
+            row.assignmentId !== latest.assignmentId &&
+            row.subject === latest.subject &&
+            row.reviewedAt < latest.reviewedAt &&
+            resolveScore(row).totalScore === resolveScore(latest).totalScore,
+        );
+      dashboard.growth = previous
+        ? {
+            currentTitle: latest.assignmentTitle,
+            previousTitle: previous.assignmentTitle,
+            delta: round(
+              resolveScore(latest).scoreRate - resolveScore(previous).scoreRate,
+            ),
+            basis: "相同学科、相同满分的上一份试卷（题目难度可能不同）",
+          }
+        : null;
+      dashboard.position = {
+        classLevel: null,
+        gradeLevel: null,
+        basis:
+          "同标题、同学科、同满分试卷，已完成批改的学生，每人取最近一次；至少 5 人",
+      };
+      if (latest) {
+        const peers = db
+          .prepare(
+            `SELECT s.student_id,s.score,s.analysis_json,s.questions_json,s.created_at,
+          a.class_name,a.stage,a.id assignmentId,a.subject,
+          (SELECT COALESCE(SUM(q.score),0) FROM questions q WHERE q.assignment_id=a.id) questionsTotal
+          FROM submissions s JOIN assignments a ON a.id=s.assignment_id
+          WHERE a.school_id=? AND a.title=? AND a.subject=? AND a.stage=? AND s.teacher_reviewed=1 AND s.student_id IS NOT NULL ORDER BY s.created_at DESC,s.rowid DESC`,
+          )
+          .all(
+            student.school_id,
+            latest.assignmentTitle,
+            latest.subject,
+            student.stage,
+          )
+          .map((row) => ({
+            ...row,
+            analysis: parseJson(ctx, row.analysis_json, {}),
+            questionsJson: row.questions_json,
+          }));
+        const comparable = peers.filter(
+          (row) =>
+            resolveScore(row).totalScore === resolveScore(latest).totalScore,
+        );
+        const unique = [
+          ...new Map(
+            comparable
+              .map((row) => row.student_id)
+              .filter((id, i, ids) => ids.indexOf(id) === i)
+              .map((id) => [
+                id,
+                comparable.find((row) => row.student_id === id),
+              ]),
+          ).values(),
+        ];
+        const level = (group) => {
+          if (
+            group.length < 5 ||
+            !group.some((row) => row.student_id === student.id)
+          )
+            return null;
+          const higher =
+            group.filter(
+              (row) =>
+                resolveScore(row).scoreRate > resolveScore(latest).scoreRate,
+            ).length / group.length;
+          return higher < 0.1
+            ? "拔尖水平"
+            : higher < 0.35
+              ? "中上水平"
+              : higher < 0.7
+                ? "中等水平"
+                : "中下水平";
+        };
+        dashboard.position.classLevel = level(
+          unique.filter((row) => row.class_name === student.class_name),
+        );
+        // Grade names must be explicit; stage alone is not a grade.
+        const grade = String(student.class_name || "").match(/^(.*?年级)/)?.[1];
+        if (grade)
+          dashboard.position.gradeLevel = level(
+            unique.filter(
+              (row) =>
+                String(row.class_name || "").startsWith(grade) &&
+                resolveScore(row).totalScore ===
+                  resolveScore(latest).totalScore,
+            ),
+          );
+      }
+      res.json(dashboard);
     },
   );
 

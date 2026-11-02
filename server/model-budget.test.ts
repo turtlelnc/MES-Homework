@@ -1,10 +1,17 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { DatabaseSync } from "node:sqlite";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createModelBudget } from "./model-budget.mjs";
 const dirs: string[] = [];
+// This exercises a four-slot policy, independently of the host CPU quota.
+beforeEach(() => {
+  vi.stubEnv("MODEL_GLOBAL_CONCURRENCY", "4");
+  vi.stubEnv("MODEL_SCHOOL_CONCURRENCY", "4");
+  vi.stubEnv("MODEL_STAFF_CONCURRENCY", "4");
+});
+afterEach(() => vi.unstubAllEnvs());
 afterEach(() =>
   dirs
     .splice(0)

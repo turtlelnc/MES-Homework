@@ -1,7 +1,7 @@
 {
   "name": "smart-campus-homework-analyzer",
   "private": true,
-  "version": "0.2.1-rc4",
+  "version": "0.2.2-rc1",
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
@@ -10,7 +10,7 @@
     "start:supervised": "node tools/ops/supervise.mjs",
     "backup:run": "node --env-file-if-exists=.env tools/ops/backup.mjs run",
     "backup:status": "node --env-file-if-exists=.env tools/ops/backup.mjs status",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b --force && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "test": "vitest run",
     "verify:teaching": "node server/teaching.e2e.mjs",

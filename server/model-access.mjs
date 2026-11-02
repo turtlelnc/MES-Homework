@@ -192,28 +192,12 @@ function fallbackHint(user, source) {
   if (source === "head_teacher")
     return "学生尚未绑定家长，已回退使用班主任凭证";
   if (source === "school") {
-    if (user.role === "parent")
-      return "尚未绑定孩子，已回退使用学校管理员凭证";
+    if (user.role === "parent") return "尚未绑定孩子，已回退使用学校管理员凭证";
     if (user.role === "student")
       return "本班尚未指定班主任，已回退使用学校管理员凭证";
     return "已回退使用学校管理员凭证";
   }
   return "";
-}
-
-function oauthConnectionState(db, owner) {
-  const rows = db
-    .prepare(
-      `SELECT provider, updated_at FROM oauth_connections
-       WHERE user_id=? AND status='active' ORDER BY updated_at DESC`,
-    )
-    .all(owner.id);
-  const wanted = owner.oauth_provider || null;
-  const match = wanted ? rows.find((row) => row.provider === wanted) : rows[0];
-  return {
-    hasOAuth: Boolean(match),
-    oauthProvider: match ? match.provider : null,
-  };
 }
 
 /**
@@ -230,21 +214,14 @@ export function describeModelAccess(db, user) {
         )
         .get(owner.id) || null
     : null;
-  const oauth = owner ? oauthConnectionState(db, owner) : { hasOAuth: false };
-  const authMode = owner?.model_auth_mode === "oauth" ? "oauth" : "api_key";
-  const configured =
-    authMode === "oauth"
-      ? Boolean(owner?.oauth_provider) && oauth.hasOAuth
-      : Boolean(apiKey);
+  const authMode = "api_key";
+  const configured = Boolean(apiKey);
   let hint = "";
-  if (authMode === "oauth" && !configured) {
-    hint = "OAuth 授权已失效，请重新连接或改用 API Key";
-  } else if (!configured) {
+  if (!configured) {
     if (!owner) hint = "学校尚未创建学校管理员账户，暂时无法使用模型";
-    else if (route.source === "self")
-      hint = "请先配置 API Key 或完成 OAuth 授权";
+    else if (route.source === "self") hint = "请先配置 API Key";
     else
-      hint = `当前使用${SOURCE_LABELS[route.source] || "其他账户"}的凭证，但该凭证尚未配置，请联系${SOURCE_LABELS[route.source] || "管理员"}配置`;
+      hint = `当前使用${SOURCE_LABELS[route.source] || "其他账户"}的凭证，但该凭证尚未配置，请联系${SOURCE_LABELS[route.source] || "管理员"}配置 API Key`;
   } else if (route.fallback) {
     hint = fallbackHint(user, route.source);
   }
@@ -254,12 +231,9 @@ export function describeModelAccess(db, user) {
     ownerName: owner?.name || "",
     ownerRole: owner?.role || "",
     hasApiKey: Boolean(apiKey),
-    hasOAuth: oauth.hasOAuth,
+    hasOAuth: false,
     authMode,
-    provider:
-      authMode === "oauth"
-        ? oauth.oauthProvider || owner?.oauth_provider || null
-        : apiKey?.provider || null,
+    provider: apiKey?.provider || null,
     configured,
     hint,
     source: route.source,

@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { createHash } from "node:crypto";
 const png = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
   "base64",
@@ -26,7 +27,13 @@ const deferred = () => {
   const promise = new Promise((r) => (resolve = r));
   return { promise, resolve };
 };
-test.beforeEach(async ({ page }) => {
+test.beforeEach(async ({ page }, testInfo) => {
+  // Model independent clients, so the whole suite does not consume one IP's
+  // login allowance. A retry keeps its identity and still exercises throttling.
+  const client = createHash("sha256").update(testInfo.testId).digest();
+  await page.context().setExtraHTTPHeaders({
+    "X-Forwarded-For": `198.18.${client[0]}.${client[1]}`,
+  });
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   page.__errors = errors;
@@ -713,62 +720,22 @@ test("model settings read failures offer a real retry without overwriting saved 
   ).toBeEnabled();
 });
 
-test("cancelling OAuth sends cancellation for the actual attempt", async ({
+test("OAuth is absent from settings and authorization routes are removed", async ({
   page,
 }) => {
   await login(page);
-  await page.route("**/api/oauth/providers", (route) =>
-    route.fulfill({
-      json: {
-        authMode: "api_key",
-        provider: null,
-        providers: [
-          {
-            id: "chatgpt",
-            name: "ChatGPT（Codex OAuth）",
-            region: "global",
-            mainlandUnavailable: true,
-            configured: true,
-            connected: false,
-            connectedAt: null,
-            description: "Offline fixture",
-            model: "gpt-5.4",
-            vision: false,
-            flows: ["device"],
-          },
-        ],
-      },
-    }),
-  );
-  await page.route("**/api/oauth/chatgpt/device/start", (route) =>
-    route.fulfill({
-      json: {
-        attemptId: "fixture-attempt",
-        userCode: "TEST-CODE",
-        verificationUrl: "https://auth.openai.com/codex/device",
-        intervalMs: 5000,
-      },
-    }),
-  );
-  await page.route("**/api/oauth/chatgpt/attempt/fixture-attempt", (route) =>
-    route.fulfill({
-      json:
-        route.request().method() === "DELETE"
-          ? { ok: true }
-          : { status: "pending" },
-    }),
-  );
   await page.getByRole("button", { name: "设置", exact: true }).click();
-  await page.getByRole("button", { name: "设备码登录", exact: true }).click();
-  await expect(page.getByRole("dialog")).toBeVisible();
-  const cancelled = page.waitForRequest(
-    (r) =>
-      r.url().endsWith("/api/oauth/chatgpt/attempt/fixture-attempt") &&
-      r.method() === "DELETE",
+  await expect(
+    page.getByRole("heading", { name: "模型与授权", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("OAuth 授权方式", { exact: true })).toHaveCount(
+    0,
   );
-  await page.keyboard.press("Escape");
-  await cancelled;
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(
+    (
+      await page.request.post("/api/oauth/chatgpt/browser/start", { data: {} })
+    ).status(),
+  ).toBe(404);
 });
 
 test("teacher chapters preserve assignment drafts and refresh knowledge without replacing the page", async ({
@@ -1057,4 +1024,164 @@ test("changing school policy refreshes permissions without clearing an unsaved k
   await page.request.put("/api/school/model-mode", {
     data: { mode: original },
   });
+});
+
+test("rc1 parent dashboard shows growth, concrete reasons and date controls without removed sections", async ({
+  page,
+}) => {
+  await login(page);
+  const current = await (await page.request.get("/api/me")).json();
+  await page.route("**/api/me", (route) =>
+    route.fulfill({ json: { ...current, role: "parent", is_school_admin: 0 } }),
+  );
+  await page.route("**/api/parent/children", (route) =>
+    route.fulfill({
+      json: [
+        {
+          id: "fixture-child",
+          name: "示例学生",
+          stage: "初中",
+          class_name: "八年级（1）班",
+        },
+      ],
+    }),
+  );
+  await page.route("**/api/parent/children/fixture-child/insights", (route) =>
+    route.fulfill({ json: null }),
+  );
+  await page.route(
+    "**/api/parent/children/fixture-child/dashboard?*",
+    (route) =>
+      route.fulfill({
+        json: {
+          summary: { averageScoreRate: 0.8, mistakeCount: 2, masteryRate: 0.5 },
+          growth: {
+            delta: 0.12,
+            previousTitle: "同类前卷",
+            basis: "同学科、同满分",
+          },
+          position: {
+            classLevel: "中上水平",
+            gradeLevel: "中等水平",
+            basis: "同卷真实样本",
+          },
+          reasons: [
+            { label: "分数相加时未先通分，分母直接相加", count: 2, share: 100 },
+          ],
+          recent: [],
+          trend: [],
+          knowledge: [],
+        },
+      }),
+  );
+  await page.reload();
+  await expect(page.getByText("+12 个百分点", { exact: true })).toBeVisible();
+  await expect(page.getByText("中上水平", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("分数相加时未先通分，分母直接相加", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "学科表现", exact: true }),
+  ).toHaveCount(0);
+  await expect(page.getByText("已复核作业", { exact: true })).toHaveCount(0);
+  const range = page.getByRole("combobox", { name: "查看范围", exact: true });
+  const request = page.waitForRequest(
+    (r) => r.url().includes("/dashboard?") && r.url().includes("range=week"),
+  );
+  await range.selectOption("week");
+  await request;
+  await range.selectOption("custom");
+  await expect(page.getByLabel("开始日期", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("结束日期", { exact: true })).toBeVisible();
+  await page.screenshot({
+    path: "test-results/rc1-parent-dashboard.png",
+    fullPage: true,
+  });
+});
+
+test("rc1 teacher data dashboard uses real records and keeps chapter directory on the left", async ({
+  page,
+}) => {
+  await login(page);
+  await expect(
+    page.getByRole("heading", { name: "教学数据看板", exact: true }),
+  ).toBeVisible();
+  const nav = page.getByRole("navigation", {
+    name: "教学工作台章节定位",
+    exact: true,
+  });
+  const navBox = await nav.boundingBox();
+  const contentBox = await page
+    .getByRole("heading", { name: "教学数据看板", exact: true })
+    .boundingBox();
+  expect(navBox.x + navBox.width).toBeLessThan(contentBox.x);
+  await page.screenshot({
+    path: "test-results/rc1-teacher-dashboard.png",
+    fullPage: false,
+  });
+});
+
+test("question figures can be attached, removed and published without changing other fields", async ({
+  page,
+}) => {
+  await login(page);
+  await page
+    .getByRole("navigation", { name: "教学工作台章节定位", exact: true })
+    .getByRole("button", { name: "作业与上传", exact: true })
+    .click();
+  const region = page.getByRole("region", { name: "作业与上传", exact: true });
+  await region.getByRole("button", { name: "新增作业", exact: true }).click();
+  const form = region.locator(".assignment-form");
+  await form.getByLabel("作业名称", { exact: true }).fill("题图类型回归作业");
+  await form
+    .getByLabel("真实题干", { exact: true })
+    .fill("选择题：根据附图选择答案。");
+  await form
+    .getByLabel("参考答案（客观题仅填答案）", { exact: true })
+    .fill("A");
+  await form
+    .getByRole("combobox", { name: "知识点", exact: true })
+    .selectOption({ index: 1 });
+  await form.getByLabel("分值", { exact: true }).fill("5");
+  const input = form.locator(
+    'input[type="file"][accept="image/png,image/jpeg,image/webp"]',
+  );
+  const picture = {
+    name: "question-figure.png",
+    mimeType: "image/png",
+    buffer: png,
+  };
+  await input.setInputFiles(picture);
+  await expect(
+    form.getByRole("img", { name: "原题附图", exact: true }),
+  ).toBeVisible();
+  await form.getByRole("button", { name: "移除附图", exact: true }).click();
+  await expect(
+    form.getByRole("img", { name: "原题附图", exact: true }),
+  ).toHaveCount(0);
+  await input.setInputFiles(picture);
+  await expect(
+    form.getByRole("img", { name: "原题附图", exact: true }),
+  ).toBeVisible();
+  const saved = page.waitForResponse(
+    (r) =>
+      r.url().endsWith("/api/assignments") && r.request().method() === "POST",
+  );
+  await form
+    .getByRole("button", { name: "核对完成并发布", exact: true })
+    .click();
+  const response = await saved;
+  expect(response.status()).toBe(200);
+  const { id } = await response.json();
+  const detail = await (
+    await page.request.get(`/api/assignments/${id}`)
+  ).json();
+  expect(detail.questions[0]).toMatchObject({
+    prompt: "选择题：根据附图选择答案。",
+    standard_answer: "A",
+    score: 5,
+  });
+  expect(detail.questions[0].figure.image).toBe(
+    `data:image/png;base64,${png.toString("base64")}`,
+  );
 });

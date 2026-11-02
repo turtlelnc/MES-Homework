@@ -1,3 +1,6 @@
+import { referenceAnswer } from "../shared/reference-answer.mjs";
+import { matchStudent } from "../shared/student-match.mjs";
+import { normalizeFigure } from "../shared/figure.mjs";
 import { runtimeProfile } from "./runtime-profile.mjs";
 import { applicationCapabilities } from "./capabilities.mjs";
 import {
@@ -94,12 +97,6 @@ import {
   createModelConfigGuard,
   getSchoolModelMode,
 } from "./model-access.mjs";
-import {
-  registerOAuthRoutes,
-  oauthChatText,
-  getOAuthConnection,
-  oauthProvider,
-} from "./oauth.mjs";
 import { normalizeDirectReview } from "./grading.mjs";
 
 const configuredSecret = process.env.APP_SECRET;
@@ -345,33 +342,18 @@ function decrypt(body, iv) {
 
 // Resolve the credential owner for a caller according to the school's model
 // mode (school-wide / teacher+class / teacher+parent). All model calls go
-// through the owner's own API Key or OAuth connection.
+// through the owner's API Key.
 function modelOwnerFor(user) {
   const route = resolveCredentialOwner(db, user);
   return route.owner || user;
 }
 
 function modelConfigFor(owner, { vision = false } = {}) {
-  if (owner.model_auth_mode === "oauth" && owner.oauth_provider) {
-    const connection = getOAuthConnection(db, owner.id, owner.oauth_provider);
-    const preset = oauthProvider(owner.oauth_provider);
-    if (connection && preset) {
-      if (vision && !preset.vision)
-        throw new Error(
-          "当前 OAuth 模型不支持图片识别，请改用支持视觉的 API Key 模型",
-        );
-      return { kind: "oauth", connection, preset };
-    }
-  }
   const config = db
     .prepare("SELECT * FROM provider_settings WHERE user_id=?")
     .get(owner.id);
   if (!config) {
-    throw new Error(
-      owner.model_auth_mode === "oauth"
-        ? "OAuth 授权已失效，请重新连接，或在设置中配置 API Key"
-        : "请先在设置中配置模型 API Key 或完成 OAuth 授权",
-    );
+    throw new Error("请先在设置中配置模型 API Key");
   }
   const preset = providers[config.provider];
   if (!preset) throw new Error("模型厂商无效");
@@ -380,7 +362,7 @@ function modelConfigFor(owner, { vision = false } = {}) {
 }
 
 // Throws a user-facing error when the effective credential owner has neither a
-// usable API Key nor a live OAuth connection. Returns the owner row.
+// usable API Key. Returns the owner row.
 function assertModelConfigured(user) {
   const owner = modelOwnerFor(user);
   modelConfigFor(owner);
@@ -407,40 +389,12 @@ async function askModel(
   const release = reservation || reserveModel(owner.id);
   let cost, remote, imageLease;
   try {
-    // Resolve the effective credential owner (API Key or OAuth) before any
+    // Resolve the effective credential owner before any
     // DNS, image buffering or outbound I/O.
     const credential = modelConfigFor(owner, { vision: images.length > 0 });
     release.renew();
     let text;
-    if (credential.kind === "oauth") {
-      imageLease = await modelImages.acquire(images, signal);
-      let bytes = 0;
-      const oauthImages = [];
-      for (const image of images) {
-        signal.throwIfAborted();
-        pressure.assertMemory();
-        const base64 =
-          image.base64 ||
-          (await fs.promises.readFile(image.filePath, { signal })).toString(
-            "base64",
-          );
-        bytes += base64.length;
-        if (bytes > imageLease.maxBytes)
-          throw new Error("图片大小在读取期间发生变化，请重试");
-        oauthImages.push({ ...image, base64 });
-      }
-      text = await oauthChatText({
-        user: owner,
-        provider: credential.preset,
-        connection: credential.connection,
-        prompt,
-        images: oauthImages,
-        signal,
-        decrypt,
-        encrypt,
-        db,
-      });
-    } else {
+    {
       const { config, preset } = credential;
       const endpoint = providerEndpoint(config.endpoint, preset);
       // Revalidate DNS on every request while bounding its lifetime and
@@ -495,9 +449,11 @@ async function askModel(
         content.push({
           type: "text",
           text:
-            image.page === undefined
-              ? `第 ${index + 1} 页：`
-              : `第 ${image.page + 1} 页，区域(${image.x},${image.y},${image.width},${image.height})。与相邻块有重叠，同一题只返回一次，不得重复计分。`,
+            image.questionNumber !== undefined
+              ? `正式题目第 ${image.questionNumber} 题的独立附图（不是学生答卷页）：`
+              : image.page === undefined
+                ? `第 ${index + 1} 页：`
+                : `第 ${image.page + 1} 页，区域(${image.x},${image.y},${image.width},${image.height})。与相邻块有重叠，同一题只返回一次，不得重复计分。`,
         });
         content.push(block);
       });
@@ -584,7 +540,7 @@ const ctx = {
   providers,
   publicProviders,
   // Module-facing model route: the credential owner plus the model label that
-  // the owner actually uses (API Key model or OAuth provider id).
+  // the owner actually uses.
   resolveModelRoute: (user) => {
     const route = resolveCredentialOwner(db, user);
     const owner = route.owner;
@@ -600,12 +556,12 @@ const ctx = {
       owner: owner
         ? {
             ...owner,
-            model: config?.model || owner.oauth_provider || "",
-            provider: config?.provider || owner.oauth_provider || "",
+            model: config?.model || "",
+            provider: config?.provider || "",
           }
         : null,
-      model: config?.model || owner?.oauth_provider || "",
-      provider: config?.provider || owner?.oauth_provider || "",
+      model: config?.model || "",
+      provider: config?.provider || "",
     };
   },
   getSchoolModelMode: (schoolId) => getSchoolModelMode(db, schoolId),
@@ -615,7 +571,12 @@ registerParentRoutes(app, ctx);
 registerReviewRoutes(app, ctx);
 registerMistakeRoutes(app, ctx);
 registerModelAccessRoutes(app, ctx);
-registerOAuthRoutes(app, ctx);
+db.prepare(
+  "UPDATE users SET model_auth_mode='api_key',oauth_provider=NULL WHERE model_auth_mode='oauth'",
+).run();
+app.use("/api/oauth", (req, res) =>
+  res.status(404).json({ error: "此版本已移除 OAuth，请使用 API Key" }),
+);
 
 const modelConfigGuard = createModelConfigGuard(db);
 app.get("/api/health", (_q, r) =>
@@ -996,7 +957,7 @@ app.post(
           "SELECT id,title,description FROM knowledge WHERE school_id=? AND stage=? AND subject=? ORDER BY title",
         )
         .all(req.user.school_id, req.user.stage, req.user.subject);
-      const prompt = `你是学校作业数字化助手。请忠实解析这份教师上传的作业原件，并整理为可直接发布的草稿。\n教师设置：学段=${req.user.stage}，学科=${req.user.subject}，班级=${req.user.class_name}。\n${word ? `Word 文档已提取文字：\n${word.text}\n` : "图片/PDF 已按页面附在消息中。"}\n现有校本知识库=${JSON.stringify(knowledge)}。\n规则：1. 只能提取原件中实际出现的题目，按原顺序，不得补题或改题；2. 无法辨认的部分写[无法辨认]；3. 原件没有答案时，根据题目自行推导标准答案与简明评分要点，并在 answerGenerated 标记 true；4. 优先使用现有知识点；没有匹配项时生成一个符合该学段教材的简洁知识点名称，并在 knowledgeGenerated 标记 true；5. 原件未标分值时，根据题型和难度给出合理分值。\n只返回 JSON：{"title":"原件标题或文件名","questions":[{"prompt":"完整题干","standardAnswer":"答案与评分要点","score":10,"knowledgeTitle":"知识点","answerGenerated":true,"knowledgeGenerated":false}],"warnings":["确实需要教师注意的识别问题"]}`;
+      const prompt = `你是学校作业数字化助手。请忠实解析这份教师上传的作业原件，并整理为可直接发布的草稿。\n教师设置：学段=${req.user.stage}，学科=${req.user.subject}，班级=${req.user.class_name}。\n${word ? `Word 文档已提取文字：\n${word.text}\n` : "图片/PDF 已按页面附在消息中。"}\n现有校本知识库=${JSON.stringify(knowledge)}。\n附图规则：将原题附图独立重建为600×600坐标系的线段、圆和文字标注figure，不输出整页或屏幕截图；无法忠实重建则figure=null并在warnings提示教师补图。选择、填空题的standardAnswer只含答案，不含评分要点。规则：1. 只能提取原件中实际出现的题目，按原顺序，不得补题或改题；2. 无法辨认的部分写[无法辨认]；3. 原件没有答案时，根据题目自行推导标准答案与简明评分要点，并在 answerGenerated 标记 true；4. 优先使用现有知识点；没有匹配项时生成一个符合该学段教材的简洁知识点名称，并在 knowledgeGenerated 标记 true；5. 原件未标分值时，根据题型和难度给出合理分值。\n只返回 JSON：{"title":"原件标题或文件名","questions":[{"questionType":"choice/fill/subjective","figure":{"caption":"图意说明；无图则null","shapes":[{"type":"line/circle/text","x":0,"y":0,"x2":100,"y2":100,"r":20,"text":"标注"}]},"prompt":"完整题干","standardAnswer":"答案（选择、填空题只写答案，不含评分要点）","score":10,"knowledgeTitle":"知识点","answerGenerated":true,"knowledgeGenerated":false}],"warnings":["确实需要教师注意的识别问题"]}`;
       const parsed = await callModel(req.user, prompt, images, signal);
       if (!Array.isArray(parsed.questions) || !parsed.questions.length)
         throw new Error("未从文件中识别到题目，请检查图片清晰度或模型配置");
@@ -1024,8 +985,13 @@ app.post(
       res.json({
         title: parsed.title || path.parse(req.file.originalname).name,
         questions: parsed.questions.map((item) => ({
+          figure: normalizeFigure(item.figure),
           prompt: String(item.prompt || "").trim(),
-          standardAnswer: String(item.standardAnswer || "").trim(),
+          standardAnswer: referenceAnswer(
+            item.standardAnswer,
+            item.prompt,
+            item.questionType,
+          ),
           score: Number(item.score) || 0,
           knowledgeId:
             knowledgeMap.get(String(item.knowledgeTitle || "").trim()) || "",
@@ -1125,17 +1091,24 @@ app.post("/api/assignments", auth, teacher, (req, res) => {
       "bank",
     );
     const q = db.prepare("INSERT INTO questions VALUES(?,?,?,?,?,?,?)");
-    x.questions.forEach((v, i) =>
+    x.questions.forEach((v, i) => {
+      const questionId = uid();
       q.run(
-        uid(),
+        questionId,
         id,
         i + 1,
         v.prompt,
-        v.standardAnswer,
+        referenceAnswer(v.standardAnswer, v.prompt, v.questionType),
         v.knowledgeId || null,
         Number(v.score) || 0,
-      ),
-    );
+      );
+      const figure = normalizeFigure(v.figure);
+      if (figure)
+        db.prepare("INSERT INTO question_figures VALUES(?,?)").run(
+          questionId,
+          JSON.stringify(figure),
+        );
+    });
     db.exec("COMMIT");
     res.json({ id, gradingMode: "bank" });
   } catch (e) {
@@ -1216,6 +1189,14 @@ app.get("/api/assignments/:id", auth, (req, res) => {
       )
       .all(a.id)
       .map((question) => {
+        question.figure = safeParse(
+          db
+            .prepare(
+              "SELECT figure_json FROM question_figures WHERE question_id=?",
+            )
+            .get(question.id)?.figure_json,
+          null,
+        );
         if (req.user.role === "student") {
           const { standard_answer, ...visible } = question;
           return visible;
@@ -1240,7 +1221,7 @@ app.post(
   (req, res) => {
     const a = req.assignment;
     if (!a) return res.status(404).json({ error: "作业不存在" });
-    const linkedStudent =
+    let linkedStudent =
       req.user.role === "student"
         ? req.user
         : req.body.studentId
@@ -1250,6 +1231,28 @@ app.post(
               )
               .get(req.body.studentId, req.user.school_id)
           : null;
+    if (
+      req.user.role === "teacher" &&
+      !req.body.studentId &&
+      typeof req.body.studentName === "string" &&
+      req.body.studentName.trim()
+    ) {
+      const candidates = db
+        .prepare(
+          "SELECT * FROM users WHERE school_id=? AND role='student' AND stage=? AND class_name=? AND trim(name)=?",
+        )
+        .all(
+          req.user.school_id,
+          a.stage,
+          a.class_name,
+          req.body.studentName.trim(),
+        );
+      if (candidates.length > 1)
+        return res
+          .status(400)
+          .json({ error: "班内存在同名学生，请选择具体学生账号" });
+      linkedStudent = candidates[0] || null;
+    }
     if (req.user.role === "teacher" && req.body.studentId && !linkedStudent)
       return res.status(400).json({ error: "学生账户不存在或不属于本校" });
     if (
@@ -1326,7 +1329,18 @@ function questionsForAssignment(assignmentId) {
     .prepare(
       "SELECT q.*,k.title knowledge_title FROM questions q LEFT JOIN knowledge k ON k.id=q.knowledge_id WHERE q.assignment_id=? ORDER BY q.number",
     )
-    .all(assignmentId);
+    .all(assignmentId)
+    .map((question) => ({
+      ...question,
+      figure: safeParse(
+        db
+          .prepare(
+            "SELECT figure_json FROM question_figures WHERE question_id=?",
+          )
+          .get(question.id)?.figure_json,
+        null,
+      ),
+    }));
 }
 // Direct-grading submissions carry their own AI-derived question list; the
 // review UI and mistake records use the same shape as question-bank assignments.
@@ -1335,6 +1349,7 @@ function questionsForSubmission(submission, assignment) {
     const parsed = safeParse(submission.questions_json, []);
     if (Array.isArray(parsed) && parsed.length)
       return parsed.map((question, index) => ({
+        figure: normalizeFigure(question.figure),
         id: String(question.id || `dq${question.number || index + 1}`),
         number: Number(question.number) || index + 1,
         prompt: String(question.prompt || ""),
@@ -1386,6 +1401,7 @@ app.get("/api/submissions/:id", auth, (req, res) => {
     })),
     questions: questions.map((question) => {
       const visibleQuestion = {
+        figure: question.figure || null,
         id: question.id,
         number: question.number,
         prompt: question.prompt,
@@ -1432,7 +1448,7 @@ function auditReview(submission, actorId, action, after) {
 }
 
 const bankRecognitionPrompt = (submission, questions, documentText) =>
-  `学校作业 OCR、自动批改与个性化练习。学段=${submission.stage}，学科=${submission.subject}，作业=${submission.title}。\n教师已经录入的正式题目=${JSON.stringify(questions)}。\n${documentText ? `答卷文字（按附件顺序）：\n${documentText}\n` : "学生答卷页面已附在消息中。"}\n规则：1. 忠实识别学生实际填写内容；2. 只能按 questionId 对齐正式题目；3. 无法辨认写[无法辨认]且 confidence 低于0.5；4. 自动判断正误和得分；5. 错题必须生成分步解析、错误原因、订正答案，以及2道同知识点同题型但数值或情境不同的练习题；6. 每个正式题目恰好返回一项；7. 每题必须给出 reasoning：说明判分依据（对照参考答案/评分要点的哪一部分、为什么判对或判错），不能只写“答案错误”；8. 错题给出 guidance：keyQuestion 是引导学生思考的关键问题（不能包含最终答案），hints 是 3 条递进提示（尽量不直接给最终答案），selfCheck 是 2-3 个自检问题。\n只返回 JSON：{"ocrText":"完整识别原文","items":[{"questionId":"题目id","knowledgeId":"知识点id","studentAnswer":"学生答案","isCorrect":false,"score":0,"reason":"错误原因","correction":"正确答案","explanation":"分步题目解析","reasoning":"AI 判断逻辑","confidence":0.0,"practiceQuestions":[{"prompt":"同类题","answer":"答案","explanation":"解析"}],"guidance":{"keyQuestion":"引导问题","hints":["提示1","提示2","提示3"],"selfCheck":["自检1"]}}]}`;
+  `学校作业 OCR、自动批改与个性化练习。学段=${submission.stage}，学科=${submission.subject}，作业=${submission.title}。\n教师已经录入的正式题目=${JSON.stringify(questions.map(({ figure, ...q }) => ({ ...q, figure: figure ? { caption: figure.caption, shapes: figure.shapes, hasImage: Boolean(figure.image) } : null })))}。\n${documentText ? `答卷文字（按附件顺序）：\n${documentText}\n` : "学生答卷页面已附在消息中。"}\n规则：1. 忠实识别学生实际填写内容；2. 只能按 questionId 对齐正式题目；3. 无法辨认写[无法辨认]且 confidence 低于0.5；4. 自动判断正误和得分；5. 错题必须生成分步解析、错误原因、订正答案，以及2道同知识点同题型但数值或情境不同的练习题；6. 每个正式题目恰好返回一项；7. 每题必须给出 reasoning：说明判分依据（对照参考答案/评分要点的哪一部分、为什么判对或判错），不能只写“答案错误”；8. 错题给出 guidance：keyQuestion 是引导学生思考的关键问题（不能包含最终答案），hints 是 3 条递进提示（尽量不直接给最终答案），selfCheck 是 2-3 个自检问题。\n从卷面姓名栏读取studentName，仅在清晰可辨认时填写，否则为空字符串，不猜测。只返回 JSON：{"studentName":"卷面姓名","ocrText":"完整识别原文","items":[{"questionId":"题目id","knowledgeId":"知识点id","studentAnswer":"学生答案","isCorrect":false,"score":0,"reason":"错误原因","correction":"正确答案","explanation":"分步题目解析","reasoning":"AI 判断逻辑","confidence":0.0,"practiceQuestions":[{"prompt":"同类题","answer":"答案","explanation":"解析"}],"guidance":{"keyQuestion":"引导问题","hints":["提示1","提示2","提示3"],"selfCheck":["自检1"]}}]}`;
 
 // Tolerant normalization of bank-mode AI output. A structurally valid but
 // imperfect reply is still shown to the teacher for review instead of losing
@@ -1543,7 +1559,25 @@ async function recognizeSubmission(
     qs,
     documentText,
   );
-  const parsed = await callModel(user, prompt, images, signal, reservation);
+  const referenceImages = qs.flatMap((q) => {
+    const image = q.figure?.image;
+    if (!image) return [];
+    const [header, base64] = image.split(",");
+    return [
+      {
+        base64,
+        mimeType: header.slice(5).split(";")[0],
+        questionNumber: q.number,
+      },
+    ];
+  });
+  const parsed = await callModel(
+    user,
+    prompt,
+    [...images, ...referenceImages],
+    signal,
+    reservation,
+  );
   if (tiles.length) {
     const returnedIds = new Set(
       Array.isArray(parsed?.items)
@@ -1592,6 +1626,7 @@ function prepareRecognition(user, result) {
       // Parents read the per-submission question snapshot from the analysis
       // payload; keep it there as well as in submissions.questions_json.
       questions: questions.map((question) => ({
+        figure: question.figure || null,
         id: question.id,
         number: question.number,
         prompt: question.prompt,
@@ -1603,6 +1638,10 @@ function prepareRecognition(user, result) {
       direct: true,
     };
     return {
+      studentName:
+        typeof result.parsed?.studentName === "string"
+          ? result.parsed.studentName.trim()
+          : "",
       kind: "direct",
       assignment,
       questions,
@@ -1627,6 +1666,10 @@ function prepareRecognition(user, result) {
     ),
   };
   return {
+    studentName:
+      typeof result.parsed?.studentName === "string"
+        ? result.parsed.studentName.trim()
+        : "",
     kind: "bank",
     assignment,
     questions: result.questions,
@@ -1647,6 +1690,21 @@ function submissionForJob(job) {
 }
 
 function persistRecognition(job, prepared) {
+  const existing = db
+    .prepare("SELECT student_id FROM submissions WHERE id=?")
+    .get(job.submission_id);
+  if (existing && !existing.student_id) {
+    const student = matchStudent(db, prepared.assignment, prepared.studentName);
+    if (student)
+      db.prepare(
+        "UPDATE submissions SET student_id=?,student_name=? WHERE id=? AND student_id IS NULL",
+      ).run(student.id, student.name, job.submission_id);
+    else
+      prepared.analysis.warnings = [
+        ...(prepared.analysis.warnings || []),
+        "未能唯一匹配学生，请教师核对并关联学生账户",
+      ];
+  }
   db.prepare(
     "UPDATE submissions SET status='review',teacher_reviewed=0,score=NULL,ocr_text=?,analysis_json=?,questions_json=? WHERE id=?",
   ).run(
@@ -1914,15 +1972,109 @@ app.post("/api/submissions/:id/review", auth, teacher, (req, res) => {
       .json({ error: e.message || "复核保存失败" });
   }
 });
+app.patch("/api/submissions/:id/student", auth, teacher, (req, res) => {
+  const submission = submissionFor(req);
+  if (!submission) return res.status(404).json({ error: "答卷不存在" });
+  if (submission.status === "recognizing")
+    return res.status(409).json({ error: "正在识别，请完成后再关联" });
+  const assignment = assignmentForSubmission(submission);
+  const student = db
+    .prepare(
+      "SELECT id,name FROM users WHERE id=? AND school_id=? AND role='student' AND stage=? AND class_name=?",
+    )
+    .get(
+      String(req.body.studentId || ""),
+      req.user.school_id,
+      assignment.stage,
+      assignment.class_name,
+    );
+  if (!student)
+    return res.status(400).json({ error: "请选择作业所在班级的学生" });
+  db.exec("BEGIN");
+  try {
+    db.prepare(
+      "UPDATE submissions SET student_id=?,student_name=? WHERE id=?",
+    ).run(student.id, student.name, submission.id);
+    db.prepare("UPDATE mistakes SET student_id=? WHERE submission_id=?").run(
+      student.id,
+      submission.id,
+    );
+    auditReview(submission, req.user.id, "link_student", {
+      studentId: student.id,
+    });
+    db.exec("COMMIT");
+    res.json({ ok: true, studentId: student.id, studentName: student.name });
+  } catch (error) {
+    db.exec("ROLLBACK");
+    res.status(400).json({ error: "关联失败，请重试" });
+  }
+});
+
+app.post(
+  "/api/submissions/:id/teaching-analysis",
+  auth,
+  teacher,
+  async (req, res) => {
+    const submission = submissionFor(req);
+    if (!submission) return res.status(404).json({ error: "答卷不存在" });
+    const assignment = assignmentForSubmission(submission);
+    if (assignment.grading_mode !== "direct" || !submission.teacher_reviewed)
+      return res.status(400).json({ error: "请先完成该直接批改答卷的复核" });
+    const source = submission.analysis_json;
+    const snapshot = safeParse(source, {});
+    try {
+      const raw = await callModel(
+        req.user,
+        `你是一线教师。根据一份已确认答卷生成具体教学建议，只评价该学生，不推断班级或年级排名，不编造题目或统计。学科：${assignment.subject}。题目：${JSON.stringify(safeParse(submission.questions_json, []).map(({ figure, ...q }) => ({ ...q, figure: figure ? { caption: figure.caption, shapes: figure.shapes } : null })))}。批改：${JSON.stringify(snapshot.items || [])}。
+只返回 JSON：{"brief":"学情结论","keyFindings":[{"title":"发现","detail":"具体依据","action":"辅导动作"}],"questionReviews":[{"number":1,"knowledge":"知识点","whyWrong":"具体错因","explainToStudents":"讲解","boardWork":"解题过程","quickCheck":"检查问题"}],"teacherScript":"可直接使用的讲评开场"}`,
+      );
+      const content = teachingContent(raw, "class");
+      const saved = db
+        .prepare(
+          "UPDATE submissions SET analysis_json=? WHERE id=? AND analysis_json=? AND teacher_reviewed=1",
+        )
+        .run(
+          JSON.stringify({ ...snapshot, teachingAnalysis: content }),
+          submission.id,
+          source,
+        );
+      if (!saved.changes)
+        return res.status(409).json({ error: "答卷已变化，请刷新后重新生成" });
+      res.json({ content });
+    } catch (error) {
+      res
+        .status(modelErrorStatus(error))
+        .json({ error: error.message || "教学分析生成失败" });
+    }
+  },
+);
+
 app.post("/api/papers/generate", auth, teacher, (req, res) => {
   const rows = db
     .prepare(
-      "SELECT DISTINCT m.id,COALESCE(q.prompt,m.prompt) prompt,COALESCE(q.standard_answer,m.standard_answer) standard_answer,k.title knowledge_title FROM mistakes m LEFT JOIN questions q ON q.id=m.question_id JOIN submissions s ON s.id=m.submission_id JOIN assignments a ON a.id=s.assignment_id LEFT JOIN knowledge k ON k.id=m.knowledge_id WHERE a.teacher_id=? AND s.teacher_reviewed=1 AND COALESCE(q.prompt,m.prompt)<>'' ORDER BY RANDOM() LIMIT ?",
+      "SELECT DISTINCT m.id,m.question_number source_number,s.questions_json source_questions,q.id source_question_id,COALESCE(q.prompt,m.prompt) prompt,COALESCE(q.standard_answer,m.standard_answer) standard_answer,k.title knowledge_title FROM mistakes m LEFT JOIN questions q ON q.id=m.question_id JOIN submissions s ON s.id=m.submission_id JOIN assignments a ON a.id=s.assignment_id LEFT JOIN knowledge k ON k.id=m.knowledge_id WHERE a.teacher_id=? AND s.teacher_reviewed=1 AND COALESCE(q.prompt,m.prompt)<>'' ORDER BY RANDOM() LIMIT ?",
     )
     .all(
       req.user.id,
       Math.max(1, Math.min(Math.floor(Number(req.body.count)) || 10, 50)),
     );
+  for (const row of rows) {
+    row.figure =
+      safeParse(
+        db
+          .prepare(
+            "SELECT figure_json FROM question_figures WHERE question_id=?",
+          )
+          .get(row.source_question_id || "")?.figure_json,
+        null,
+      ) ||
+      normalizeFigure(
+        safeParse(row.source_questions, []).find(
+          (q) => Number(q.number) === Number(row.source_number),
+        )?.figure,
+      );
+    delete row.source_questions;
+  }
   const id = uid(),
     rawTitle = req.body.title;
   if (
@@ -2089,6 +2241,51 @@ function courseKnowledgeLabels(stats) {
     .map((row) => row.title);
 }
 
+app.get("/api/teacher/dashboard", auth, teacher, (req, res) => {
+  const assignments = db
+    .prepare(
+      "SELECT id,title,class_name FROM assignments WHERE teacher_id=? ORDER BY created_at DESC",
+    )
+    .all(req.user.id);
+  const submissions = db
+    .prepare(
+      `SELECT s.*,a.id assignmentId,
+    (SELECT SUM(q.score) FROM questions q WHERE q.assignment_id=a.id) total
+    FROM submissions s JOIN assignments a ON a.id=s.assignment_id WHERE a.teacher_id=?`,
+    )
+    .all(req.user.id);
+  const rows = assignments.map((a) => {
+    const entries = submissions.filter((s) => s.assignment_id === a.id);
+    const rates = entries
+      .filter((s) => s.teacher_reviewed && s.score !== null)
+      .flatMap((s) => {
+        const total =
+          Number(s.total) ||
+          Number(safeParse(s.analysis_json, {})?.scoreTotal) ||
+          safeParse(s.questions_json, []).reduce(
+            (sum, q) => sum + (Number(q.score) || 0),
+            0,
+          );
+        return total > 0 ? [Math.max(0, Math.min(1, s.score / total))] : [];
+      });
+    return {
+      ...a,
+      submissions: entries.length,
+      completed: entries.filter((s) => s.teacher_reviewed).length,
+      averageRate: rates.length
+        ? rates.reduce((a, b) => a + b, 0) / rates.length
+        : null,
+    };
+  });
+  res.json({
+    assignments: assignments.length,
+    submissions: submissions.length,
+    pending: submissions.filter((s) => !s.teacher_reviewed).length,
+    unlinked: submissions.filter((s) => !s.student_id).length,
+    rows,
+  });
+});
+
 app.get("/api/teaching/assignments", auth, schoolStaff, (req, res) => {
   const rows = req.user.is_school_admin
     ? db
@@ -2149,9 +2346,9 @@ app.post(
     );
     if (!stats)
       return res.status(404).json({ error: "作业不存在或不属于你的账户" });
-    if (!stats.overview.mistakeCount)
+    if (!stats.overview.reviewedCount)
       return res.status(400).json({
-        error: "这份作业还没有已复核错题，先完成识别与复核再生成分析",
+        error: "这份作业尚未完成批改，请先完成识别与复核再生成分析",
       });
     try {
       const payload = promptPayload(stats, {
@@ -2394,17 +2591,21 @@ app.post(
         "bank",
       );
       const insert = db.prepare("INSERT INTO questions VALUES(?,?,?,?,?,?,?)");
-      source.forEach((question, index) =>
+      source.forEach((question, index) => {
+        const questionId = uid();
         insert.run(
-          uid(),
+          questionId,
           id,
           index + 1,
           question.prompt,
           question.standardAnswer || question.corrections[0] || "",
           question.knowledgeId || null,
           Number(question.score) || 0,
-        ),
-      );
+        );
+        db.prepare(
+          "INSERT INTO question_figures SELECT ?,figure_json FROM question_figures WHERE question_id=?",
+        ).run(questionId, question.id);
+      });
       db.exec("COMMIT");
       res.json({
         id,

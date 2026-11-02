@@ -1,6 +1,6 @@
 # Repository Guidelines
 
-本文件面向在此仓库中工作的自动化代理/贡献者。当前产品版本：**v0.2.1-rc4（build 26102501）**。
+本文件面向在此仓库中工作的自动化代理/贡献者。当前产品版本：**v0.2.2-rc1（build 26110101）**。
 新增或修改功能后请同步更新本文件。
 
 ## Project Structure & Module Organization
@@ -24,7 +24,7 @@
   - `build.mjs`/`assemble.mjs` 组装实际平台运行时；`targets.json` 是支持矩阵；`runtime/` 管理私有配置、实例锁、IPC、启动/停止；`windows/` 是 Win32 启动/服务宿主（CMake + 静态 CRT），不绘制安装 UI。
   - `smoke-installed.mjs`/`smoke-service.mjs`/`windows/smoke-msi.ps1` 验证实际包，说明见 `tools/installer/README.md`。
   - `tools/deployer/` 仅保留历史源码/兼容组装工具；不重新启用旧 GUI 发布，也不恢复 campus-deploy。
-- **文档/截图/发布**：`README.md` / `README.EN.md`（顶部徽章）、`docs/oauth-flows.md`（OAuth 接口契约）、`docs/releases/v0.2.1-rc4.md`、`docs/screenshots-v0.2.1/`、`SECURITY_REVIEW.md`、`SAFETY*.md`。
+- **文档/截图/发布**：`README.md` / `README.EN.md`（顶部徽章）、`docs/oauth-flows.md`（OAuth 接口契约）、`docs/releases/v0.2.2-rc1.md`、`docs/screenshots-v0.2.1/`、`SECURITY_REVIEW.md`、`SAFETY*.md`。
 - **静态资源/构建产物**：`public/`、`dist/`；运行数据在 `data/`（禁止提交）。
 - **Cloudflare**：`cloudflare-worker.mjs`、`wrangler.jsonc`。
 
@@ -33,7 +33,7 @@
 - `npm install` 安装锁定依赖；`npm ci` 用于 CI。
 - `npm run dev`：Vite 开发服务器（127.0.0.1:5173）。
 - `npm run dev:server`：监听式 API 服务（8787）。
-- `npm run build`：严格 TypeScript 检查 + Vite 生产构建（`dist/`）。
+- `npm run build`：强制重新执行严格 TypeScript 检查（`tsc -b --force`）+ Vite 生产构建（`dist/`），避免旧增量缓存跳过类型检查。
 - `npm test`：Vitest 全量测试（含 e2e）。
 - `npm start`：生产 API + 已构建前端（默认 127.0.0.1:8787）。
 - `npm run verify:teaching`：真实服务 + mock 模型的 AI 教学分析 API 校验。
@@ -63,6 +63,7 @@
 - Vitest 测试放在被测模块旁，命名 `*.test.ts`（如 `server/oauth.test.ts`、`server/model-access.test.ts`）。覆盖授权边界、SQLite 迁移、文件解析、provider 行为与 OAuth 流程。
 - OAuth/模型相关测试一律 mock `fetch`/provider 模块，不调用付费模型、不进行真实 OAuth 登录、不触真实上游网络。
 - 浏览器流程用 `tests/browser/*.pw.mjs` + Playwright；涉及 UI 的改动建议补充或更新截图（`docs/screenshots-v0.2.1/`），CI 会运行 Chromium。
+- 浏览器隔离服务仅在测试入口启用单层代理信任，各用例使用独立的合成客户端地址，避免整套测试共用一个 IP 耗尽登录次数；不得为测试关闭生产登录限流。
 - 原生包：Windows launcher CTest + MSI 实际安装/修复/卸载；Linux DEB 实装/systemd/卸载及 RPM 检查；Mac PKG 实装/.app 启动/保留数据。安装器可视界面和签名/公证未验证时需明确记录。
 - 提交前至少运行：`npm test`（或相关子集）、`npm run build`、相关 OAuth/迁移测试；改动部署器时再构建并运行 CTest/自检。
 
@@ -138,3 +139,11 @@
 - 首次访问才挂载区块，访问后保持。列表刷新保留当前表单与记录选择，用请求票据排除旧响应。上传成功使用接口返回的真实答卷 ID 打开本页复核；题库复核完成刷新对应分析；重练作业创建后定位并选择真实新作业 ID。直批不进入班级题库分析。
 - 学校模型策略/班主任与凭证集中在账户设置，策略变动重读权限/OAuth 状态但不清空未提交密钥；账户保存后留在原设置页。家长看板的孩子选择和学生答案解锁边界保持。
 - 打印按钮须用 printRegion，只输出所选试卷/讲评/学生诊断，afterprint 恢复布局，不把同页学生名单或其他作业一起输出。浏览器测试覆盖章节间草稿/文件保留、上下游更新、移动端定位、权限和打印媒体隔离。
+
+## v0.2.2-rc1 迭代约定（优先于上方历史 OAuth 说明）
+
+- 产品运行时仅使用 API Key；不恢复 OAuth 页面、授权路由或调用分支。历史 OAuth 模块仅作旧协议回归参考，不由应用加载。
+- 逐题等级统一使用 src/grades.ts：95% A+、85% A、75% B+、60% B，其余 C；未评分显示待评定。教师复核保留数值输入。
+- 独立题图使用 question_figures 表的受限矢量描述；仅允许线段、圆、文字，禁止 HTML/SVG 字符串或外部资源。旧题图不会自动补造。
+- 自动学生匹配限制本校、作业学段与班级、唯一姓名；已关联账户不被 OCR 覆盖。同名或无法辨认必须人工选择。
+- 家长看板保留复核可见边界；移除已复核作业指标和学科表现。周筛选按北京时间自然周；比较依据和样本不足必须明示。
