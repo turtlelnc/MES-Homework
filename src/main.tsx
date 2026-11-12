@@ -19,11 +19,11 @@ import {
   FileSpreadsheet,
   FileText,
   KeyRound,
+  LayoutDashboard,
   Library,
   LogOut,
   Plus,
   RefreshCw,
-  School,
   Settings,
   ShieldCheck,
   Sparkles,
@@ -118,47 +118,63 @@ type DraftQuestion = {
   answerGenerated?: boolean;
   knowledgeGenerated?: boolean;
 };
-const teacherNav = [
-  ["work", "教学工作台", BookOpen],
-  ["settings", "设置", Settings],
-] as const;
-const adminNav = [
-  ["school", "学校管理", School],
-  ["settings", "账户设置", Settings],
-] as const;
-const studentNav = [
-  ["learning", "学习工作台", BookOpen],
-  ["settings", "账户设置", Settings],
-] as const;
+const teacherNav = [["settings", "设置", Settings]] as const;
+const adminNav = [["settings", "账户设置", Settings]] as const;
+const studentNav = [["settings", "账户设置", Settings]] as const;
 const parentNav = [
   ["parent", "孩子看板", BarChart3],
   ["settings", "账户设置", Settings],
 ] as const;
+type SectionNavItem = readonly [string, string, typeof Settings];
+const teacherSections: readonly SectionNavItem[] = [
+  ["overview", "总览", LayoutDashboard],
+  ["assignments", "作业与上传", UploadCloud],
+  ["review", "识别与复核", ClipboardCheck],
+  ["teaching", "AI 教学分析", Sparkles],
+  ["students", "学生管理", Users],
+  ["knowledge", "知识库", Library],
+  ["papers", "错题组卷", FileText],
+];
+const studentSections: readonly SectionNavItem[] = [
+  ["assignments", "我的作业", UploadCloud],
+  ["mistakes", "我的错题", FileText],
+];
+const schoolSections: readonly SectionNavItem[] = [
+  ["school", "学校仪表盘", LayoutDashboard],
+  ["students", "学生管理", Users],
+];
+const SECTION_IDS = new Set([
+  "overview",
+  "assignments",
+  "review",
+  "teaching",
+  "students",
+  "knowledge",
+  "papers",
+  "mistakes",
+  "school",
+]);
 function App() {
   const [user, setUser] = useState<User | null>(null),
     [loading, setLoading] = useState(true),
     [view, setView] = useState("work"),
+    [activeSection, setActiveSection] = useState(""),
     [toast, setToast] = useState("");
   const [sessionError, setSessionError] = useState("");
   const [sectionRequest, setSectionRequest] = useState<SectionRequest>(null);
   const navigationTicket = useRef(0);
   const navigate = (destination: string) => {
-    const groups: Record<string, string> = {
-      overview: "work",
-      assignments: "work",
-      review: "work",
-      teaching: "work",
-      students: "work",
-      knowledge: "work",
-      papers: "work",
-    };
-    setView(groups[destination] || destination);
-    const firstSection: Record<string, string> = {
-      work: "overview",
-      learning: "assignments",
-    };
+    const workspaceView = user?.is_school_admin
+      ? "school"
+      : user?.role === "teacher"
+        ? "work"
+        : "learning";
+    if (SECTION_IDS.has(destination)) {
+      setView(workspaceView);
+      setActiveSection(destination);
+    } else setView(destination);
     setSectionRequest({
-      id: firstSection[destination] || destination,
+      id: destination,
       ticket: ++navigationTicket.current,
     });
   };
@@ -180,16 +196,18 @@ function App() {
                 ? "parent"
                 : "learning",
         );
+        const defaultSection = u.is_school_admin
+          ? "school"
+          : u.role === "teacher"
+            ? "overview"
+            : u.role === "student"
+              ? "assignments"
+              : "parent";
         setSectionRequest({
-          id: u.is_school_admin
-            ? "school"
-            : u.role === "teacher"
-              ? "overview"
-              : u.role === "student"
-                ? "assignments"
-                : "parent",
+          id: defaultSection,
           ticket: ++navigationTicket.current,
         });
+        setActiveSection(u.role === "parent" ? "" : defaultSection);
       }
     } catch (error) {
       if (generation !== refreshGeneration.current) return;
@@ -270,6 +288,20 @@ function App() {
       : user.role === "parent"
         ? parentNav
         : studentNav;
+  const workspaceSections: readonly SectionNavItem[] = user.is_school_admin
+    ? schoolSections
+    : user.role === "teacher"
+      ? teacherSections
+      : user.role === "student"
+        ? studentSections
+        : [];
+  const workspaceView = user.is_school_admin
+    ? "school"
+    : user.role === "teacher"
+      ? "work"
+      : user.role === "student"
+        ? "learning"
+        : "";
   return (
     <div className="rc4">
       <header className="rc4-header">
@@ -299,6 +331,24 @@ function App() {
               <small>学校编号 {user.school_id.slice(0, 8)}…</small>
             </div>
           </div>
+          {workspaceSections.length > 0 && (
+            <nav className="workspace-nav" aria-label="工作台章节">
+              {workspaceSections.map(([id, label, Icon]) => {
+                const current = view === workspaceView && activeSection === id;
+                return (
+                  <button
+                    key={id}
+                    className={current ? "active" : ""}
+                    aria-current={current ? "location" : undefined}
+                    onClick={() => navigate(id)}
+                  >
+                    <Icon size={19} />
+                    <span>{label}</span>
+                  </button>
+                );
+              })}
+            </nav>
+          )}
           <nav>
             {nav.map(([id, label, Icon]) => (
               <button
@@ -340,6 +390,7 @@ function App() {
               user={user}
               notify={setToast}
               request={sectionRequest}
+              onSectionChange={setActiveSection}
             />
           )}{" "}
           {view === "work" &&
@@ -350,6 +401,7 @@ function App() {
                 notify={setToast}
                 navigate={navigate}
                 request={sectionRequest}
+                onSectionChange={setActiveSection}
               />
             )}
           {view === "parent" && (
@@ -360,8 +412,8 @@ function App() {
             !user.is_school_admin && (
               <WorkflowPage
                 id="learning"
-                label="学习工作台"
                 request={sectionRequest}
+                onSectionChange={setActiveSection}
                 sections={[
                   {
                     id: "assignments",
@@ -399,11 +451,13 @@ function TeacherWorkspace({
   notify,
   navigate,
   request,
+  onSectionChange,
 }: {
   user: User;
   notify: (message: string) => void;
   navigate: (view: string) => void;
   request: SectionRequest;
+  onSectionChange: (id: string) => void;
 }) {
   const [revision, setRevision] = useState(0);
   const [reviewTarget, setReviewTarget] = useState<{
@@ -425,8 +479,8 @@ function TeacherWorkspace({
   return (
     <WorkflowPage
       id="teaching"
-      label="教学工作台"
       request={section}
+      onSectionChange={onSectionChange}
       sections={[
         {
           id: "overview",
@@ -511,17 +565,19 @@ function SchoolWorkspace({
   user,
   notify,
   request,
+  onSectionChange,
 }: {
   user: User;
   notify: (message: string) => void;
   request: SectionRequest;
+  onSectionChange: (id: string) => void;
 }) {
   const [revision, setRevision] = useState(0);
   return (
     <WorkflowPage
       id="school"
-      label="学校管理"
       request={request}
+      onSectionChange={onSectionChange}
       sections={[
         {
           id: "school",

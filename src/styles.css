@@ -2187,6 +2187,11 @@ footer {
   padding: 26px 16px;
   display: flex;
   flex-direction: column;
+  position: sticky;
+  top: 76px;
+  align-self: flex-start;
+  height: calc(100vh - 76px);
+  overflow-y: auto;
 }
 .school-card {
   display: flex;
@@ -2230,6 +2235,25 @@ footer {
   background: #eaf2ff;
   color: #0b67cc;
   font-weight: 650;
+}
+.rc4-sidebar .workspace-nav {
+  margin-top: 22px;
+  gap: 3px;
+}
+.rc4-sidebar .workspace-nav button {
+  padding: 10px 12px;
+  font-size: 14px;
+}
+.rc4-sidebar .workspace-nav button > svg {
+  color: #8b97a8;
+}
+.rc4-sidebar .workspace-nav button.active > svg {
+  color: #0b67cc;
+}
+.rc4-sidebar nav + nav {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid #edf1f5;
 }
 .logout {
   margin-top: auto;
@@ -2911,6 +2935,9 @@ footer {
   .school-card div,
   .rc4-sidebar nav button:not(.active) {
     font-size: 0;
+  }
+  .school-card small {
+    display: none;
   }
   .school-card {
     padding: 10px;
@@ -4593,44 +4620,13 @@ footer {
   }
 }
 
-/* Related workflows share one document; chapter buttons only move focus. */
+/* Related workflows share one document; the sidebar indexes each chapter. */
 .workflow-page {
   display: grid;
   gap: 28px;
 }
-.workflow-chapters {
-  position: sticky;
-  top: 76px;
-  z-index: 10;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  padding: 12px;
-  background: var(--surface, #fff);
-  border: 1px solid #e4e8ee;
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgb(16 40 72 / 5%);
-}
-.workflow-chapters > span {
-  font-size: 12px;
-  color: #66758b;
-  margin-right: auto;
-}
-.workflow-chapters button {
-  border: 1px solid #dce4ef;
-  border-radius: 8px;
-  padding: 8px 12px;
-  background: #f8faff;
-  color: #24476b;
-  cursor: pointer;
-}
-.workflow-chapters button:focus-visible {
-  outline: 2px solid #1269d3;
-  outline-offset: 3px;
-}
 .workflow-section {
-  scroll-margin-top: 170px;
+  scroll-margin-top: 92px;
   min-width: 0;
 }
 .workflow-section:focus-visible {
@@ -4640,26 +4636,7 @@ footer {
 .workflow-section-pending {
   min-height: 0;
 }
-@media (max-width: 700px) {
-  .workflow-chapters {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-  }
-  .workflow-chapters > strong,
-  .workflow-chapters > span {
-    display: none;
-  }
-  .workflow-chapters button {
-    flex-shrink: 0;
-  }
-  .workflow-section {
-    scroll-margin-top: 145px;
-  }
-}
 @media print {
-  .workflow-chapters {
-    display: none;
-  }
   body[data-print-active]
     *:not([data-print-ancestor]):not([data-print-target]):not(
       [data-print-target] *
@@ -4701,34 +4678,6 @@ h2 {
   font-family: "DIN Alternate", "Arial", sans-serif;
   font-variant-numeric: tabular-nums;
 }
-.workflow-chapters button {
-  text-align: left;
-  min-height: 44px;
-}
-.workflow-chapters button:active {
-  transform: scale(0.98);
-}
-@media (min-width: 1100px) {
-  .workflow-page {
-    grid-template-columns: 176px minmax(0, 1fr);
-    align-items: start;
-    column-gap: 24px;
-  }
-  .workflow-chapters {
-    grid-column: 1;
-    grid-row: 1 / span 30;
-    flex-direction: column;
-    align-items: stretch;
-    top: 90px;
-  }
-  .workflow-chapters > span {
-    margin: 0 0 8px;
-  }
-  .workflow-section {
-    grid-column: 2;
-    scroll-margin-top: 90px;
-  }
-}
 @media print {
   .workflow-page {
     display: block;
@@ -4757,12 +4706,6 @@ h2 {
   max-width: 100%;
   max-height: 360px;
   object-fit: contain;
-}
-.workflow-chapters button[aria-current="location"] {
-  background: #e9f1fc;
-  border-color: #8cb5e6;
-  color: #164e93;
-  font-weight: 650;
 }
 .parent-recent {
   display: block;
