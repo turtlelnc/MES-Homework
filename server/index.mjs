@@ -43,7 +43,7 @@ import {
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { providers, publicProviders } from "./providers.mjs";
+import { providers, publicProviders, modelOutputLimit } from "./providers.mjs";
 import { cleanModelJson } from "./model-json.mjs";
 import { isWordDocument } from "./document-types.mjs";
 import { createPasswordHasher } from "./passwords.mjs";
@@ -473,7 +473,7 @@ async function askModel(
         config,
         images.length ? content : prompt,
         decrypt(config.encrypted_key, config.iv),
-        cost?.maxTokens || outputTokenLimit(),
+        cost?.maxTokens || modelOutputLimit(config, outputTokenLimit()),
       );
       const { response: rr, body: raw } = await requestJson(
         endpoint,
