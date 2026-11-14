@@ -1,6 +1,16 @@
 PRAGMA journal_mode=WAL;
 PRAGMA foreign_keys=ON;
 CREATE TABLE IF NOT EXISTS schools(id TEXT PRIMARY KEY,name TEXT NOT NULL,created_at TEXT NOT NULL);
+-- 一次性学校开通码：一码一校，注册时核销，避免任何人自行开设学校空间。
+CREATE TABLE IF NOT EXISTS school_invites(
+  code TEXT PRIMARY KEY,
+  note TEXT NOT NULL DEFAULT '',
+  expires_at TEXT,
+  used_at TEXT,
+  school_id TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_school_invites_state ON school_invites(used_at,expires_at);
 CREATE TABLE IF NOT EXISTS users(
   id TEXT PRIMARY KEY,
   school_id TEXT NOT NULL,

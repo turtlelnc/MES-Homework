@@ -10,5 +10,9 @@ export function applicationCapabilities(db, env = process.env) {
     m[1].replaceAll("''", "'"),
   );
   if (!stages.length) throw new Error("数据库缺少学段约束，无法生成注册表单");
-  return { stages, publicRegistration: env.ALLOW_PUBLIC_REGISTRATION !== "0" };
+  return {
+    stages,
+    publicRegistration: env.ALLOW_PUBLIC_REGISTRATION !== "0",
+    schoolInviteRequired: env.SCHOOL_INVITE_REQUIRED !== "0",
+  };
 }

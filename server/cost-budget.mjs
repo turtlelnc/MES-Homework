@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { outputTokenLimit } from "./provider-protocol.mjs";
 const fail = (message) =>
   Object.assign(new Error(message), { status: 429, code: "MODEL_QUOTA" });
 const integer = (value, fallback = 0) =>
@@ -14,12 +15,11 @@ export function costSettings() {
   }
   const school = integer(process.env.MODEL_SCHOOL_DAILY_MICRO_CNY);
   const user = integer(process.env.MODEL_USER_DAILY_MICRO_CNY);
-  const output = integer(process.env.MODEL_MAX_OUTPUT_TOKENS, 8192);
   return {
     rates,
     school,
     user,
-    output: Math.min(output || 8192, 32768),
+    output: outputTokenLimit(),
     enabled:
       school > 0 ||
       user > 0 ||

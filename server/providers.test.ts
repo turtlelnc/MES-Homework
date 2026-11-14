@@ -16,8 +16,15 @@ describe("rc4 provider presets", () => {
     try {
       db.exec("CREATE TABLE users(stage TEXT CHECK(stage IN('小学','高中')))");
       expect(
-        applicationCapabilities(db, { ALLOW_PUBLIC_REGISTRATION: "0" }),
-      ).toEqual({ stages: ["小学", "高中"], publicRegistration: false });
+        applicationCapabilities(db, {
+          ALLOW_PUBLIC_REGISTRATION: "0",
+          SCHOOL_INVITE_REQUIRED: "1",
+        }),
+      ).toEqual({
+        stages: ["小学", "高中"],
+        publicRegistration: false,
+        schoolInviteRequired: true,
+      });
     } finally {
       db.close();
     }

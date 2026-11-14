@@ -1,5 +1,27 @@
 import { expect, it } from "vitest";
-import { providerRequest, providerReply } from "./provider-protocol.mjs";
+import {
+  DEFAULT_MAX_OUTPUT_TOKENS,
+  MAX_OUTPUT_TOKENS_CEILING,
+  outputTokenLimit,
+  providerRequest,
+  providerReply,
+} from "./provider-protocol.mjs";
+
+it("caps grading output at 214K by default so long submissions finish", () => {
+  expect(DEFAULT_MAX_OUTPUT_TOKENS).toBe(214 * 1024);
+  expect(outputTokenLimit({})).toBe(219136);
+  expect(outputTokenLimit({ MODEL_MAX_OUTPUT_TOKENS: "8192" })).toBe(8192);
+  expect(outputTokenLimit({ MODEL_MAX_OUTPUT_TOKENS: "300000" })).toBe(300000);
+  expect(
+    outputTokenLimit({
+      MODEL_MAX_OUTPUT_TOKENS: String(MAX_OUTPUT_TOKENS_CEILING + 1),
+    }),
+  ).toBe(MAX_OUTPUT_TOKENS_CEILING);
+  for (const bad of ["", "abc", "0", "-1", "1.5"])
+    expect(outputTokenLimit({ MODEL_MAX_OUTPUT_TOKENS: bad })).toBe(
+      DEFAULT_MAX_OUTPUT_TOKENS,
+    );
+});
 it("uses Anthropic authentication, image blocks, response text and actual usage instead of guessing OpenAI compatibility", () => {
   const config = { provider: "anthropic", model: "explicit-model" };
   const request = providerRequest(

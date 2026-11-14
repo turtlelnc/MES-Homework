@@ -6,7 +6,11 @@ import {
   type ReactNode,
 } from "react";
 import { api } from "./api";
-type Capabilities = { stages: string[]; publicRegistration: boolean };
+type Capabilities = {
+  stages: string[];
+  publicRegistration: boolean;
+  schoolInviteRequired: boolean;
+};
 const Context = createContext<Capabilities | null>(null);
 export function CapabilitiesProvider({ children }: { children: ReactNode }) {
   const [value, setValue] = useState<Capabilities | null>(null),

@@ -9,6 +9,7 @@ import {
   providerHttpError,
   assertProviderCompletion,
   modelResponseLimits,
+  outputTokenLimit,
 } from "./provider-protocol.mjs";
 import { requestAdmission } from "./request-admission.mjs";
 import express from "express";
@@ -75,6 +76,11 @@ import {
 } from "./security.mjs";
 import { APP_VERSION, BUILD_NUMBER, VERSION_LABEL } from "./version.mjs";
 import { migrateDatabase, deriveUsernameSeed } from "./migrations.mjs";
+import {
+  announceBootstrapInvite,
+  bootstrapInvite,
+  clearBootstrapInviteFile,
+} from "./school-invites.mjs";
 import { registerAccountsRoutes } from "./accounts.mjs";
 import { registerParentRoutes } from "./parent.mjs";
 import {
@@ -124,6 +130,9 @@ const schemaSql = fs.readFileSync(path.join(root, "server/schema.sql"), "utf8");
 // v0.2.1: rebuild users/mistakes where SQLite cannot widen constraints in place,
 // then create v0.2.1 tables and derive account names for legacy rows.
 migrateDatabase(db, { schemaSql });
+const bootstrapCode = bootstrapInvite(db);
+if (bootstrapCode) announceBootstrapInvite(data, bootstrapCode);
+else clearBootstrapInviteFile(data);
 const capabilities = applicationCapabilities(db);
 db.exec(`
   UPDATE users SET is_school_admin=1
@@ -464,8 +473,7 @@ async function askModel(
         config,
         images.length ? content : prompt,
         decrypt(config.encrypted_key, config.iv),
-        cost?.maxTokens ||
-          Math.min(positive("MODEL_MAX_OUTPUT_TOKENS", 8192), 32768),
+        cost?.maxTokens || outputTokenLimit(),
       );
       const { response: rr, body: raw } = await requestJson(
         endpoint,

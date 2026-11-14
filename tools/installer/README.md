@@ -6,12 +6,12 @@
 
 已核对 GitHub v0.2.1-rc3 Pre-release 及 v0.2.2-rc1 Draft：实际应用运行时只有以下五个平台。历史 x86 资产只是旧部署器，Node 24 没有配套的 32 位应用运行时，因此不生成误导性的 x86 完整安装包。
 
-| 平台 | 安装包 |
-| --- | --- |
-| Windows x64 | MSI |
-| Windows ARM64 | MSI |
-| Linux x64 | DEB、RPM |
-| Linux ARM64 | DEB、RPM |
+| 平台                | 安装包                                     |
+| ------------------- | ------------------------------------------ |
+| Windows x64         | MSI                                        |
+| Windows ARM64       | MSI                                        |
+| Linux x64           | DEB、RPM                                   |
+| Linux ARM64         | DEB、RPM                                   |
 | macOS Apple Silicon | PKG，安装到 /Applications/MES Homework.app |
 
 Windows 使用 WiX 5.0.2 的标准中文 MSI 界面（MIT 许可页、功能选择、目录选择、进度与卸载），不使用旧 GUI。应用启动器为小型 Win32 程序，静态链接 CRT；不是另一个安装向导。Node 和生产依赖随包提供，不在用户安装时下载 npm/Git/编译器。Linux 系统库依赖从实际 ELF 计算，RPM 自动生成库依赖；包管理器仍可能需要安装系统依赖。Windows 的系统要求沿用所携带 Node 24（Windows 10/Server 2016 或更新版本）；Linux 的具体库版本以实际包元数据为准。
@@ -26,11 +26,11 @@ Windows 使用 WiX 5.0.2 的标准中文 MSI 界面（MIT 许可页、功能选�
 
 启动后只监听 loopback。本机模式使用 development Cookie 策略，便于纯本机 HTTP 访问，不等于运行 Vite 开发服务器。默认端口是产品配置 8787；若本机模式端口已被其他程序占用，向 OS 申请空闲端口，实际 URL 写入 instance.json。重复打开复用当前实例。关浏览器不停止后台应用，停止入口会请求正常关闭；Windows Job Object 和监督器提供兜底回收。
 
-| 系统 | 默认用户配置/数据根目录 |
-| --- | --- |
-| Windows | 实际 LOCALAPPDATA 下的 MESHomework |
-| Linux | 实际 XDG_DATA_HOME 下的 mes-homework；未设置时为 ~/.local/share/mes-homework |
-| macOS | ~/Library/Application Support/MESHomework |
+| 系统    | 默认用户配置/数据根目录                                                      |
+| ------- | ---------------------------------------------------------------------------- |
+| Windows | 实际 LOCALAPPDATA 下的 MESHomework                                           |
+| Linux   | 实际 XDG_DATA_HOME 下的 mes-homework；未设置时为 ~/.local/share/mes-homework |
+| macOS   | ~/Library/Application Support/MESHomework                                    |
 
 根目录保存 `.env`、`data/`、有界日志及实例控制信息。密钥首次运行在本机随机生成，任何安装包或 MSI 命令行都不携带固定 APP_SECRET。配置存在时保留原字节，不重写额外配置。现有数据库缺少 APP_SECRET 时拒绝生成替代密钥。数据目录不在安装目录内，卸载默认保留。日志每轮最多写 5 MiB，满额停止追加；下一次启动截断满额日志，避免无限占盘。
 
@@ -50,7 +50,32 @@ Windows 使用 WiX 5.0.2 的标准中文 MSI 界面（MIT 许可页、功能选�
 
 安装升级前先停止本机应用；原生文件占用提示需要正常处理。Linux 服务升级脚本只管理自己的服务，不扫描/强杀其他用户的应用。本机数据、服务数据、APP_SECRET 和外部 BACKUP_DIR 均不会随卸载自动删除。macOS 卸载为先停止应用/Agent、将 App 移到废纸篓；PKG 收据可由管理员 pkgutil --forget org.mes-homework.installer 清除，用户数据独立保留。
 
-旧部署器未注册为 MSI 产品，原有自定义目录不会自动迁移、删除或被扫描读取。先按 BACKUPS.md 备份并停止旧实例，再将 `MES_HOMEWORK_CONFIG` 指向旧 `.env`（或将原配置复制到新配置位置），保留原 APP_SECRET，DATA_DIR 改为原数据的绝对路径。确认数据访问权限符合新服务账户后启动新包。不要让旧/新实例同时访问同一 DATA_DIR，也不要在未保留密钥时只复制数据库。本机与服务器模式的数据不同，首次使用默认新目录会显示一个新的学校空间。
+旧部署器未注册为 MSI 产品，原有自定义目录不会自动迁移、删除或被扫描读取。先按 BACKUPS.md 备份并停止旧实例，再将 `MES_HOMEWORK_CONFIG` 指向旧 `.env`（或将原配置复制到新配置位置），保留原 APP_SECRET，DATA_DIR 改为原数据的绝对路径。确认数据访问权限符合新服务账户后启动新包。不要让旧/新实例同时访问同一 DATA_DIR，也不要在未保留密钥时只复制数据库。本机与服务器模式的数据不同。全新数据目录首次启动时会自动生成一枚学校开通码，写入启动日志和 `<DATA_DIR>/first-school-invite.txt`，用它完成首次建校；建校成功后该文件会在下次启动时清除。
+
+## 学校开通码（首次建校与后续签发）
+
+学校注册默认要求一次性开通码（`SCHOOL_INVITE_REQUIRED=0` 可关闭）。安装包不含 npm，用捆绑运行时签发：
+
+```sh
+<安装目录>/runtime/node <安装目录>/app/tools/ops/school-invites.mjs create --count 5 --note "某某中学" --days 30
+```
+
+该 CLI 默认读取 `<安装目录>/data`，原生安装的实际数据目录在别处，需用 `DATA_DIR` 指过去：
+
+| 模式         | 默认数据目录                                           |
+| ------------ | ------------------------------------------------------ |
+| Windows 本机 | `%LOCALAPPDATA%\MESHomework\data`                      |
+| Windows 服务 | `%ProgramData%\MESHomework\data`                       |
+| macOS 本机   | `~/Library/Application Support/MESHomework/data`       |
+| macOS 服务   | `~/Library/Application Support/MESHomeworkServer/data` |
+| Linux 本机   | `${XDG_DATA_HOME:-~/.local/share}/mes-homework/data`   |
+| Linux 服务   | `/var/lib/mes-homework/data`                           |
+
+```sh
+DATA_DIR=<上表对应目录> <安装目录>/runtime/node <安装目录>/app/tools/ops/school-invites.mjs list
+```
+
+服务模式还要保证运行用户对该数据库有写权限。升级到带开通码的版本后，必须先启动一次服务完成建表迁移；否则 CLI 会提示缺少 `school_invites` 表。
 
 ## 构建与验证
 
