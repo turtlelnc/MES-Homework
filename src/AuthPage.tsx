@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { api, json } from "./api";
 import { Button } from "./components/ui/button";
+import { VERSION_LABEL } from "./version";
 
 type Role = "school" | "teacher" | "student" | "parent";
 type Mode = "login" | "register";
@@ -161,7 +162,7 @@ export function AuthPage({ onDone }: { onDone: () => void }) {
             <BookOpen />
           </span>
           <div>
-            校园作业分析<small>SMART CAMPUS · v0.2.1-rc4</small>
+            校园作业分析<small>SMART CAMPUS · {VERSION_LABEL}</small>
           </div>
         </div>
         <div>
