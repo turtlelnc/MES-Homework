@@ -42,6 +42,7 @@ import {
 
 import { createTeachingScope } from "./teaching-state";
 import { printRegion } from "./print-region";
+import { APP_VERSION } from "./version";
 
 type Notify = (message: string) => void;
 
@@ -1459,7 +1460,7 @@ function downloadMarkdown(stats: TeachingStats, content: ClassAnalysis) {
   }
   lines.push(
     `---`,
-    `由校园作业分析 v0.2.0-rc1 生成 · 数据来源：教师已复核的 ${stats.overview.mistakeCount} 道错题`,
+    `由校园作业分析 ${APP_VERSION} 生成 · 数据来源：教师已复核的 ${stats.overview.mistakeCount} 道错题`,
   );
   const blob = new Blob([lines.join("\n")], {
     type: "text/markdown;charset=utf-8",
