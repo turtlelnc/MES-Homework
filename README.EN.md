@@ -1,7 +1,7 @@
 # Smart Campus Homework Analyzer · 校园作业分析
 
 [![Version](https://img.shields.io/badge/version-v0.2.2--rc3-2ea44f?style=flat)](https://github.com/turtlelnc/MES-Homework/releases)
-[![Build](https://img.shields.io/badge/build-26111403-0A84FF?style=flat)](https://github.com/turtlelnc/MES-Homework/releases)
+[![Build](https://img.shields.io/badge/build-26111405-0A84FF?style=flat)](https://github.com/turtlelnc/MES-Homework/releases)
 [![Tests](https://img.shields.io/badge/tests-CI%20passing-brightgreen?style=flat&logo=githubactions&logoColor=white)](https://github.com/turtlelnc/MES-Homework/actions)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat)](LICENSE)
 [![Security](https://img.shields.io/badge/security-P0%2FP1%20fixed-success?style=flat)](SECURITY_REVIEW.md)
@@ -11,7 +11,7 @@
 [![Node](https://img.shields.io/badge/node-%E2%89%A524-339933?style=flat&logo=nodedotjs&logoColor=white)](package.json)
 [![](https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness)
 
-**v0.2.2-rc3** (build26111403) | MIT License
+**v0.2.3-rc1** (build26111405) | MIT License
 
 [中文](README.md) | English
 
@@ -21,9 +21,9 @@ Smart Campus Homework Analyzer: upload homework, AI grades it; teacher review tu
 
 This is a full-stack version that can run on school or personal servers. Accounts, schools, students, knowledge bases, homework, OCR, teacher review, mistake notebooks, exam papers, parent dashboards, and AI teaching analysis all use persistent data.
 
-## v0.2.2-rc3 (build26111403)
+## v0.2.3-rc1 (build26111405)
 
-School creation now requires a one-time invite code (one code per school, consumed on registration; a fresh deployment issues a bootstrap code on first start), so students can no longer open schools on their own. The per-request model output limit rises from 8192 to 214K so long submissions finish grading instead of being truncated. Adds question grades, a left chapter directory, independent question figures, teacher metrics, automatic student matching, and parent date filters with comparable-paper growth and cohort levels. Removes OAuth, the parent reviewed-work counter and subject-performance sections. See [release notes](docs/releases/v0.2.2-rc3.md) for definitions and upgrade limits. API keys are the supported model connection.
+School creation now requires a one-time invite code (one code per school, consumed on registration; a fresh deployment issues a bootstrap code on first start), so students can no longer open schools on their own. The per-request model output limit rises from 8192 to 214K so long submissions finish grading instead of being truncated. Adds question grades, a left chapter directory, independent question figures, teacher metrics, automatic student matching, and parent date filters with comparable-paper growth and cohort levels. Removes OAuth, the parent reviewed-work counter and subject-performance sections. See [release notes](docs/releases/v0.2.3-rc1.md) for definitions and upgrade limits. API keys are the supported model connection.
 
 ## What's New in v0.2.1 (since v0.2.1-rc1)
 

@@ -1,6 +1,6 @@
 # Repository Guidelines
 
-本文件面向在此仓库中工作的自动化代理/贡献者。当前产品版本：**v0.2.2-rc3（build 26111403）**。
+本文件面向在此仓库中工作的自动化代理/贡献者。当前产品版本：**v0.2.3-rc1（build 26111405）**。
 新增或修改功能后请同步更新本文件。
 
 ## Project Structure & Module Organization
@@ -24,7 +24,11 @@
   - `build.mjs`/`assemble.mjs` 组装实际平台运行时；`targets.json` 是支持矩阵；`runtime/` 管理私有配置、实例锁、IPC、启动/停止；`windows/` 是 Win32 启动/服务宿主（CMake + 静态 CRT），不绘制安装 UI。
   - `smoke-installed.mjs`/`smoke-service.mjs`/`windows/smoke-msi.ps1` 验证实际包，说明见 `tools/installer/README.md`。
   - `tools/deployer/` 仅保留历史源码/兼容组装工具；不重新启用旧 GUI 发布，也不恢复 campus-deploy。
-- **文档/截图/发布**：`README.md` / `README.EN.md`（顶部徽章）、`docs/oauth-flows.md`（OAuth 接口契约）、`docs/releases/v0.2.2-rc3.md`、`docs/screenshots-v0.2.1/`、`SECURITY_REVIEW.md`、`SAFETY*.md`。
+- **文档/截图/发布**：`README.md` / `README.EN.md`（顶部徽章）、`docs/oauth-flows.md`（OAuth 接口契约）、`docs/releases/v0.2.3-rc1.md`、`docs/screenshots-v0.2.1/`、`SECURITY_REVIEW.md`、`SAFETY*.md`。
+- **命令行便携版**：`cli/`（`@turtlelnc/msh` 与 `@turtlelnc/mes-homework` 两个 npm 包同源）。
+  - `cli/bin/msh.mjs` 是入口，`cli/src/cli.mjs` 负责参数分发；命令实现分别在 `ops.mjs`（开通码/API Key/账号/自检/绑定网址/语言）、`power.mjs`（开机自启）、`cloudflared.mjs`（隧道）、`admin.mjs`（服务器管理网页）、`mcp.mjs`（stdio MCP）。
+  - 复用 `tools/installer/runtime` 的 `locations`/`prepareConfig`/`launch.mjs`，数据目录与原生安装一致（Windows `%LOCALAPPDATA%\MESHomework`）。
+  - 打包：`node cli/scripts/build-packages.mjs` 生成 `.npm-packages/`（`msh` 含运行时，`mes-homework` 依赖 `msh`）。
 - **静态资源/构建产物**：`public/`、`dist/`；运行数据在 `data/`（禁止提交）。
 - **Cloudflare**：`cloudflare-worker.mjs`、`wrangler.jsonc`。
 

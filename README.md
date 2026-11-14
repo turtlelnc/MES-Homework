@@ -1,7 +1,7 @@
 # 校园作业分析 · Smart Campus Homework Analyzer
 
 [![Version](https://img.shields.io/badge/version-v0.2.2--rc3-2ea44f?style=flat)](https://github.com/turtlelnc/MES-Homework/releases)
-[![Build](https://img.shields.io/badge/build-26111403-0A84FF?style=flat)](https://github.com/turtlelnc/MES-Homework/releases)
+[![Build](https://img.shields.io/badge/build-26111405-0A84FF?style=flat)](https://github.com/turtlelnc/MES-Homework/releases)
 [![Tests](https://img.shields.io/badge/tests-CI%20passing-brightgreen?style=flat&logo=githubactions&logoColor=white)](https://github.com/turtlelnc/MES-Homework/actions)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat)](LICENSE)
 [![Security](https://img.shields.io/badge/security-P0%2FP1%20fixed-success?style=flat)](SECURITY_REVIEW.md)
@@ -11,7 +11,7 @@
 [![Node](https://img.shields.io/badge/node-%E2%89%A524-339933?style=flat&logo=nodedotjs&logoColor=white)](package.json)
 [![](https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness)
 
-**v0.2.2-rc3**（build26111403）｜ MIT License
+**v0.2.3-rc1**（build26111405）｜ MIT License
 
 [English](README.EN.md) | 中文
 
@@ -21,9 +21,9 @@
 
 这是可在学校或个人服务器运行的全栈版本。账户、学校、学生、知识库、作业、OCR、教师复核、错题本、试卷、家长看板与 AI 教学分析均使用持久化数据。
 
-## v0.2.2-rc3（build26111403）
+## v0.2.3-rc1（build26111405）
 
-学校注册改为一次性开通码（一码一校、注册即核销，全新部署首次启动自动签发引导码），杜绝学生自行开设“学校”；单次批改的模型输出上限由 8192 提高到 214K，避免长答卷批改未完成即被截断。左侧操作目录与字体层级、逐题五档等级、独立图题组卷、教师数据看板、卷面姓名自动匹配、家长周/日期筛选及成长与同类试卷比较。家长端移除“已复核作业”指标和学科表现；OAuth 已移除。完整口径与升级注意事项见 [版本说明](docs/releases/v0.2.2-rc3.md)。
+学校注册改为一次性开通码（一码一校、注册即核销，全新部署首次启动自动签发引导码），杜绝学生自行开设“学校”；单次批改的模型输出上限由 8192 提高到 214K，避免长答卷批改未完成即被截断。左侧操作目录与字体层级、逐题五档等级、独立图题组卷、教师数据看板、卷面姓名自动匹配、家长周/日期筛选及成长与同类试卷比较。家长端移除“已复核作业”指标和学科表现；OAuth 已移除。完整口径与升级注意事项见 [版本说明](docs/releases/v0.2.3-rc1.md)。
 
 ## v0.2.1 新增（v0.2.1-rc1 起）
 
