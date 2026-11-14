@@ -9,7 +9,7 @@ import net from "node:net";
 import { pathToFileURL } from "node:url";
 import { issueInvite } from "./school-invites.mjs";
 
-// v0.2.2-rc3 端到端验收：真实启动服务，模型调用由 preload 的假 fetch 按顺序返回
+// v0.2.3-rc1 端到端验收：真实启动服务，模型调用由 preload 的假 fetch 按顺序返回
 // 预置 JSON。覆盖四身份注册、模型模式与凭证归属、三种复核方式、无原题直批、
 // 引导式错题本、家长端看板/学情分析与 OAuth 目录。
 
@@ -195,12 +195,12 @@ afterAll(async () => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-describe("v0.2.2-rc3 (mock model only)", () => {
+describe("v0.2.3-rc1 (mock model only)", () => {
   it("reports the new version and build number", async () => {
     const health = await (await request("/api/health")).json();
-    expect(health.version).toBe("v0.2.2-rc3");
-    expect(health.build).toBe("26111403");
-    expect(health.versionLabel).toBe("v0.2.2-rc3 (build26111403)");
+    expect(health.version).toBe("v0.2.3-rc1");
+    expect(health.build).toBe("26111405");
+    expect(health.versionLabel).toBe("v0.2.3-rc1 (build26111405)");
   });
 
   it("registers school / teacher / student / parent with account names", async () => {

@@ -4,8 +4,8 @@ import path from "node:path";
 import { APP_VERSION, BUILD_NUMBER, VERSION_LABEL } from "./version.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
-const expectedVersion = "0.2.2-rc3";
-const expectedBuild = "26111403";
+const expectedVersion = "0.2.3-rc1";
+const expectedBuild = "26111405";
 
 describe("release identity", () => {
   it("keeps package.json, server and frontend version labels in sync", () => {
@@ -22,11 +22,11 @@ describe("release identity", () => {
     expect(lock.packages[""].version).toBe(expectedVersion);
     expect(VERSION_LABEL).toBe(`v${expectedVersion} (build${expectedBuild})`);
     const frontend = fs.readFileSync(path.join(root, "src/version.ts"), "utf8");
-    expect(frontend).toContain('APP_VERSION = "v0.2.2-rc3"');
-    expect(frontend).toContain('BUILD_NUMBER = "26111403"');
+    expect(frontend).toContain('APP_VERSION = "v0.2.3-rc1"');
+    expect(frontend).toContain('BUILD_NUMBER = "26111405"');
     const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
-    expect(readme).toContain("v0.2.2-rc3");
-    expect(readme).toContain("build26111403");
+    expect(readme).toContain("v0.2.3-rc1");
+    expect(readme).toContain("build26111405");
     const deployer = fs.readFileSync(
       path.join(root, "tools/deployer/CMakeLists.txt"),
       "utf8",

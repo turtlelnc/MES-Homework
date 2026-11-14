@@ -49,3 +49,6 @@ release-native/
 .native-build/
 .native-deps/
 .wix/
+
+# npm 便携包构建产物
+.npm-packages/
