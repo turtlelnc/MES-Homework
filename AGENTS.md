@@ -1,6 +1,6 @@
 # Repository Guidelines
 
-本文件面向在此仓库中工作的自动化代理/贡献者。当前产品版本：**v0.2.2-rc1（build 26110101）**。
+本文件面向在此仓库中工作的自动化代理/贡献者。当前产品版本：**v0.2.2-rc3（build 26111403）**。
 新增或修改功能后请同步更新本文件。
 
 ## Project Structure & Module Organization
@@ -24,7 +24,7 @@
   - `build.mjs`/`assemble.mjs` 组装实际平台运行时；`targets.json` 是支持矩阵；`runtime/` 管理私有配置、实例锁、IPC、启动/停止；`windows/` 是 Win32 启动/服务宿主（CMake + 静态 CRT），不绘制安装 UI。
   - `smoke-installed.mjs`/`smoke-service.mjs`/`windows/smoke-msi.ps1` 验证实际包，说明见 `tools/installer/README.md`。
   - `tools/deployer/` 仅保留历史源码/兼容组装工具；不重新启用旧 GUI 发布，也不恢复 campus-deploy。
-- **文档/截图/发布**：`README.md` / `README.EN.md`（顶部徽章）、`docs/oauth-flows.md`（OAuth 接口契约）、`docs/releases/v0.2.2-rc1.md`、`docs/screenshots-v0.2.1/`、`SECURITY_REVIEW.md`、`SAFETY*.md`。
+- **文档/截图/发布**：`README.md` / `README.EN.md`（顶部徽章）、`docs/oauth-flows.md`（OAuth 接口契约）、`docs/releases/v0.2.2-rc3.md`、`docs/screenshots-v0.2.1/`、`SECURITY_REVIEW.md`、`SAFETY*.md`。
 - **静态资源/构建产物**：`public/`、`dist/`；运行数据在 `data/`（禁止提交）。
 - **Cloudflare**：`cloudflare-worker.mjs`、`wrangler.jsonc`。
 
@@ -105,6 +105,7 @@
 - `/me` 的 401 才表示未登录；网络/503 必须保留当前用户并提供重试。退出失败不能伪装为已退出，旧会话读取响应不能覆盖较新的退出状态。
 - 邮箱登录使用 NOCASE 查询与 idx_users_email_login 索引；旧库若有大小写歧义不得任选账号，新建账号也要拒绝大小写冲突。用户名规范化/旧邮箱登录仍兼容。
 - 未知账号也经过同一个有界密码派生队列，统一凭据错误；认证繁忙返回 503。勿用固定 dummy salt 存储真实用户密码。详见 LOGIN_REVIEW.md。
+- 学校注册默认要求一次性开通码（`school_invites` 表，一码一校）；核销必须与建校在同一事务内完成，无效/已用/过期统一文案，且事务内不得出现异步点（密码派生在建校事务外完成），否则并发请求会互相破坏事务。开通码由 `npm run school:invite -- create|list|revoke` 管理，仅 `SCHOOL_INVITE_REQUIRED=0` 时恢复开放建校（本地开发/演示）。全新部署既无学校也无可用码时，启动会签发引导码并写入 `<DATA_DIR>/first-school-invite.txt`，供原生安装包完成首次建校。
 
 ## 原生安装器安全边界
 
@@ -121,6 +122,7 @@
 ## API Key 模型排障
 
 - 非流式正文等待默认与总超时一致；显式 MODEL_RESPONSE_IDLE_MS 仍保留。不得为消除超时而移除总时限、响应字节上限、并发及费用预留。
+- 请求的 `max_tokens` 必须收敛到模型支持的输出上限：`providers.mjs` 的 `MODEL_OUTPUT_LIMITS` 按供应商文档取保守上界，`MODEL_OUTPUT_LIMITS_JSON` 可按 `provider/model` 覆盖，自定义模型沿用 `MODEL_MAX_OUTPUT_TOKENS`；费用预留必须使用同一个实际值，不能按模型不支持的上限计价。
 - HTTP 失败诊断限 16 KiB，providerHttpError 仅返回静态分类文案，不回显上游错误原文。截断输出须先结算实际 usage，再报明确错误，不自动提高预算或发起额外收费重试。
 - 保存凭证去除首尾空白、拒绝空 Key/内部换行与非字符串模型名；历史已存 Key 在请求构建时兼容首尾空白。测试仅使用 mock 凭证，真实排障密钥不得落盘或提交。
 - 模型厂商选择必须由异步读取的已保存配置同步控制；切换厂商清空旧接口/模型覆盖值，避免显示厂商与实际请求目标不一致。浏览器回归覆盖保存配置回显及 DeepSeek 切换。

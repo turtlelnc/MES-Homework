@@ -46,6 +46,36 @@ it("reserves before dispatch, reconciles usage, and charges retries independentl
     db.close();
   }
 });
+it("reserves against the model's supported output limit, not the configured max", () => {
+  vi.stubEnv("MODEL_MAX_OUTPUT_TOKENS", "219136");
+  const { db, f } = setup();
+  try {
+    vi.stubEnv(
+      "MODEL_COST_RATES_JSON",
+      JSON.stringify({
+        "anthropic/claude-sonnet-4-5": {
+          input: 1000000,
+          output: 2000000,
+          imageTokens: 1024,
+        },
+      }),
+    );
+    const budget = createCostBudget(db);
+    const reservation = budget.reserve(
+      f.teacherId,
+      { provider: "anthropic", model: "claude-sonnet-4-5" },
+      "test",
+      1,
+    )!;
+    expect(reservation.maxTokens).toBe(64000);
+    expect(
+      db.prepare("SELECT output_bound FROM model_costs").get()!.output_bound,
+    ).toBe(64000);
+    reservation.close();
+  } finally {
+    db.close();
+  }
+});
 it("does not invent DeepSeek image token limits from a model name", () => {
   const { db, f, config } = setup();
   try {

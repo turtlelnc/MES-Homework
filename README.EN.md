@@ -1,7 +1,7 @@
 # Smart Campus Homework Analyzer · 校园作业分析
 
-[![Version](https://img.shields.io/badge/version-v0.2.2--rc1-2ea44f?style=flat)](https://github.com/turtlelnc/MES-Homework/releases)
-[![Build](https://img.shields.io/badge/build-26110101-0A84FF?style=flat)](https://github.com/turtlelnc/MES-Homework/releases)
+[![Version](https://img.shields.io/badge/version-v0.2.2--rc3-2ea44f?style=flat)](https://github.com/turtlelnc/MES-Homework/releases)
+[![Build](https://img.shields.io/badge/build-26111403-0A84FF?style=flat)](https://github.com/turtlelnc/MES-Homework/releases)
 [![Tests](https://img.shields.io/badge/tests-CI%20passing-brightgreen?style=flat&logo=githubactions&logoColor=white)](https://github.com/turtlelnc/MES-Homework/actions)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat)](LICENSE)
 [![Security](https://img.shields.io/badge/security-P0%2FP1%20fixed-success?style=flat)](SECURITY_REVIEW.md)
@@ -11,7 +11,7 @@
 [![Node](https://img.shields.io/badge/node-%E2%89%A524-339933?style=flat&logo=nodedotjs&logoColor=white)](package.json)
 [![](https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness)
 
-**v0.2.2-rc1** (build26110101) | MIT License
+**v0.2.2-rc3** (build26111403) | MIT License
 
 [中文](README.md) | English
 
@@ -21,20 +21,19 @@ Smart Campus Homework Analyzer: upload homework, AI grades it; teacher review tu
 
 This is a full-stack version that can run on school or personal servers. Accounts, schools, students, knowledge bases, homework, OCR, teacher review, mistake notebooks, exam papers, parent dashboards, and AI teaching analysis all use persistent data.
 
-## v0.2.2-rc1 (build26110101)
+## v0.2.2-rc3 (build26111403)
 
-Adds question grades, a left chapter directory, independent question figures, teacher metrics, automatic student matching, and parent date filters with comparable-paper growth and cohort levels. Removes OAuth, the parent reviewed-work counter and subject-performance sections. See [release notes](docs/releases/v0.2.2-rc1.md) for definitions and upgrade limits. API keys are the supported model connection.
-
+School creation now requires a one-time invite code (one code per school, consumed on registration; a fresh deployment issues a bootstrap code on first start), so students can no longer open schools on their own. The per-request model output limit rises from 8192 to 214K so long submissions finish grading instead of being truncated. Adds question grades, a left chapter directory, independent question figures, teacher metrics, automatic student matching, and parent date filters with comparable-paper growth and cohort levels. Removes OAuth, the parent reviewed-work counter and subject-performance sections. See [release notes](docs/releases/v0.2.2-rc3.md) for definitions and upgrade limits. API keys are the supported model connection.
 
 ## What's New in v0.2.1 (since v0.2.1-rc1)
 
 1. **Three teacher-selectable review modes**: review every question, review only uncertain items (high-confidence AI verdicts pass automatically), or no review (AI result is published immediately; incomplete model output still falls back to human review).
 2. **Explain the grade**: every graded item shows the result, the reference answer, and the AI's reasoning (why it was marked right/wrong). Visible in teacher review and the parent submission detail.
-4. **Account-name registration with role selection**: school / teacher / student / parent, login by account name (legacy email logins still work). `ALLOW_PUBLIC_REGISTRATION=0` restores admin-only account creation.
-5. **Parent portal**: dashboard of the linked child's reviewed homework, scores, weak knowledge points, error causes, trends and per-question grading detail, plus one-click AI learning analysis.
-6. **School-managed model modes**: school-wide credentials, teacher-separate + class-fund (students/parents use the class head teacher's credential), or teacher-separate + parent-separate (students use their linked parent's credential).
-7. **Grading without uploading the original questions**: create a "direct AI grading" homework with just a title and an optional content description; AI segments the student's work, derives reference answers, grades and explains.
-8. **Guided mistake notebook**: students see a thinking prompt, progressive hints, and a redo box first; the reference answer is revealed only after they get it right (with a fallback after three attempts), followed by similar practice questions.
+3. **Account-name registration with role selection**: school / teacher / student / parent, login by account name (legacy email logins still work). Creating a school requires a one-time invite code (`npm run school:invite`); a fresh deployment with no schools receives a bootstrap code in its startup log and `<DATA_DIR>/first-school-invite.txt`. `ALLOW_PUBLIC_REGISTRATION=0` restores admin-only account creation.
+4. **Parent portal**: dashboard of the linked child's reviewed homework, scores, weak knowledge points, error causes, trends and per-question grading detail, plus one-click AI learning analysis.
+5. **School-managed model modes**: school-wide credentials, teacher-separate + class-fund (students/parents use the class head teacher's credential), or teacher-separate + parent-separate (students use their linked parent's credential).
+6. **Grading without uploading the original questions**: create a "direct AI grading" homework with just a title and an optional content description; AI segments the student's work, derives reference answers, grades and explains.
+7. **Guided mistake notebook**: students see a thinking prompt, progressive hints, and a redo box first; the reference answer is revealed only after they get it right (with a fallback after three attempts), followed by similar practice questions.
 
 > Direct-grading homework uses per-submission AI question snapshots, so it does not feed the class-level AI teaching analysis (which aggregates a shared question bank). The parent learning analysis works for both modes.
 
@@ -54,13 +53,13 @@ A new module for classroom review sessions that directly consumes teacher-review
 
 **Statistical Note**: Only mistakes confirmed by teachers in "Recognition & Review" enter statistics. Questions marked "Unrecognizable" are listed separately and excluded from student error cause percentages to prevent misjudgment due to poor scan quality.
 
--  Knowledge point mastery rate: Aggregate the school-based knowledge points by question number, sort them from the weakest, and directly point out the loopholes that need to be filled first in this lesson.
--   - Error attribution: Built-in 12 types of error causes (conceptual confusion, question review deviation, careless calculation, missing steps, poor memory of formulas, omission of conditions, etc.). First use keyword rules to categorically classify. The teacher can then click "AI Re-Attribution" to let the model combine the question stem and knowledge points to review; the error causes are strictly divided according to question numbers, and the sum of the proportions is always 100%.
-    -  - Review sheets for frequently mistaken questions: Sort by the number of people who made mistakes, expand to see the students who made the mistakes, reference answers, step-by-step analysis, similar exercises, and the AI-generated "tell to students/demonstrate on the blackboard/check immediately after speaking".
-       -  - Classroom lecture and evaluation lesson plan: theme, lesson time, goals, timeline (what to talk about, what the teacher does, what students do) and a blackboard design that can be copied and written on.
-          -  - Hierarchical coaching and error cause intervention: Each error cause is assigned a classroom action that can be performed within 5 minutes, and a layered coaching list is given that can be directly named.
-             - - After-class homework: Only for the knowledge points that were wrong this time, you can generate new re-practice homework for the selected frequently wrong questions with one click. - Student follow-up list: Mark "Observation/Follow-up/Key Points" to generate an individualized diagnosis of the student (weak knowledge points, analysis of error causes, reinforcement actions, targeted exercises, and an explanation for parents) with one click.
-               - - Export: Export Markdown lecture notes with one click, or print them directly into A4 lecture notes and bring them to class.
+- Knowledge point mastery rate: Aggregate the school-based knowledge points by question number, sort them from the weakest, and directly point out the loopholes that need to be filled first in this lesson.
+- - Error attribution: Built-in 12 types of error causes (conceptual confusion, question review deviation, careless calculation, missing steps, poor memory of formulas, omission of conditions, etc.). First use keyword rules to categorically classify. The teacher can then click "AI Re-Attribution" to let the model combine the question stem and knowledge points to review; the error causes are strictly divided according to question numbers, and the sum of the proportions is always 100%.
+  - - Review sheets for frequently mistaken questions: Sort by the number of people who made mistakes, expand to see the students who made the mistakes, reference answers, step-by-step analysis, similar exercises, and the AI-generated "tell to students/demonstrate on the blackboard/check immediately after speaking".
+    - - Classroom lecture and evaluation lesson plan: theme, lesson time, goals, timeline (what to talk about, what the teacher does, what students do) and a blackboard design that can be copied and written on.
+      - - Hierarchical coaching and error cause intervention: Each error cause is assigned a classroom action that can be performed within 5 minutes, and a layered coaching list is given that can be directly named.
+        - - After-class homework: Only for the knowledge points that were wrong this time, you can generate new re-practice homework for the selected frequently wrong questions with one click. - Student follow-up list: Mark "Observation/Follow-up/Key Points" to generate an individualized diagnosis of the student (weak knowledge points, analysis of error causes, reinforcement actions, targeted exercises, and an explanation for parents) with one click.
+          - - Export: Export Markdown lecture notes with one click, or print them directly into A4 lecture notes and bring them to class.
 
 ## One-Click Deployment (desktop app, dependency-free)
 
@@ -104,8 +103,7 @@ For development, run `npm run dev:server` and `npm run dev` separately, then vis
 
 ## Security update (2026-10-25, v0.2.1-rc4)
 
-Registration is now account-name + password + role selection; teachers/students/parents may self-register with a school code (requirement 4). Set `ALLOW_PUBLIC_REGISTRATION=0` to restore administrator-only account creation. A school code is not an identity credential: students cannot change their own stage/class, teachers only see their own assignments and school knowledge base, parents only see linked children, and every query stays scoped by school and account. Submission files and answers require the submitting student, owning teacher, linked parent, or school administrator; student assignment responses and the guided mistake notebook never expose reference answers directly; re-recognition requires fresh teacher approval (except when the selected review mode auto-completes).
-
+Registration is now account-name + password + role selection; teachers/students/parents may self-register with a school code (requirement 4). School creation requires a one-time invite code, so a student who does not have one cannot open a school of their own: issue codes with `npm run school:invite -- create --note "Some School" --days 30` and hand them out; each code creates exactly one school and is consumed by that registration, while `npm run school:invite -- list` and `revoke <code>` manage them. A fresh deployment with no schools and no unused code gets a bootstrap code on startup, printed in the log and written to `<DATA_DIR>/first-school-invite.txt`. Set `SCHOOL_INVITE_REQUIRED=0` to disable the requirement for local development or demos. Set `ALLOW_PUBLIC_REGISTRATION=0` to restore administrator-only account creation. A school code is not an identity credential: students cannot change their own stage/class, teachers only see their own assignments and school knowledge base, parents only see linked children, and every query stays scoped by school and account. Submission files and answers require the submitting student, owning teacher, linked parent, or school administrator; student assignment responses and the guided mistake notebook never expose reference answers directly; re-recognition requires fresh teacher approval (except when the selected review mode auto-completes).
 
 Model endpoints are restricted to the selected vendor's HTTPS origin. Deployment administrators may approve exact custom origins in comma-separated `PROVIDER_ALLOWED_ORIGINS`; existing stored endpoints are also checked on every call. Do not approve user-controlled domains or private-network addresses. Worker/reverse-proxy deployments must set `APP_ORIGIN=https://your-frontend-domain` on the API server, without a path or trailing slash. Client-supplied forwarding headers are not trusted. Production requires a valid `APP_SECRET` and HTTPS (Secure session cookies).
 
@@ -161,20 +159,20 @@ Model capabilities and API formats change over time. Current OCR uses OpenAI-com
 
 ## Directory Structure
 
-| Directory | Description |
-|-----------|-------------|
-| `src/` | Frontend source (React + TypeScript) |
-| `server/` | Backend server (Express + SQLite) |
-| `public/` | Static assets |
-| `tools/` | Deployment tools and scripts |
+| Directory                 | Description                                                              |
+| ------------------------- | ------------------------------------------------------------------------ |
+| `src/`                    | Frontend source (React + TypeScript)                                     |
+| `server/`                 | Backend server (Express + SQLite)                                        |
+| `public/`                 | Static assets                                                            |
+| `tools/`                  | Deployment tools and scripts                                             |
 | `Roadshow PPT - 路演PPT/` | Roadshow deck and assets (Chinese and English PPTX / PDF / HTML sources) |
 
-| Document | Description |
-|----------|-------------|
-| `README.md` / `README.EN.md` | Project overview (中文 / English) |
-| `SAFETY.zh.md` / `SAFETY.md` | Safety statement and responsible use guidelines (中文 / English) |
-| `AGENTS.md` | Repository collaboration and coding conventions |
-| `Roadshow PPT - 路演PPT/README.md` / `README.EN.md` | Roadshow deck usage guide (中文 / English) |
+| Document                                            | Description                                                      |
+| --------------------------------------------------- | ---------------------------------------------------------------- |
+| `README.md` / `README.EN.md`                        | Project overview (中文 / English)                                |
+| `SAFETY.zh.md` / `SAFETY.md`                        | Safety statement and responsible use guidelines (中文 / English) |
+| `AGENTS.md`                                         | Repository collaboration and coding conventions                  |
+| `Roadshow PPT - 路演PPT/README.md` / `README.EN.md` | Roadshow deck usage guide (中文 / English)                       |
 
 > **Note**: `src`, `server`, `public`, and `tools` are standard code directories kept with their original names to ensure builds work correctly. Non-code directories use bilingual naming.
 
@@ -191,6 +189,5 @@ See [OPERATIONS.md](OPERATIONS.md) for durable OCR jobs, limits, review auditing
 Release audit / 发布审核：[PRE_RELEASE_AUDIT.md](PRE_RELEASE_AUDIT.md) · [runtime budgets / 运行预算](RUNTIME_CONFIGURATION.md)
 
 Native installation now uses Windows MSI, Linux DEB/RPM and macOS PKG. The former custom deployment GUI is retired from builds/releases. See [native installer documentation](tools/installer/README.md). Application data and APP_SECRET are retained on removal; migrate legacy paths explicitly before first launch.
-
 
 [Single-page workflows](docs/workflow-pages.md) keep related teacher tools, student assignments/mistakes, and school member management together. Chapter controls scroll without discarding drafts; upload/review/reassignment handoffs use real record IDs. School model policy and credentials share settings, and print actions isolate the chosen document.

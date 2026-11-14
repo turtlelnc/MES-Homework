@@ -47,7 +47,11 @@ test("registration follows server policy instead of an invented local default", 
 }) => {
   await page.route("**/api/capabilities", (route) =>
     route.fulfill({
-      json: { stages: ["小学", "高中"], publicRegistration: false },
+      json: {
+        stages: ["小学", "高中"],
+        publicRegistration: false,
+        schoolInviteRequired: false,
+      },
     }),
   );
   await page.goto("/");
@@ -64,6 +68,26 @@ test("registration follows server policy instead of an invented local default", 
   await expect(
     page.getByRole("tab", { name: "家长", exact: true }),
   ).toBeDisabled();
+});
+
+test("school registration asks for a one-time invite code when required", async ({
+  page,
+}) => {
+  await page.route("**/api/capabilities", (route) =>
+    route.fulfill({
+      json: {
+        stages: ["小学", "高中"],
+        publicRegistration: true,
+        schoolInviteRequired: true,
+      },
+    }),
+  );
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "还没有账户？注册", exact: true })
+    .click();
+  await expect(page.locator('input[name="inviteCode"]')).toBeVisible();
+  await expect(page.locator(".panel-intro")).toContainText("一次性开通码");
 });
 
 test("temporary session lookup failures offer retry and preserve the actual login", async ({
@@ -743,7 +767,7 @@ test("teacher chapters preserve assignment drafts and refresh knowledge without 
 }) => {
   await login(page);
   const chapters = page.getByRole("navigation", {
-    name: "教学工作台章节定位",
+    name: "工作台章节",
     exact: true,
   });
   await expect(chapters.getByRole("button")).toHaveCount(7);
@@ -850,7 +874,7 @@ test("school member forms stay together and model policies share the credential 
 }) => {
   await login(page, "admin@fixture.test");
   const chapters = page.getByRole("navigation", {
-    name: "学校管理章节定位",
+    name: "工作台章节",
     exact: true,
   });
   await page.getByLabel("教师姓名", { exact: true }).fill("保留的教师草稿");
@@ -885,7 +909,7 @@ test("student work and mistakes share a page while keeping the chosen upload", a
 }) => {
   await login(page, "lin@fixture.test");
   const chapters = page.getByRole("navigation", {
-    name: "学习工作台章节定位",
+    name: "工作台章节",
     exact: true,
   });
   await chapters.getByRole("button", { name: "我的作业", exact: true }).click();
@@ -920,7 +944,7 @@ test("mobile chapter navigation remains available after jumping down the workspa
   await page.setViewportSize({ width: 390, height: 844 });
   await login(page);
   const chapters = page.getByRole("navigation", {
-    name: "教学工作台章节定位",
+    name: "工作台章节",
     exact: true,
   });
   await chapters.getByRole("button", { name: "知识库", exact: true }).click();
@@ -983,7 +1007,7 @@ test("printing a saved paper excludes other chapters and restores the page after
     page.getByRole("region", { name: "作业与上传", exact: true }),
   ).toBeHidden();
   await expect(
-    page.getByRole("navigation", { name: "教学工作台章节定位", exact: true }),
+    page.getByRole("navigation", { name: "工作台章节", exact: true }),
   ).toBeHidden();
   await page.screenshot({
     path: "test-results/workspace-paper-print.png",
@@ -1107,7 +1131,7 @@ test("rc1 teacher data dashboard uses real records and keeps chapter directory o
     page.getByRole("heading", { name: "教学数据看板", exact: true }),
   ).toBeVisible();
   const nav = page.getByRole("navigation", {
-    name: "教学工作台章节定位",
+    name: "工作台章节",
     exact: true,
   });
   const navBox = await nav.boundingBox();
@@ -1126,7 +1150,7 @@ test("question figures can be attached, removed and published without changing o
 }) => {
   await login(page);
   await page
-    .getByRole("navigation", { name: "教学工作台章节定位", exact: true })
+    .getByRole("navigation", { name: "工作台章节", exact: true })
     .getByRole("button", { name: "作业与上传", exact: true })
     .click();
   const region = page.getByRole("region", { name: "作业与上传", exact: true });

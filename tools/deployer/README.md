@@ -2,7 +2,7 @@
 
 # 校园作业分析 · 桌面版一键部署器
 
-**v0.2.2-rc1（build26110101）** · MIT License · 单文件、无外部运行时依赖
+**v0.2.2-rc3（build26111403）** · MIT License · 单文件、无外部运行时依赖
 
 新版部署器是一个 **C++17 桌面应用**（GLFW + Dear ImGui + miniz，全部静态编译进单文件），
 取代原来的 C++ 控制台部署器：启动后在「本地版 / 服务器版」之间选择，按向导完成
@@ -12,7 +12,7 @@
   系统级毛玻璃，macOS 使用 `NSVisualEffectView` 真实毛玻璃，Linux 使用透明窗口 + 柔和玻璃光效。
 - **零依赖**：目标机不需要预装 Node.js、npm、Git、Python 或 VC++ 运行库；应用运行时与 Node
   二进制由部署器下载/解压（也支持离线 zip）。
-- **安装包/本体单文件**：每个平台一个可执行文件，见 GitHub Releases 的 `v0.2.2-rc1` 附件。
+- **安装包/本体单文件**：每个平台一个可执行文件，见 GitHub Releases 的 `v0.2.2-rc3` 附件。
 
 ## 界面预览
 
@@ -58,7 +58,7 @@
 ## 下载
 
 前往 [GitHub Releases](https://github.com/turtlelnc/MES-Homework/releases) 的
-`v0.2.2-rc1`（构建 `26110101`），按平台下载单个可执行文件：
+`v0.2.2-rc3`（构建 `26111403`），按平台下载单个可执行文件：
 
 ```
 mes-deployer-windows-x64.exe
@@ -156,7 +156,7 @@ cmake --build tools/deployer/build --parallel
 
 ```bash
 node tools/deployer/packaging/build-app-bundle.mjs --out release/mes-homework-app-linux-x64.zip
-node tools/deployer/packaging/build-manifest.mjs --dir release --version v0.2.2-rc1 --build 26110101
+node tools/deployer/packaging/build-manifest.mjs --dir release --version v0.2.2-rc3 --build 26111403
 ```
 
 ## 安全与限制

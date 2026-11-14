@@ -1,7 +1,7 @@
 # 校园作业分析 · Smart Campus Homework Analyzer
 
-[![Version](https://img.shields.io/badge/version-v0.2.2--rc1-2ea44f?style=flat)](https://github.com/turtlelnc/MES-Homework/releases)
-[![Build](https://img.shields.io/badge/build-26110101-0A84FF?style=flat)](https://github.com/turtlelnc/MES-Homework/releases)
+[![Version](https://img.shields.io/badge/version-v0.2.2--rc3-2ea44f?style=flat)](https://github.com/turtlelnc/MES-Homework/releases)
+[![Build](https://img.shields.io/badge/build-26111403-0A84FF?style=flat)](https://github.com/turtlelnc/MES-Homework/releases)
 [![Tests](https://img.shields.io/badge/tests-CI%20passing-brightgreen?style=flat&logo=githubactions&logoColor=white)](https://github.com/turtlelnc/MES-Homework/actions)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat)](LICENSE)
 [![Security](https://img.shields.io/badge/security-P0%2FP1%20fixed-success?style=flat)](SECURITY_REVIEW.md)
@@ -11,7 +11,7 @@
 [![Node](https://img.shields.io/badge/node-%E2%89%A524-339933?style=flat&logo=nodedotjs&logoColor=white)](package.json)
 [![](https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness)
 
-**v0.2.2-rc1**（build26110101）｜ MIT License
+**v0.2.2-rc3**（build26111403）｜ MIT License
 
 [English](README.EN.md) | 中文
 
@@ -21,10 +21,9 @@
 
 这是可在学校或个人服务器运行的全栈版本。账户、学校、学生、知识库、作业、OCR、教师复核、错题本、试卷、家长看板与 AI 教学分析均使用持久化数据。
 
-## v0.2.2-rc1（build26110101）
+## v0.2.2-rc3（build26111403）
 
-左侧操作目录与字体层级、逐题五档等级、独立图题组卷、教师数据看板、卷面姓名自动匹配、家长周/日期筛选及成长与同类试卷比较。家长端移除“已复核作业”指标和学科表现；OAuth 已移除。完整口径与升级注意事项见 [版本说明](docs/releases/v0.2.2-rc1.md)。
-
+学校注册改为一次性开通码（一码一校、注册即核销，全新部署首次启动自动签发引导码），杜绝学生自行开设“学校”；单次批改的模型输出上限由 8192 提高到 214K，避免长答卷批改未完成即被截断。左侧操作目录与字体层级、逐题五档等级、独立图题组卷、教师数据看板、卷面姓名自动匹配、家长周/日期筛选及成长与同类试卷比较。家长端移除“已复核作业”指标和学科表现；OAuth 已移除。完整口径与升级注意事项见 [版本说明](docs/releases/v0.2.2-rc3.md)。
 
 ## v0.2.1 新增（v0.2.1-rc1 起）
 
@@ -48,6 +47,8 @@
 
 注册页先选择身份：**学校 / 老师 / 学生 / 家长**，再填写账号名、密码与对应资料；登录支持账号名或旧账号的邮箱。老师/学生/家长使用学校代码加入已有学校；家长绑定孩子需验证孩子账号与密码。可通过 `ALLOW_PUBLIC_REGISTRATION=0` 关闭自助注册、恢复由学校管理员统一建号。
 
+学校注册默认要求一次性开通码：部署方用 `npm run school:invite -- create --note "某某中学" --days 30` 生成，把码发给学校，学校在注册页填码即可自助建校；一码一校、注册即核销，无法重复使用，可通过 `npm run school:invite -- list` 查看或 `revoke <码>` 吊销。这样学生拿不到码就无法自行开设“学校”。全新部署还没有任何学校时，服务首次启动会自动生成一枚引导码，打印在启动日志并写入 `<DATA_DIR>/first-school-invite.txt`，建校成功后该文件会在下次启动时清除；原生安装包（不含 npm）用捆绑运行时签发开通码的方法见 `tools/installer/README.md`。本地开发或演示可设 `SCHOOL_INVITE_REQUIRED=0` 关闭该要求。
+
 ### 5. 家长端
 
 家长账号可查看已绑定孩子的看板：成长趋势、班级/年级水平、平均得分率、错题与掌握率、薄弱知识点、具体错因分布、成绩趋势、近期作业明细（含批改结果、参考答案与 AI 判断逻辑），并在「学情分析」中一键生成 AI 学情分析（优势、薄弱知识点、学习习惯、家庭配合动作与鼓励）。
@@ -56,10 +57,10 @@
 
 学校管理员在「学校仪表盘」选择：
 
-| 模式 | 谁配置模型凭证 | 学生端/家长端调用谁 |
-| --- | --- | --- |
-| 全校统一模式 | 仅学校管理员 | 学校统一凭证 |
-| 老师分开 + 班费模式 | 每位老师配置自己的 API Key | 本班班主任的凭证 |
+| 模式                    | 谁配置模型凭证             | 学生端/家长端调用谁                  |
+| ----------------------- | -------------------------- | ------------------------------------ |
+| 全校统一模式            | 仅学校管理员               | 学校统一凭证                         |
+| 老师分开 + 班费模式     | 每位老师配置自己的 API Key | 本班班主任的凭证                     |
 | 老师分开 + 家长单独模式 | 每位老师、每位家长各自配置 | 学生用绑定家长的凭证，家长用本人凭证 |
 
 学校端同时提供班级/班主任分配，用于「班费模式」定位本班班主任。切换模式立即生效。
@@ -95,19 +96,17 @@
 本项目作为中山梅沙实验学校的首届梅沙黑客松限时完成的参赛作品，获得了 **最高奖项（智创校园大奖）** 。
 具体内容：[中山梅沙实验学校的公众号文章：36小时，我们见证了一场狂欢](https://mp.weixin.qq.com/s/H2DiIkaNx56Y_fUoRV-HzA)
 
-
 B3组 校园作业分析器
 
 导师：陈银香  
 组员：欧阳进达、吴汶轩、胡以琳、程诺、黎敦文  
 项目后期维护组（贡献者）：（WWX、CN、ZYH）
 <a href="https://github.com/turtle-Owen">
-  <img src="https://github.com/turtle-Owen.png?size=50" width="50" height="50" alt="turtle-Owen">
+<img src="https://github.com/turtle-Owen.png?size=50" width="50" height="50" alt="turtle-Owen">
 </a>
 <a href="https://github.com/Tom505915-Zhang">
-  <img src="https://github.com/Tom505915-Zhang.png?size=50" width="50" height="50" alt="Tom505915-Zhang">
+<img src="https://github.com/Tom505915-Zhang.png?size=50" width="50" height="50" alt="Tom505915-Zhang">
 </a>
-
 
 ![Logo](微信图片_2026-10-11_112449_801.jpg)
 
@@ -115,14 +114,11 @@ B3组 校园作业分析器
 
 ![Logo](640.png)
 
-
-
 ## 安全性声明
 
 本项目为 **DeepSeek V4.1-Flash** 与 **Qwen 3.8 Max**（在 DeepSeek Harness 上运行）和 **GPT 6 Sol**（在 Codex 上）辅助完成。所有 AI 生成的输出未由开发者仔细审核，开发者不对最终代码库和文档负责任。
 
 详细的安全信息、负责任使用指南和数据隐私注意事项请参阅 [SAFETY.zh.md](SAFETY.zh.md)（[English](SAFETY.md)）。
-
 
 ## v0.2.1 能力
 
@@ -166,7 +162,6 @@ npm start
 ## 安全更新（2026-10-25，v0.2.1-rc4）
 
 注册方式改为「账号名 + 密码 + 身份选择」，老师/学生/家长可凭学校代码自助注册（需求 4）；如学校希望保持由管理员统一建号，请设置 `ALLOW_PUBLIC_REGISTRATION=0`。学校代码不是身份凭证：学生不能自行修改学段或班级，教师只能看到自己任课作业与本校知识库，家长只能看到自己绑定的孩子，所有查询仍按学校与账号身份隔离。答卷与原件仅允许学生本人、任课教师、绑定家长及本校管理员读取；学生作业详情与错题本不直接返回答案；重新识别须再次人工复核（所选复核方式允许自动完成时除外）。
-
 
 模型接口默认只允许所选厂商的 HTTPS Origin。自定义网关须由部署管理员在 `PROVIDER_ALLOWED_ORIGINS` 配置精确 Origin（逗号分隔）；已有非白名单配置也会在调用时被拒绝。不要把用户可控制的域名或内网地址加入白名单。通过 Worker/反向代理访问时，在源站设置 `APP_ORIGIN=https://你的前端域名`，不要附加路径或末尾斜杠。服务不信任客户端传入的 Forwarded 头。生产环境要求有效 `APP_SECRET` 并使用 HTTPS（会话 Cookie 为 Secure）。
 
@@ -222,23 +217,22 @@ npx wrangler deploy
 
 ## 目录结构 / Directory Structure
 
-| 目录 | 说明 |
-|------|------|
-| `src/` | 前端源码（React + TypeScript） |
-| `server/` | 服务端（Express + SQLite） |
-| `public/` | 静态资源 |
-| `tools/` | 部署工具与脚本 |
+| 目录                      | 说明                                                       |
+| ------------------------- | ---------------------------------------------------------- |
+| `src/`                    | 前端源码（React + TypeScript）                             |
+| `server/`                 | 服务端（Express + SQLite）                                 |
+| `public/`                 | 静态资源                                                   |
+| `tools/`                  | 部署工具与脚本                                             |
 | `Roadshow PPT - 路演PPT/` | 路演演示文稿及素材（含中英文两套 PPTX / PDF / 网页源文件） |
 
-| 文档 | 说明 |
-|------|------|
-| `README.md` / `README.EN.md` | 项目说明（中文 / English） |
-| `SAFETY.zh.md` / `SAFETY.md` | 安全性声明与负责任使用指南（中文 / English） |
-| `AGENTS.md` | 仓库协作与代码规范 |
-| `Roadshow PPT - 路演PPT/README.md` / `README.EN.md` | 路演 PPT 使用说明（中文 / English） |
+| 文档                                                | 说明                                         |
+| --------------------------------------------------- | -------------------------------------------- |
+| `README.md` / `README.EN.md`                        | 项目说明（中文 / English）                   |
+| `SAFETY.zh.md` / `SAFETY.md`                        | 安全性声明与负责任使用指南（中文 / English） |
+| `AGENTS.md`                                         | 仓库协作与代码规范                           |
+| `Roadshow PPT - 路演PPT/README.md` / `README.EN.md` | 路演 PPT 使用说明（中文 / English）          |
 
 > **注意**：`src`、`server`、`public`、`tools` 为代码标准目录，保持原名以确保构建正常。非代码目录已采用中英混合命名。
-
 
 ### 第三轮安全与流程修复
 
@@ -261,6 +255,5 @@ Windows 自定义域名部署会保存与新建隧道匹配的本地凭据，凭
 后台 OCR 队列、并发限制、复核审计、备份恢复及容量/效果评测见 [OPERATIONS.md](OPERATIONS.md)。
 
 Release audit / 发布审核：[PRE_RELEASE_AUDIT.md](PRE_RELEASE_AUDIT.md) · [runtime budgets / 运行预算](RUNTIME_CONFIGURATION.md)
-
 
 相关功能已整合为[同页工作流](docs/workflow-pages.md)：教师工作台包含上传、复核、分析、学生、知识库与组卷；学生作业与错题合并，学校成员管理合并。章节控件只定位，不销毁草稿；上传与重练作业会自动交接到本页对应区块。学校模型策略和凭证集中配置，打印仅输出所选文档。

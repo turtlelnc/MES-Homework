@@ -26,6 +26,7 @@ import {
   providerHttpError,
   assertProviderCompletion,
   modelResponseLimits,
+  outputTokenLimit,
 } from "./provider-protocol.mjs";
 import { assertPublicProviderEndpoint } from "./security.mjs";
 import {
@@ -1304,10 +1305,7 @@ async function callGeminiChat({
     temperature: 0,
     response_format: { type: "json_object" },
     stream: false,
-    max_tokens: Math.min(
-      Number(process.env.MODEL_MAX_OUTPUT_TOKENS) || 8192,
-      32768,
-    ),
+    max_tokens: outputTokenLimit(),
     messages: [
       { role: "user", content: imageList.length ? content : promptText },
     ],

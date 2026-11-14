@@ -9,6 +9,11 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 import { validPassword } from "./security.mjs";
+import {
+  consumeInvite,
+  normalizeInviteCode,
+  schoolInviteRequired,
+} from "./school-invites.mjs";
 
 const PUBLIC_ROLES = ["school", "teacher", "student", "parent"];
 const ACCOUNT_ROLES = ["teacher", "student", "parent"];
@@ -131,7 +136,7 @@ function resolveSchoolCode(db, rawCode) {
  * 插入一个可登录账号（不含学校注册的事务包装）。
  * role 只接受 users.role 允许的 teacher/student/parent；school 身份请走 registerAccount。
  */
-export async function insertUser(ctx, fields) {
+export async function insertUser(ctx, fields, credential) {
   const db = ctx.db;
   const x = fields || {};
   const schoolId = trimmed(x.schoolId);
@@ -165,7 +170,9 @@ export async function insertUser(ctx, fields) {
   )
     throw new Error("邮箱已注册");
   const id = newId(ctx);
-  const salt = randomBytes(16).toString("hex");
+  const salt = credential?.salt ?? randomBytes(16).toString("hex");
+  // 传入 credential 时该函数全程同步执行，事务内不会让出事件循环。
+  const hash = credential?.hash ?? (await normalizerFor(ctx)(x.password, salt));
   try {
     db.prepare(
       "INSERT INTO users(id,school_id,role,name,username,email,password_hash,salt,stage,subject,class_name,created_at,is_school_admin) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -176,7 +183,7 @@ export async function insertUser(ctx, fields) {
       name,
       username,
       email,
-      await normalizerFor(ctx)(x.password, salt),
+      hash,
       salt,
       stage,
       role === "teacher" ? optionalText(x.subject) : null,
@@ -204,23 +211,40 @@ async function registerSchool(ctx, payload) {
   if (!policyFor(ctx)(payload.password)) throw new Error("密码至少 8 位");
   const email = normalizeEmail(payload.email);
   if (email && !validEmail(email)) throw new Error("邮箱格式无效");
+  const inviteRequired = schoolInviteRequired();
+  if (inviteRequired && !normalizeInviteCode(payload.inviteCode))
+    throw Object.assign(new Error("请填写学校开通码"), { status: 400 });
+  // 密码派生放在事务外，BEGIN…COMMIT 之间不再有真正的异步点。
+  const salt = randomBytes(16).toString("hex");
+  const credential = {
+    salt,
+    hash: await normalizerFor(ctx)(payload.password, salt),
+  };
+  if (db.isTransaction)
+    throw Object.assign(new Error("数据库繁忙，请稍后重试"), { status: 503 });
   const schoolId = newId(ctx);
   db.exec("BEGIN");
   try {
+    if (inviteRequired)
+      consumeInvite(db, payload.inviteCode, { schoolId, now: nowIso(ctx) });
     db.prepare("INSERT INTO schools VALUES(?,?,?)").run(
       schoolId,
       schoolName,
       nowIso(ctx),
     );
-    const created = await insertUser(ctx, {
-      schoolId,
-      role: "teacher",
-      name,
-      username,
-      password: payload.password,
-      email,
-      isSchoolAdmin: true,
-    });
+    const created = await insertUser(
+      ctx,
+      {
+        schoolId,
+        role: "teacher",
+        name,
+        username,
+        password: payload.password,
+        email,
+        isSchoolAdmin: true,
+      },
+      credential,
+    );
     db.exec("COMMIT");
     return {
       id: created.id,
@@ -406,7 +430,8 @@ export function registerAccountsRoutes(app, ctx) {
     });
   };
 
-  // 公开注册：4 身份；学校注册不受 ALLOW_PUBLIC_REGISTRATION 影响。
+  // 公开注册：4 身份。学校注册不受 ALLOW_PUBLIC_REGISTRATION 影响，但需要
+  // 一次性开通码（SCHOOL_INVITE_REQUIRED=0 时关闭该要求）。
   app.post("/api/auth/register", async (req, res) => {
     try {
       const created = await registerAccount(ctx, req.body || {});

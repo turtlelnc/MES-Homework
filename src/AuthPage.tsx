@@ -92,7 +92,8 @@ function Select({
 }
 
 export function AuthPage({ onDone }: { onDone: () => void }) {
-  const { stages, publicRegistration } = useCapabilities();
+  const { stages, publicRegistration, schoolInviteRequired } =
+    useCapabilities();
   const [mode, setMode] = useState<Mode>("login");
   const [role, setRole] = useState<Role>("school");
   const [error, setError] = useState("");
@@ -101,6 +102,9 @@ export function AuthPage({ onDone }: { onDone: () => void }) {
     schoolCode: string;
     schoolName: string;
   } | null>(null);
+  // 页面缓存的 capabilities 可能早于服务端升级，这时服务端仍会要求开通码。
+  const [forceInvite, setForceInvite] = useState(false);
+  const showInvite = schoolInviteRequired || forceInvite;
 
   const switchMode = (next: Mode) => {
     setMode(next);
@@ -146,7 +150,14 @@ export function AuthPage({ onDone }: { onDone: () => void }) {
         onDone();
       }
     } catch (caught) {
-      setError((caught as Error).message);
+      const message = (caught as Error).message;
+      if (
+        role === "school" &&
+        !schoolInviteRequired &&
+        message.includes("开通码")
+      )
+        setForceInvite(true);
+      setError(message);
     } finally {
       setBusy(false);
     }
@@ -231,7 +242,11 @@ export function AuthPage({ onDone }: { onDone: () => void }) {
               placeholder="至少 8 位"
               required
             />
-            {error && <p className="form-error">{error}</p>}
+            {error && (
+              <p className="form-error" role="alert">
+                {error}
+              </p>
+            )}
             <Button className="full" disabled={busy}>
               {busy ? "正在登录…" : "登录"}
             </Button>
@@ -285,15 +300,28 @@ export function AuthPage({ onDone }: { onDone: () => void }) {
               ))}
             </div>
             <p className="panel-intro" style={{ marginBottom: 16 }}>
-              {activeRole.desc}
+              {role === "school" && showInvite
+                ? "凭平台发放的一次性开通码创建学校空间与首位管理员账户。"
+                : activeRole.desc}
             </p>
             {role === "school" && (
-              <Field
-                name="schoolName"
-                label="学校名称"
-                placeholder="例如 海沙实验中学"
-                required
-              />
+              <>
+                <Field
+                  name="schoolName"
+                  label="学校名称"
+                  placeholder="例如 海沙实验中学"
+                  required
+                />
+                {showInvite && (
+                  <Field
+                    name="inviteCode"
+                    label="学校开通码"
+                    placeholder="向平台管理员索取，例如 A1B2C-3D4E5"
+                    autoComplete="off"
+                    required
+                  />
+                )}
+              </>
             )}
             <Field
               name="name"
@@ -377,7 +405,11 @@ export function AuthPage({ onDone }: { onDone: () => void }) {
                 />
               </>
             )}
-            {error && <p className="form-error">{error}</p>}
+            {error && (
+              <p className="form-error" role="alert">
+                {error}
+              </p>
+            )}
             <Button className="full" disabled={busy}>
               {busy
                 ? "正在注册…"

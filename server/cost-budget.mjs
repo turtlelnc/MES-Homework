@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { outputTokenLimit } from "./provider-protocol.mjs";
+import { modelOutputLimit } from "./providers.mjs";
 const fail = (message) =>
   Object.assign(new Error(message), { status: 429, code: "MODEL_QUOTA" });
 const integer = (value, fallback = 0) =>
@@ -14,12 +16,11 @@ export function costSettings() {
   }
   const school = integer(process.env.MODEL_SCHOOL_DAILY_MICRO_CNY);
   const user = integer(process.env.MODEL_USER_DAILY_MICRO_CNY);
-  const output = integer(process.env.MODEL_MAX_OUTPUT_TOKENS, 8192);
   return {
     rates,
     school,
     user,
-    output: Math.min(output || 8192, 32768),
+    output: outputTokenLimit(),
     enabled:
       school > 0 ||
       user > 0 ||
@@ -109,8 +110,10 @@ export function createCostBudget(db) {
         imageCount * (imageTokens || 0) +
         4096;
       if (input > 120000) throw fail("单次输入超过预算上限，请拆分作业");
+      // 预留与实际请求使用同一个收敛后的输出上限，避免按模型不支持的值计价。
+      const maxTokens = modelOutputLimit(config, settings.output);
       const reserved =
-        price(input, rates.input) + price(settings.output, rates.output);
+        price(input, rates.input) + price(maxTokens, rates.output);
       const user = db
         .prepare("SELECT school_id FROM users WHERE id=?")
         .get(userId);
@@ -135,7 +138,7 @@ export function createCostBudget(db) {
           config.model,
           reserved,
           input,
-          settings.output,
+          maxTokens,
           rates.input,
           rates.output,
           time,
@@ -149,7 +152,7 @@ export function createCostBudget(db) {
       let sent = false,
         done = false;
       return {
-        maxTokens: settings.output,
+        maxTokens,
         dispatch() {
           if (done || sent) throw new Error("费用预留不能重复发送");
           db.prepare(

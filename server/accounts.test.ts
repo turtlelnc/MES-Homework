@@ -9,12 +9,14 @@ import {
   registerAccountsRoutes,
   validateUsername,
 } from "./accounts.mjs";
+import { issueInvite } from "./school-invites.mjs";
 
 const PASSWORD = "ChangeMe123!";
 const root = new URL(".", import.meta.url);
 let db: DatabaseSync;
 let harness: ReturnType<typeof createHarness>;
 let originalRegistrationFlag: string | undefined;
+let originalInviteFlag: string | undefined;
 
 function pass(password: string, salt: string) {
   return scryptSync(password, salt, 64).toString("hex");
@@ -157,6 +159,7 @@ async function createSchool(
       name: "王校长",
       username: "principal",
       password: PASSWORD,
+      inviteCode: issueInvite(harness.ctx.db),
       ...overrides,
     },
   });
@@ -202,12 +205,16 @@ beforeEach(() => {
   db.exec(fs.readFileSync(new URL("./schema.sql", root), "utf8"));
   harness = createHarness();
   originalRegistrationFlag = process.env.ALLOW_PUBLIC_REGISTRATION;
+  originalInviteFlag = process.env.SCHOOL_INVITE_REQUIRED;
 });
 
 afterEach(() => {
   if (originalRegistrationFlag === undefined)
     delete process.env.ALLOW_PUBLIC_REGISTRATION;
   else process.env.ALLOW_PUBLIC_REGISTRATION = originalRegistrationFlag;
+  if (originalInviteFlag === undefined)
+    delete process.env.SCHOOL_INVITE_REQUIRED;
+  else process.env.SCHOOL_INVITE_REQUIRED = originalInviteFlag;
   db.close();
 });
 
@@ -510,6 +517,154 @@ describe("4 身份注册", () => {
   });
 });
 
+describe("学校开通码", () => {
+  const payload = () => ({
+    role: "school",
+    schoolName: "新开中学",
+    name: "李校长",
+    username: "newprincipal",
+    password: PASSWORD,
+  });
+
+  it("缺少开通码时拒绝建校，且不留下空学校", async () => {
+    const response = await request("POST", "/api/auth/register", {
+      body: payload(),
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.payload.error).toBe("请填写学校开通码");
+    expect((db.prepare("SELECT count(*) n FROM schools").get() as any).n).toBe(
+      0,
+    );
+  });
+
+  it("无效或已吊销的开通码统一报错", async () => {
+    const response = await request("POST", "/api/auth/register", {
+      body: { ...payload(), inviteCode: "ZZZZZ-ZZZZZ" },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.payload.error).toBe("开通码无效或已使用");
+  });
+
+  it("一个开通码只能建一所学校，并记录核销去向", async () => {
+    const code = issueInvite(db, { note: "海沙实验中学" });
+    const first = await request("POST", "/api/auth/register", {
+      body: { ...payload(), inviteCode: code },
+    });
+    expect(first.statusCode).toBe(200);
+    const row = db
+      .prepare("SELECT used_at,school_id FROM school_invites WHERE code=?")
+      .get(code) as any;
+    expect(row.used_at).toBeTruthy();
+    expect(row.school_id).toBe(first.payload.schoolCode);
+    const second = await request("POST", "/api/auth/register", {
+      body: { ...payload(), username: "secondprincipal", inviteCode: code },
+    });
+    expect(second.statusCode).toBe(400);
+    expect(second.payload.error).toBe("开通码无效或已使用");
+    expect((db.prepare("SELECT count(*) n FROM schools").get() as any).n).toBe(
+      1,
+    );
+  });
+
+  it("过期开通码被拒绝", async () => {
+    const code = issueInvite(db, {
+      expiresAt: new Date(Date.now() - 60_000).toISOString(),
+    });
+    const response = await request("POST", "/api/auth/register", {
+      body: { ...payload(), inviteCode: code },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.payload.error).toBe("开通码无效或已使用");
+  });
+
+  it("开通码忽略大小写、空格与连字符", async () => {
+    const code = issueInvite(db);
+    const response = await request("POST", "/api/auth/register", {
+      body: {
+        ...payload(),
+        inviteCode: code.replace("-", " ").toLowerCase(),
+      },
+    });
+    expect(response.statusCode).toBe(200);
+  });
+
+  it("SCHOOL_INVITE_REQUIRED=0 时恢复开放建校", async () => {
+    process.env.SCHOOL_INVITE_REQUIRED = "0";
+    const response = await request("POST", "/api/auth/register", {
+      body: payload(),
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.payload.schoolCode).toBeTruthy();
+  });
+
+  it("建校失败时回滚，开通码不会被白白消耗", async () => {
+    await createSchool();
+    const code = issueInvite(db);
+    const conflict = await request("POST", "/api/auth/register", {
+      body: { ...payload(), username: "principal", inviteCode: code },
+    });
+    expect(conflict.statusCode).toBe(400);
+    expect((db.prepare("SELECT count(*) n FROM schools").get() as any).n).toBe(
+      1,
+    );
+    expect(
+      (
+        db
+          .prepare("SELECT used_at FROM school_invites WHERE code=?")
+          .get(code) as any
+      ).used_at,
+    ).toBeNull();
+    // 失败后用同一枚码仍可正常建校。
+    const retry = await request("POST", "/api/auth/register", {
+      body: { ...payload(), username: "principal2", inviteCode: code },
+    });
+    expect(retry.statusCode).toBe(200);
+  });
+
+  it("并发建校不会互相破坏事务，也不会回滚已成功的写入", async () => {
+    // 生产环境的密码哈希是异步的（libuv 线程池），这里用异步派生复现真实时序。
+    const asyncCtx = {
+      ...harness.ctx,
+      pass: async (password: string, salt: string) => {
+        await new Promise((resolve) => setImmediate(resolve));
+        return scryptSync(password, salt, 64).toString("hex");
+      },
+    };
+    const [first, second] = await Promise.all([
+      registerAccount(asyncCtx as any, {
+        role: "school",
+        schoolName: "并发甲校",
+        name: "甲校长",
+        username: "principal_a",
+        password: PASSWORD,
+        inviteCode: issueInvite(db),
+      }),
+      registerAccount(asyncCtx as any, {
+        role: "school",
+        schoolName: "并发乙校",
+        name: "乙校长",
+        username: "principal_b",
+        password: PASSWORD,
+        inviteCode: issueInvite(db),
+      }),
+    ]);
+    expect(first.schoolId).toBeTruthy();
+    expect(second.schoolId).toBeTruthy();
+    expect((db.prepare("SELECT count(*) n FROM schools").get() as any).n).toBe(
+      2,
+    );
+    expect(
+      (
+        db
+          .prepare(
+            "SELECT count(*) n FROM school_invites WHERE used_at IS NULL",
+          )
+          .get() as any
+      ).n,
+    ).toBe(0);
+  });
+});
+
 describe("登录兼容 username / email / account", () => {
   it("支持账号名（大小写/空格不敏感）登录并建立会话", async () => {
     const school = await createSchool();
@@ -656,6 +811,7 @@ describe("旧接口兼容与管理员建号", () => {
         name: "旧管理员",
         email: "OldAdmin@Example.test",
         password: PASSWORD,
+        inviteCode: issueInvite(db),
       },
     });
     expect(response.statusCode).toBe(200);

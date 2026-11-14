@@ -1,3 +1,17 @@
+// 批改输出上限默认 214K：8192 会在长答卷批改完成前触发截断。
+export const DEFAULT_MAX_OUTPUT_TOKENS = 214 * 1024;
+// 仍保留一个上界，避免配置笔误把请求放大到无意义的量级。
+export const MAX_OUTPUT_TOKENS_CEILING = 1024 * 1024;
+
+export function outputTokenLimit(env = process.env) {
+  const configured = Number(env.MODEL_MAX_OUTPUT_TOKENS);
+  const value =
+    Number.isSafeInteger(configured) && configured > 0
+      ? configured
+      : DEFAULT_MAX_OUTPUT_TOKENS;
+  return Math.min(value, MAX_OUTPUT_TOKENS_CEILING);
+}
+
 // API Key protocols only. OAuth Responses/SSE adapters remain independent.
 // Classify bounded diagnostics, but never reflect upstream text: it may contain
 // credentials, submitted homework, or HTML from a proxy.

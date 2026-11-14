@@ -326,6 +326,7 @@ describe("v0.2.1 schema migrations", () => {
         .some((column) => column.name === "questions_json"),
     ).toBe(true);
     for (const table of [
+      "school_invites",
       "school_settings",
       "class_teachers",
       "parent_students",
