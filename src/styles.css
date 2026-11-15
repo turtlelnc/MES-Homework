@@ -2673,6 +2673,33 @@ footer {
   margin-top: 8px;
   color: #8a94a3;
 }
+.review-batch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 12px;
+  color: #5b6675;
+  font-size: 13px;
+}
+.review-batch small {
+  color: #8a94a3;
+}
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+.admin-badge {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: #e8f0fe;
+  color: #1a73e8;
+  font-size: 12px;
+  font-weight: 600;
+}
 .review-note {
   margin: 0 0 12px;
   color: #8b97a7;

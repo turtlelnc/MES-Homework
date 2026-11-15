@@ -100,7 +100,7 @@ type Student = {
   class_name: string;
   created_at: string;
 };
-type TeacherAccount = Student & { subject: string };
+type TeacherAccount = Student & { subject: string; is_school_admin?: number };
 type Provider = {
   id: string;
   name: string;
@@ -727,6 +727,44 @@ function SchoolDashboard({
       notify((error as Error).message);
     }
   };
+  const [importResult, setImportResult] = useState<any>(null);
+  const [importing, setImporting] = useState(false);
+  const importTeachers = async (file?: File) => {
+    if (!file) return;
+    setImporting(true);
+    try {
+      const body = new FormData();
+      body.append("file", file);
+      const data: any = await api("/teachers/import", { method: "POST", body });
+      setImportResult(data);
+      notify(
+        `导入完成：成功 ${data.created.length} 人，失败 ${data.errors.length} 人。`,
+      );
+      load();
+    } catch (error) {
+      notify((error as Error).message);
+    } finally {
+      setImporting(false);
+    }
+  };
+  const teacherTemplate = () => {
+    const csv =
+      "姓名,账号名,邮箱,初始密码,学段,任教学科,班级\r\n王老师,wang01,,,初中,物理,八年级（1）班\r\n";
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob(["﻿" + csv], { type: "text/csv" }));
+    a.download = "教师导入模板.csv";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+  const toggleAdmin = async (teacherId: string, admin: boolean) => {
+    try {
+      await api(`/teachers/${teacherId}/admin`, json("PATCH", { admin }));
+      notify(admin ? "已设为学校管理员。" : "已取消管理员。");
+      load();
+    } catch (error) {
+      notify((error as Error).message);
+    }
+  };
   return (
     <>
       <Title
@@ -871,6 +909,25 @@ function SchoolDashboard({
                       {teacherAccount.stage} · {teacherAccount.subject} ·{" "}
                       {teacherAccount.class_name}
                     </p>
+                    <div className="row-actions">
+                      {teacherAccount.is_school_admin ? (
+                        <span className="admin-badge">学校管理员</span>
+                      ) : null}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() =>
+                          toggleAdmin(
+                            teacherAccount.id,
+                            !teacherAccount.is_school_admin,
+                          )
+                        }
+                      >
+                        {teacherAccount.is_school_admin
+                          ? "取消管理员"
+                          : "设为管理员"}
+                      </Button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -880,6 +937,48 @@ function SchoolDashboard({
           )}
         </section>
       </div>
+      <section className="rc4-panel">
+        <h2>
+          <FileSpreadsheet size={19} /> 批量导入教师
+        </h2>
+        <p className="panel-intro">
+          表头：姓名、账号名、邮箱、初始密码、学段、任教学科、班级。账号名与密码留空时自动生成，并在本次结果中显示。
+        </p>
+        <div className="import-actions">
+          <Button type="button" variant="outline" onClick={teacherTemplate}>
+            <Download />
+            下载教师 CSV 模板
+          </Button>
+          <label className="btn btn-primary">
+            {importing ? "导入中…" : "选择 CSV / XLSX"}
+            <input
+              type="file"
+              accept=".csv,.xlsx,.xls"
+              disabled={importing}
+              onChange={(e) => importTeachers(e.target.files?.[0])}
+            />
+          </label>
+        </div>
+        {importResult && (
+          <div className="import-result">
+            <strong>
+              成功 {importResult.created.length}，失败{" "}
+              {importResult.errors.length}
+            </strong>
+            {importResult.created.map((item: any) => (
+              <p key={item.id}>
+                {item.name} · 账号名 <code>{item.username}</code> · 初始密码{" "}
+                <code>{item.initialPassword}</code>
+              </p>
+            ))}
+            {importResult.errors.map((item: any) => (
+              <p className="error-line" key={item.row}>
+                第 {item.row} 行：{item.error}
+              </p>
+            ))}
+          </div>
+        )}
+      </section>
     </>
   );
 }
@@ -1820,6 +1919,29 @@ function Review({
       notify((e as Error).message);
     }
   };
+  const [autoMatch, setAutoMatch] = useState<{
+    matched: number;
+    unmatched: string[];
+  } | null>(null);
+  const runAutoMatch = async (assignmentId: string) => {
+    try {
+      const data = await api<{
+        matched: number;
+        unmatched: string[];
+        pending: number;
+      }>(`/assignments/${assignmentId}/auto-match`, { method: "POST" });
+      setAutoMatch(data);
+      notify(
+        data.pending === 0
+          ? "这份作业的答卷都已匹配。"
+          : `已匹配 ${data.matched} 份${data.unmatched.length ? `，${data.unmatched.length} 份需要手动确认` : ""}。`,
+      );
+      await load();
+      if (detail?.id) await select(detail.id);
+    } catch (e) {
+      notify((e as Error).message);
+    }
+  };
   const guard = useRef(createReviewGuard()).current;
   const listGeneration = useRef(0);
   const modeRef = useRef<"all" | "uncertain" | "none">("all");
@@ -2120,6 +2242,26 @@ function Review({
                   </Button>
                 )}
               </div>
+              {detail.assignment_id && (
+                <div className="review-batch">
+                  <span>一次上传了整班答卷？</span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => runAutoMatch(detail.assignment_id)}
+                  >
+                    一键匹配本班学生
+                  </Button>
+                  {autoMatch && (
+                    <small>
+                      已匹配 {autoMatch.matched} 份
+                      {autoMatch.unmatched.length
+                        ? `，待确认 ${autoMatch.unmatched.length} 份`
+                        : ""}
+                    </small>
+                  )}
+                </div>
+              )}
               {detail.grading_mode === "direct" && (
                 <p className="review-note">
                   这份作业没有原题，由 AI 直接批改。
