@@ -427,4 +427,18 @@ describe("failureReason", () => {
     expect(failureReason(exposed(""))).toBe(fallback);
     expect(failureReason(exposed("x".repeat(200)))).toBe(fallback);
   });
+  it("names timeouts and connection failures without echoing the raw error", () => {
+    expect(
+      failureReason(
+        Object.assign(new Error("The operation was aborted"), {
+          name: "TimeoutError",
+        }),
+      ),
+    ).toBe("模型响应超时，请稍后重试，或减少一次识别的页数");
+    expect(
+      failureReason(
+        Object.assign(new Error("fetch failed"), { code: "ENOTFOUND" }),
+      ),
+    ).toBe("无法连接模型服务（ENOTFOUND），请检查网络或接口地址");
+  });
 });

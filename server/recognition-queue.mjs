@@ -10,8 +10,22 @@ const failure = (message, status) =>
 
 // 教师看到的失败原因：保留服务端已经写好的中文提示（模型不存在、Key 无效、
 // 余额不足、超时等），但拒绝可能夹带上游原文或代码片段的内容。
+const NETWORK_CODES = [
+  "ECONNREFUSED",
+  "ENOTFOUND",
+  "ECONNRESET",
+  "EAI_AGAIN",
+  "EHOSTUNREACH",
+  "ETIMEDOUT",
+  "UND_ERR_CONNECT_TIMEOUT",
+];
+
 export const failureReason = (error) => {
   const fallback = "识别未完成，请检查文件和模型设置后重试";
+  if (["TimeoutError", "AbortError"].includes(error?.name))
+    return "模型响应超时，请稍后重试，或减少一次识别的页数";
+  if (NETWORK_CODES.includes(error?.code))
+    return `无法连接模型服务（${error.code}），请检查网络或接口地址`;
   // 只有显式标记 expose 的错误才是本应用静态生成的文案；上游原文一律不外显。
   if (error?.expose !== true) return fallback;
   const text = String(error.message || "")
@@ -241,6 +255,10 @@ export function createRecognitionQueue(
         (busy || job.attempts < maxAttempts) &&
         now() - job.created_at < 3600000;
       const status = retry ? "queued" : "failed";
+      // 教师界面只显示安全文案，原始错误留在服务日志里供排障（不含上游正文）。
+      console.error(
+        `[recognition] job ${job.id} failed: ${e?.code || e?.name || "-"} ${String(e?.message || "").slice(0, 300)}`,
+      );
       db.exec("BEGIN IMMEDIATE");
       try {
         db.prepare(

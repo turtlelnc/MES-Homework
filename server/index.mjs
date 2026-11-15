@@ -104,6 +104,7 @@ import {
   getSchoolModelMode,
 } from "./model-access.mjs";
 import { normalizeDirectReview } from "./grading.mjs";
+import { registerStatusPage } from "./status-page.mjs";
 
 const configuredSecret = process.env.APP_SECRET;
 if (
@@ -2823,6 +2824,7 @@ app.post(
     }
   },
 );
+registerStatusPage(app, { db, dataDir: data });
 if (fs.existsSync(path.join(root, "dist"))) {
   app.use(express.static(path.join(root, "dist")));
   app.get("/{*path}", (_q, r) =>
