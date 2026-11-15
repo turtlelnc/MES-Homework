@@ -169,6 +169,7 @@ Model capabilities and API formats change over time. Current OCR uses OpenAI-com
 | `src/`                    | Frontend source (React + TypeScript)                                     |
 | `server/`                 | Backend server (Express + SQLite)                                        |
 | `public/`                 | Static assets                                                            |
+| `website/`                | Bilingual product site, user guide and Cloudflare assets                 |
 | `tools/`                  | Deployment tools and scripts                                             |
 | `Roadshow PPT - 路演PPT/` | Roadshow deck and assets (Chinese and English PPTX / PDF / HTML sources) |
 
