@@ -2,7 +2,7 @@
 import { APP_VERSION, BUILD_NUMBER } from "../../../server/version.mjs";
 // 汇总应用运行时包信息，生成部署器使用的 release manifest 与校验文件。
 // 用法：
-//   node tools/deployer/packaging/build-manifest.mjs --dir release --version v0.2.3-rc1 --build 26111405
+//   node tools/deployer/packaging/build-manifest.mjs --dir release --version v0.2.3-rc2 --build 26111501
 import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
