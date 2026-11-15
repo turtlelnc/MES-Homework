@@ -102,6 +102,23 @@ describe("MES Homework Cloudflare Worker", () => {
     expect(forwardedRequest.headers.get("x-forwarded-for")).toBe("203.0.113.7");
   });
 
+  it("preserves an origin path prefix when proxying", async () => {
+    let forwardedRequest;
+    const fetchMock = vi.fn(async (request) => {
+      forwardedRequest = request;
+      return new Response("prefixed-origin-ok");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await worker.fetch(
+      new Request("https://site.example/uploads/file.png"),
+      { ORIGIN_URL: "https://origin.example/base/" },
+    );
+
+    expect(response.status).toBe(200);
+    expect(forwardedRequest.url).toBe("https://origin.example/base/uploads/file.png");
+  });
+
   it("does not proxy paths that merely start with an API prefix", async () => {
     const assets = { fetch: vi.fn(async () => new Response("asset")) };
     const response = await worker.fetch(
