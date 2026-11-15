@@ -7,6 +7,18 @@ export const positiveLimit = (name, fallback) => {
 };
 const failure = (message, status) =>
   Object.assign(new Error(message), { status });
+
+// 教师看到的失败原因：保留服务端已经写好的中文提示（模型不存在、Key 无效、
+// 余额不足、超时等），但拒绝可能夹带上游原文或代码片段的内容。
+export const failureReason = (error) => {
+  const fallback = "识别未完成，请检查文件和模型设置后重试";
+  // 只有显式标记 expose 的错误才是本应用静态生成的文案；上游原文一律不外显。
+  if (error?.expose !== true) return fallback;
+  const text = String(error.message || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return !text || text.length > 160 ? fallback : text;
+};
 export const publicJob = (job) =>
   job && {
     id: job.id,
@@ -237,9 +249,7 @@ export function createRecognitionQueue(
           status,
           busy ? 1 : 0,
           now() + retryMs * Math.max(1, job.attempts),
-          busy
-            ? "模型繁忙，等待可用额度"
-            : "识别未完成，请检查文件和模型设置后重试",
+          busy ? "模型繁忙，等待可用额度" : failureReason(e),
           e.status || 502,
           now(),
           job.id,

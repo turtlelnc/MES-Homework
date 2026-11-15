@@ -44,6 +44,8 @@ export function providerHttpError(status, raw) {
   return Object.assign(new Error(`模型接口请求失败 (${status})：${hint}`), {
     code: "PROVIDER_HTTP_ERROR",
     retryable: status === 429 || status >= 500,
+    // 文案由本模块静态生成，可安全展示给教师。
+    expose: true,
   });
 }
 

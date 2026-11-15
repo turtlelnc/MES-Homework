@@ -86,7 +86,7 @@ export function createModelBudget(db, { pressure } = {}) {
       )
         throw Object.assign(
           new Error("模型调用已达账户或学校限额，请稍后重试"),
-          { status: 429, code: "MODEL_QUOTA" },
+          { status: 429, code: "MODEL_QUOTA", expose: true },
         );
       id = randomUUID();
       db.prepare("INSERT INTO model_usage VALUES(?,?,?,?,NULL,?)").run(
