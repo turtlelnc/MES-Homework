@@ -21,7 +21,7 @@ $outDir = Join-Path $root "dist-deployer"
 
 Write-Host "校园作业分析 · 桌面部署器 构建" -ForegroundColor Cyan
 Write-Host "源码目录: $here"
-Write-Host "版本: v0.2.3-rc5 (build26111504)"
+Write-Host "版本: v0.2.3-rc6 (build26111505)"
 
 if ($Clean -and (Test-Path $buildDir)) {
   Remove-Item -Recurse -Force $buildDir
