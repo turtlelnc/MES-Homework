@@ -86,6 +86,8 @@ describe("MES Homework Cloudflare Worker", () => {
       headers: {
         "x-forwarded-host": "attacker.example",
         "x-forwarded-proto": "http",
+        "x-forwarded-for": "198.51.100.10",
+        "cf-connecting-ip": "203.0.113.7",
       },
     });
     const response = await worker.fetch(request, {
@@ -97,6 +99,7 @@ describe("MES Homework Cloudflare Worker", () => {
     expect(forwardedRequest.url).toBe("https://origin.example/api/health?check=1");
     expect(forwardedRequest.headers.get("x-forwarded-host")).toBe("site.example");
     expect(forwardedRequest.headers.get("x-forwarded-proto")).toBe("https");
+    expect(forwardedRequest.headers.get("x-forwarded-for")).toBe("203.0.113.7");
   });
 
   it("does not proxy paths that merely start with an API prefix", async () => {
