@@ -1,5 +1,5 @@
 // Mirrors server/version.mjs so the shell can render the release identity
 // before the first /api/health round-trip completes.
-export const APP_VERSION = "v0.2.3-rc2";
-export const BUILD_NUMBER = "26111501";
+export const APP_VERSION = "v0.2.3-rc3";
+export const BUILD_NUMBER = "26111502";
 export const VERSION_LABEL = `${APP_VERSION} (build${BUILD_NUMBER})`;
