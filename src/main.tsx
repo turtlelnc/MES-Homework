@@ -100,7 +100,7 @@ type Student = {
   class_name: string;
   created_at: string;
 };
-type TeacherAccount = Student & { subject: string };
+type TeacherAccount = Student & { subject: string; is_school_admin?: number };
 type Provider = {
   id: string;
   name: string;
@@ -727,6 +727,44 @@ function SchoolDashboard({
       notify((error as Error).message);
     }
   };
+  const [importResult, setImportResult] = useState<any>(null);
+  const [importing, setImporting] = useState(false);
+  const importTeachers = async (file?: File) => {
+    if (!file) return;
+    setImporting(true);
+    try {
+      const body = new FormData();
+      body.append("file", file);
+      const data: any = await api("/teachers/import", { method: "POST", body });
+      setImportResult(data);
+      notify(
+        `导入完成：成功 ${data.created.length} 人，失败 ${data.errors.length} 人。`,
+      );
+      load();
+    } catch (error) {
+      notify((error as Error).message);
+    } finally {
+      setImporting(false);
+    }
+  };
+  const teacherTemplate = () => {
+    const csv =
+      "姓名,账号名,邮箱,初始密码,学段,任教学科,班级\r\n王老师,wang01,,,初中,物理,八年级（1）班\r\n";
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob(["﻿" + csv], { type: "text/csv" }));
+    a.download = "教师导入模板.csv";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+  const toggleAdmin = async (teacherId: string, admin: boolean) => {
+    try {
+      await api(`/teachers/${teacherId}/admin`, json("PATCH", { admin }));
+      notify(admin ? "已设为学校管理员。" : "已取消管理员。");
+      load();
+    } catch (error) {
+      notify((error as Error).message);
+    }
+  };
   return (
     <>
       <Title
@@ -871,6 +909,25 @@ function SchoolDashboard({
                       {teacherAccount.stage} · {teacherAccount.subject} ·{" "}
                       {teacherAccount.class_name}
                     </p>
+                    <div className="row-actions">
+                      {teacherAccount.is_school_admin ? (
+                        <span className="admin-badge">学校管理员</span>
+                      ) : null}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() =>
+                          toggleAdmin(
+                            teacherAccount.id,
+                            !teacherAccount.is_school_admin,
+                          )
+                        }
+                      >
+                        {teacherAccount.is_school_admin
+                          ? "取消管理员"
+                          : "设为管理员"}
+                      </Button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -880,6 +937,48 @@ function SchoolDashboard({
           )}
         </section>
       </div>
+      <section className="rc4-panel">
+        <h2>
+          <FileSpreadsheet size={19} /> 批量导入教师
+        </h2>
+        <p className="panel-intro">
+          表头：姓名、账号名、邮箱、初始密码、学段、任教学科、班级。账号名与密码留空时自动生成，并在本次结果中显示。
+        </p>
+        <div className="import-actions">
+          <Button type="button" variant="outline" onClick={teacherTemplate}>
+            <Download />
+            下载教师 CSV 模板
+          </Button>
+          <label className="btn btn-primary">
+            {importing ? "导入中…" : "选择 CSV / XLSX"}
+            <input
+              type="file"
+              accept=".csv,.xlsx,.xls"
+              disabled={importing}
+              onChange={(e) => importTeachers(e.target.files?.[0])}
+            />
+          </label>
+        </div>
+        {importResult && (
+          <div className="import-result">
+            <strong>
+              成功 {importResult.created.length}，失败{" "}
+              {importResult.errors.length}
+            </strong>
+            {importResult.created.map((item: any) => (
+              <p key={item.id}>
+                {item.name} · 账号名 <code>{item.username}</code> · 初始密码{" "}
+                <code>{item.initialPassword}</code>
+              </p>
+            ))}
+            {importResult.errors.map((item: any) => (
+              <p className="error-line" key={item.row}>
+                第 {item.row} 行：{item.error}
+              </p>
+            ))}
+          </div>
+        )}
+      </section>
     </>
   );
 }
@@ -1820,6 +1919,29 @@ function Review({
       notify((e as Error).message);
     }
   };
+  const [autoMatch, setAutoMatch] = useState<{
+    matched: number;
+    unmatched: string[];
+  } | null>(null);
+  const runAutoMatch = async (assignmentId: string) => {
+    try {
+      const data = await api<{
+        matched: number;
+        unmatched: string[];
+        pending: number;
+      }>(`/assignments/${assignmentId}/auto-match`, { method: "POST" });
+      setAutoMatch(data);
+      notify(
+        data.pending === 0
+          ? "这份作业的答卷都已匹配。"
+          : `已匹配 ${data.matched} 份${data.unmatched.length ? `，${data.unmatched.length} 份需要手动确认` : ""}。`,
+      );
+      await load();
+      if (detail?.id) await select(detail.id);
+    } catch (e) {
+      notify((e as Error).message);
+    }
+  };
   const guard = useRef(createReviewGuard()).current;
   const listGeneration = useRef(0);
   const modeRef = useRef<"all" | "uncertain" | "none">("all");
@@ -2085,35 +2207,24 @@ function Review({
             />
           ) : (
             <>
-              <div className="detail-head">
+              <div className="review-status" data-state={detail.status}>
                 <div>
-                  <h2>{detail.student_name}</h2>
-                  <p>
+                  <span className="review-badge">
                     {statusName(detail.status)}
-                    {!detail.student_id && (
-                      <label className="field">
-                        <span>尚未匹配学生：请选择作业班级内的账号</span>
-                        <select
-                          value=""
-                          disabled={detail.status === "recognizing"}
-                          onChange={(e) => void linkStudent(e.target.value)}
-                        >
-                          <option value="">选择学生以同步作业与错题</option>
-                          {linkStudents.map((student) => (
-                            <option key={student.id} value={student.id}>
-                              {student.name} · {student.class_name} ·{" "}
-                              {student.username}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    )}
-                    {detail.grading_mode === "direct"
-                      ? " · 无需原题 · AI 直接批改"
-                      : ""}
-                    {detail.status === "completed" && detail.score !== null
-                      ? ` · 得分 ${detail.score}`
-                      : ""}
+                  </span>
+                  <h2>{detail.student_name || "未命名答卷"}</h2>
+                  <p>
+                    {detail.status === "queued" &&
+                      "已排队，系统会自动识别，不用停在这一页。"}
+                    {detail.status === "recognizing" && "正在识别，请稍候。"}
+                    {detail.status === "uploaded" &&
+                      "已上传，点右侧按钮开始识别。"}
+                    {detail.status === "review" &&
+                      "识别完成，请核对下面的批改结果。"}
+                    {detail.status === "failed" &&
+                      "识别没成功，请重试，或换一份更清晰的原件。"}
+                    {detail.status === "completed" &&
+                      `已完成复核${detail.score !== null ? `，得分 ${detail.score}` : ""}。`}
                   </p>
                 </div>
                 {(["uploaded", "failed", "completed"].includes(detail.status) ||
@@ -2124,13 +2235,62 @@ function Review({
                   >
                     <RefreshCw />
                     {busy[detail.id] === "recognize"
-                      ? "逐页 OCR 中…"
+                      ? "正在识别…"
                       : detail.status === "completed"
-                        ? "重新识别（覆盖当前结果）"
-                        : "开始 OCR"}
+                        ? "重新识别"
+                        : "开始识别"}
                   </Button>
                 )}
               </div>
+              {detail.assignment_id && (
+                <div className="review-batch">
+                  <span>一次上传了整班答卷？</span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => runAutoMatch(detail.assignment_id)}
+                  >
+                    一键匹配本班学生
+                  </Button>
+                  {autoMatch && (
+                    <small>
+                      已匹配 {autoMatch.matched} 份
+                      {autoMatch.unmatched.length
+                        ? `，待确认 ${autoMatch.unmatched.length} 份`
+                        : ""}
+                    </small>
+                  )}
+                </div>
+              )}
+              {detail.grading_mode === "direct" && (
+                <p className="review-note">
+                  这份作业没有原题，由 AI 直接批改。
+                </p>
+              )}
+              {!detail.student_id && (
+                <div className="review-match">
+                  <strong>这份答卷是哪位学生的？</strong>
+                  <p>选好后，这次作业和错题会自动记到该学生名下。</p>
+                  <select
+                    value=""
+                    disabled={detail.status === "recognizing"}
+                    onChange={(e) => void linkStudent(e.target.value)}
+                  >
+                    <option value="">选择学生</option>
+                    {linkStudents.map((student) => (
+                      <option key={student.id} value={student.id}>
+                        {student.name}
+                        {student.class_name ? `（${student.class_name}）` : ""}
+                      </option>
+                    ))}
+                  </select>
+                  {linkStudents.length === 0 && (
+                    <small>
+                      这个班级还没有学生账号，请先到「学生管理」添加或导入。
+                    </small>
+                  )}
+                </div>
+              )}
               {reviewMode === "none" && detail.status === "review" && (
                 <p role="status">
                   当前为「不复核」方式：AI
@@ -2158,8 +2318,8 @@ function Review({
                   </p>
                 )}
               {detail.files?.length > 0 && (
-                <div className="field">
-                  <span>答卷原件（按上传顺序）</span>
+                <div className="review-files">
+                  <span>原件</span>
                   {detail.files.map(
                     (file: { name: string; url: string }, index: number) => (
                       <a
@@ -2168,7 +2328,7 @@ function Review({
                         target="_blank"
                         rel="noopener noreferrer"
                       >
-                        第 {index + 1} 个附件：{file.name}
+                        第 {index + 1} 页 · {file.name}
                       </a>
                     ),
                   )}

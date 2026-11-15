@@ -908,6 +908,182 @@ app.post(
     }
   },
 );
+app.post(
+  "/api/teachers/import",
+  auth,
+  schoolAdmin,
+  uploadAdmission.legacy,
+  rosterUpload.single("file"),
+  async (req, res) => {
+    if (!req.file)
+      return res.status(400).json({ error: "请选择 CSV 或 XLSX 文件" });
+    try {
+      const isCsv = req.file.originalname.toLowerCase().endsWith(".csv");
+      pressure.assertMemory();
+      const signal = requestSignal();
+      const { table } = await recognitionFiles(
+        [
+          {
+            file_type: "application/x-mes-roster",
+            file_path: req.file.path,
+            isCsv,
+          },
+        ],
+        signal,
+        { admission: () => pressure.assertParser() },
+      );
+      const headers = (table[0] || []).map((value) =>
+        String(value || "").trim(),
+      );
+      const rows = table
+        .slice(1)
+        .map((values) =>
+          Object.fromEntries(
+            headers.map((header, index) => [
+              header,
+              String(values[index] || "").trim(),
+            ]),
+          ),
+        )
+        .filter((item) => Object.values(item).some(Boolean));
+      if (!rows.length)
+        return res.status(400).json({ error: "文件中没有教师数据" });
+      if (rows.length > 200)
+        return res.status(400).json({ error: "单次最多导入 200 名教师" });
+      const created = [];
+      const errors = [];
+      const insert = db.prepare(
+        "INSERT INTO users(id,school_id,role,name,username,email,password_hash,salt,stage,subject,class_name,created_at,is_school_admin) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,0)",
+      );
+      const usernameTaken = db.prepare(
+        "SELECT 1 present FROM users WHERE username=?",
+      );
+      const uniqueUsername = (base) => {
+        const cleaned = String(base || "")
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9_.\-一-龥]/g, "")
+          .slice(0, 28);
+        let seed =
+          cleaned.length >= 2
+            ? cleaned
+            : `tea_${randomBytes(4).toString("hex")}`;
+        let candidate = seed;
+        for (let n = 2; usernameTaken.get(candidate); n += 1)
+          candidate = `${seed.slice(0, 27)}_${n}`;
+        return candidate;
+      };
+      for (const [index, row] of rows.entries()) {
+        signal.throwIfAborted();
+        const name = String(row["姓名"] || row.name || "").trim();
+        const email = String(row["邮箱"] || row.email || "")
+          .trim()
+          .toLowerCase();
+        const rawUsername = String(
+          row["账号名"] || row["账号"] || row.username || row.account || "",
+        ).trim();
+        const initialPassword = String(
+          row["初始密码"] ||
+            row.password ||
+            `Te${randomBytes(5).toString("hex")}!`,
+        );
+        const stage = String(
+          row["学段"] || row.stage || req.user.stage || "",
+        ).trim();
+        const subject = String(
+          row["任教学科"] || row["学科"] || row.subject || "",
+        ).trim();
+        const className = String(
+          row["班级"] ||
+            row.className ||
+            row.class ||
+            req.user.class_name ||
+            "",
+        ).trim();
+        try {
+          if (
+            !name ||
+            !subject ||
+            !className ||
+            !capabilities.stages.includes(stage) ||
+            !validPassword(initialPassword)
+          )
+            throw new Error("姓名、学科、班级、学段或密码格式无效");
+          const username = uniqueUsername(
+            rawUsername || deriveUsernameSeed(email || name, name),
+          );
+          const id = uid();
+          const salt = randomBytes(16).toString("hex");
+          insert.run(
+            id,
+            req.user.school_id,
+            "teacher",
+            name,
+            username,
+            email || null,
+            await pass(initialPassword, salt, true),
+            salt,
+            stage,
+            subject,
+            className,
+            iso(),
+          );
+          db.prepare(
+            "INSERT INTO class_teachers(id,school_id,class_name,teacher_id,is_head,created_at) VALUES(?,?,?,?,0,?)",
+          ).run(uid(), req.user.school_id, className, id, iso());
+          created.push({
+            row: index + 2,
+            id,
+            name,
+            username,
+            email,
+            initialPassword,
+          });
+        } catch (error) {
+          if (error.status === 503 || signal.aborted) throw error;
+          errors.push({
+            row: index + 2,
+            name,
+            email,
+            error: String(error).includes("UNIQUE")
+              ? "账号名或邮箱已注册"
+              : error.message,
+          });
+        }
+      }
+      res.json({ total: rows.length, created, errors });
+    } catch (error) {
+      res
+        .status(error.status || 400)
+        .json({ error: `无法读取教师名单：${error.message}` });
+    }
+  },
+);
+// 一次上传的全班答卷：按 OCR 到的姓名批量匹配本班学生，无需逐个点选。
+app.post("/api/assignments/:id/auto-match", auth, schoolStaff, (req, res) => {
+  const assignment = db
+    .prepare("SELECT * FROM assignments WHERE id=? AND school_id=?")
+    .get(req.params.id, req.user.school_id);
+  if (!assignment) return res.status(404).json({ error: "作业不存在" });
+  const pending = db
+    .prepare(
+      "SELECT id,student_name FROM submissions WHERE assignment_id=? AND student_id IS NULL AND COALESCE(student_name,'')<>''",
+    )
+    .all(assignment.id);
+  const update = db.prepare(
+    "UPDATE submissions SET student_id=?,student_name=? WHERE id=? AND student_id IS NULL",
+  );
+  let matched = 0;
+  const unmatched = [];
+  for (const submission of pending) {
+    const student = matchStudent(db, assignment, submission.student_name);
+    if (student) {
+      update.run(student.id, student.name, submission.id);
+      matched += 1;
+    } else unmatched.push(submission.student_name);
+  }
+  res.json({ matched, unmatched, pending: pending.length });
+});
 app.post("/api/knowledge", auth, teacher, (req, res) => {
   const x = req.body;
   if (!x.title) return res.status(400).json({ error: "名称不能为空" });
@@ -1152,6 +1328,22 @@ function submissionFor(req) {
     : s.student_id === req.user.id
       ? s
       : null;
+}
+
+// 浏览器标题栏与教师看到的文件名：还原百分号编码，并修掉 multer 把 UTF-8
+// 当 latin1 解码产生的乱码，避免出现 %E5%85%A8…pdf 这样的附件名。
+function displayFileName(raw) {
+  let value = String(raw || "");
+  if (/%[0-9A-Fa-f]{2}/.test(value)) {
+    try {
+      value = decodeURIComponent(value);
+    } catch {}
+  }
+  if (/[À-ÿ]/.test(value) && !/[一-龥]/.test(value)) {
+    const repaired = Buffer.from(value, "latin1").toString("utf8");
+    if (!repaired.includes("�")) value = repaired;
+  }
+  return path.basename(value || "附件");
 }
 
 function submissionFiles(submission) {
@@ -1399,11 +1591,13 @@ app.get("/api/submissions/:id", auth, (req, res) => {
     ...s,
     file_path: undefined,
     assignment_title: assignment.title,
+    assignment_id: assignment.id,
+    assignment_class: assignment.class_name || "",
     assignment_description: assignment.description || "",
     grading_mode: assignment.grading_mode || "bank",
     review_mode: req.user.review_mode || "all",
     files: submissionFiles(s).map((file) => ({
-      name: file.original_name,
+      name: displayFileName(file.original_name),
       mimeType: file.file_type,
       url: `/uploads/${encodeURIComponent(path.basename(file.file_path))}`,
     })),

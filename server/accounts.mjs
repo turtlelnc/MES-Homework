@@ -508,14 +508,39 @@ export function registerAccountsRoutes(app, ctx) {
     }
   });
 
+  // 一所学校可以有多个管理员，列表里带上标记，由前端显示与切换。
   app.get("/api/teachers", auth, schoolAdmin, (req, res) => {
     res.json(
       db
         .prepare(
-          "SELECT id,name,username,email,stage,subject,class_name,created_at FROM users WHERE school_id=? AND role='teacher' AND is_school_admin=0 ORDER BY name",
+          "SELECT id,name,username,email,stage,subject,class_name,created_at,is_school_admin FROM users WHERE school_id=? AND role='teacher' ORDER BY is_school_admin DESC, name",
         )
         .all(req.user.school_id),
     );
+  });
+
+  app.patch("/api/teachers/:id/admin", auth, schoolAdmin, (req, res) => {
+    const target = db
+      .prepare(
+        "SELECT id,is_school_admin FROM users WHERE id=? AND school_id=? AND role='teacher'",
+      )
+      .get(req.params.id, req.user.school_id);
+    if (!target) return res.status(404).json({ error: "教师不存在" });
+    const admin = req.body?.admin === true;
+    if (!admin) {
+      const others = db
+        .prepare(
+          "SELECT COUNT(*) n FROM users WHERE school_id=? AND role='teacher' AND is_school_admin=1 AND id<>?",
+        )
+        .get(req.user.school_id, target.id).n;
+      if (others === 0)
+        return res.status(400).json({ error: "至少要保留一位学校管理员" });
+    }
+    db.prepare("UPDATE users SET is_school_admin=? WHERE id=?").run(
+      admin ? 1 : 0,
+      target.id,
+    );
+    res.json({ ok: true, admin });
   });
 
   app.post("/api/teachers", auth, schoolAdmin, async (req, res) => {

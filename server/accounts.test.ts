@@ -665,6 +665,54 @@ describe("学校开通码", () => {
   });
 });
 
+describe("一校多管理员", () => {
+  it("可以把其他教师设为管理员，但不能取消最后一位管理员", async () => {
+    const school = await createSchool();
+    const admin = userRow(school.adminId);
+    const created = await request("POST", "/api/teachers", {
+      user: admin,
+      body: {
+        name: "李老师",
+        username: "li_admin",
+        password: PASSWORD,
+        stage: "初中",
+        subject: "物理",
+        className: "八年级（1）班",
+      },
+    });
+    expect(created.statusCode).toBe(200);
+    const teacherId = created.payload.id as string;
+    // 只有一位管理员时不允许取消自己。
+    const lastAdmin = await request(
+      "PATCH",
+      `/api/teachers/${admin.id}/admin`,
+      {
+        user: admin,
+        body: { admin: false },
+      },
+    );
+    expect(lastAdmin.statusCode).toBe(400);
+    // 提升第二位管理员后，两位都能在列表里看到，并可以互相取消。
+    const promoted = await request(
+      "PATCH",
+      `/api/teachers/${teacherId}/admin`,
+      { user: admin, body: { admin: true } },
+    );
+    expect(promoted.statusCode).toBe(200);
+    const listed = await request("GET", "/api/teachers", { user: admin });
+    expect(
+      listed.payload.filter((row: any) => row.is_school_admin === 1),
+    ).toHaveLength(2);
+    const demoted = await request("PATCH", `/api/teachers/${admin.id}/admin`, {
+      user: admin,
+      body: { admin: false },
+    });
+    expect(demoted.statusCode).toBe(200);
+    expect(userRow(admin.id).is_school_admin).toBe(0);
+    expect(userRow(teacherId).is_school_admin).toBe(1);
+  });
+});
+
 describe("登录兼容 username / email / account", () => {
   it("支持账号名（大小写/空格不敏感）登录并建立会话", async () => {
     const school = await createSchool();
@@ -869,14 +917,16 @@ describe("旧接口兼容与管理员建号", () => {
     });
     expect(duplicate.payload.error).toBe("该账号名已被使用");
     const list = await request("GET", "/api/teachers", { user: admin });
-    expect(list.payload).toHaveLength(1);
-    expect(list.payload[0]).toMatchObject({
-      username: "li_teacher",
+    // 列表同时包含管理员与普通教师，由 is_school_admin 区分。
+    const listed = list.payload.find(
+      (row: any) => row.username === "li_teacher",
+    );
+    expect(listed).toMatchObject({
       email: "li@example.test",
       subject: "物理",
       class_name: "八年级（1）班",
     });
-    expect(list.payload[0]).toHaveProperty("created_at");
+    expect(listed).toHaveProperty("created_at");
   });
 
   it("管理员创建老师/学生时邮箱可选，邮箱冲突返回“邮箱已注册”", async () => {
