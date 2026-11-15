@@ -18,7 +18,7 @@ function json(body, status = 200) {
 }
 
 function parseOrigin(value) {
-  if (typeof value !== "string" || !value.trim()) {
+  if (typeof value !== "string" || !value.trim() || value.includes("replace-with-your-cloudflared-origin")) {
     throw new Error("ORIGIN_URL is not configured");
   }
 
@@ -96,6 +96,15 @@ export default {
 
     if (url.pathname === "/healthz") {
       return json({ ok: true, service: "mes-homework-official-site" });
+    }
+
+    if (url.pathname === "/app" || url.pathname === "/app/") {
+      try {
+        const origin = parseOrigin(env.ORIGIN_URL);
+        return Response.redirect(new URL(origin.pathname || "/", origin.origin).toString(), 302);
+      } catch (error) {
+        return json({ error: "Application origin is not configured", detail: error.message }, 503);
+      }
     }
 
     if (isProxyPath(url.pathname)) {
