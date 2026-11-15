@@ -1,7 +1,7 @@
 {
   "name": "smart-campus-homework-analyzer",
   "private": true,
-  "version": "0.2.3-rc5",
+  "version": "0.2.3-rc6",
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
