@@ -223,12 +223,13 @@
             <article class="doc-section" id="quickstart">
               <div class="doc-kicker">01 / GET STARTED</div><h3 data-i18n="docs.quick.title">启动你的第一套实例</h3>
               <p data-i18n="docs.quick.copy">MES Homework 是需要自托管的全栈应用。准备 Node.js 24 或更新版本，然后在服务器或本机执行：</p>
-              <pre class="code-block"><code>npm install
-# 设置至少 32 字符的随机 APP_SECRET
+              <pre class="code-block"><code>npm ci
+cp .env.example .env
+# 编辑 .env：设置 APP_SECRET（至少 32 位）和 DATA_DIR
 npm run build
-npm start</code><button data-copy="npm install&#10;# Set APP_SECRET to a random string of at least 32 characters&#10;npm run build&#10;npm start" data-i18n-aria="a11y.copy" aria-label="Copy quick start">复制</button></pre>
+node --env-file=.env server/index.mjs</code><button data-copy="npm ci&#10;cp .env.example .env&#10;# Set APP_SECRET (32+ random characters) and DATA_DIR in .env&#10;npm run build&#10;node --env-file=.env server/index.mjs" data-i18n-aria="a11y.copy" aria-label="Copy quick start">复制</button></pre>
               <div class="doc-callout"><b data-i18n="docs.quick.secret">生产环境必须设置 APP_SECRET。</b><span data-i18n="docs.quick.secretcopy">请使用密码管理器生成至少 32 字符的随机值，并妥善备份；现有加密凭证依赖同一密钥解密。</span></div>
-              <div class="doc-links"><a href="https://github.com/turtlelnc/MES-Homework/blob/main/README.md" target="_blank" rel="noreferrer" data-i18n="docs.quick.more">阅读完整安装说明 ↗</a><a href="https://github.com/turtlelnc/MES-Homework/releases" target="_blank" rel="noreferrer" data-i18n="docs.quick.release">下载发行版 ↗</a></div>
+              <div class="doc-links"><a href="https://github.com/turtlelnc/MES-Homework/blob/main/README.md" target="_blank" rel="noreferrer" data-i18n="docs.quick.more">阅读完整安装说明 ↗</a><a href="https://github.com/turtlelnc/MES-Homework/blob/main/tools/installer/README.md" target="_blank" rel="noreferrer" data-i18n="docs.quick.installer">原生安装器指南 ↗</a><a href="https://github.com/turtlelnc/MES-Homework/releases" target="_blank" rel="noreferrer" data-i18n="docs.quick.release">下载发行版 ↗</a></div>
             </article>
             <article class="doc-section" id="usage">
               <div class="doc-kicker">02 / DAILY WORKFLOW</div><h3 data-i18n="docs.usage.title">一次作业，如何走完整个闭环</h3>
@@ -239,7 +240,7 @@ npm start</code><button data-copy="npm install&#10;# Set APP_SECRET to a random 
                 <li><b data-i18n="docs.usage.4t">上传答卷并复核</b><span data-i18n="docs.usage.4c">学生上传答卷；教师选择全部复核、仅存疑复核或不复核，并核对异常识别结果。</span></li>
                 <li><b data-i18n="docs.usage.5t">分析与巩固</b><span data-i18n="docs.usage.5c">教师查看班级教学分析；学生按思考、提示、重做、对照答案、同类练习的顺序订正；家长跟进孩子学情。</span></li>
               </ol>
-              <div class="doc-links"><a href="https://github.com/turtlelnc/MES-Homework/blob/main/docs/workflow-pages.md" target="_blank" rel="noreferrer" data-i18n="docs.usage.more">查看同页工作流说明 ↗</a><a href="https://github.com/turtlelnc/MES-Homework/blob/main/OPERATIONS.md" target="_blank" rel="noreferrer" data-i18n="docs.usage.ops">查看运行与备份指南 ↗</a></div>
+              <div class="doc-links"><a href="https://github.com/turtlelnc/MES-Homework/blob/main/docs/workflow-pages.md" target="_blank" rel="noreferrer" data-i18n="docs.usage.more">查看同页工作流说明 ↗</a><a href="https://github.com/turtlelnc/MES-Homework/blob/main/RUNTIME_CONFIGURATION.md" target="_blank" rel="noreferrer" data-i18n="docs.usage.runtime">运行时容量与配置 ↗</a><a href="https://github.com/turtlelnc/MES-Homework/blob/main/OPERATIONS.md" target="_blank" rel="noreferrer" data-i18n="docs.usage.ops">查看运行与备份指南 ↗</a></div>
             </article>
             <article class="doc-section" id="deploy">
               <div class="doc-kicker">03 / CLOUDFLARE WORKER</div><h3 data-i18n="docs.deploy.title">官网静态托管，API 回到你的源站。</h3>
