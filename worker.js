@@ -78,6 +78,9 @@ async function proxyToOrigin(request, incomingUrl, env) {
   // Never trust forwarding metadata supplied by the incoming client.
   headers.set("x-forwarded-host", incomingUrl.host);
   headers.set("x-forwarded-proto", incomingUrl.protocol.slice(0, -1));
+  const clientIp = request.headers.get("cf-connecting-ip");
+  if (clientIp) headers.set("x-forwarded-for", clientIp);
+  else headers.delete("x-forwarded-for");
   headers.delete("host");
 
   try {
