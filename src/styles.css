@@ -2599,7 +2599,6 @@ footer {
 .review-status {
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
   gap: 16px;
   margin-bottom: 14px;
   padding: 16px 18px;
@@ -2632,6 +2631,14 @@ footer {
 .review-status[data-state="failed"] .review-badge {
   background: #fdeaea;
   color: #d64545;
+}
+.review-status > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.review-status > button {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 .review-status h2 {
   margin: 8px 0 4px;

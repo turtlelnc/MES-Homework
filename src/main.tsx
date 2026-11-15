@@ -2303,18 +2303,10 @@ function Review({
                   {detail.assignment_description}
                 </p>
               )}
-              {detail.recognitionJob &&
-                (["queued", "recognizing", "failed"].includes(detail.status) ||
-                  detail.recognitionJob.status === "failed") && (
-                  <p role="status">
-                    {detail.recognitionJob.status === "failed"
-                      ? "上次后台识别未完成。"
-                      : detail.status === "queued"
-                        ? "已排队，系统会自动处理。"
-                        : statusName(detail.status)}
-                    {` 已尝试 ${detail.recognitionJob.attempts} 次。`}
-                    {detail.recognitionJob.error &&
-                      ` ${detail.recognitionJob.error}`}
+              {detail.recognitionJob?.status === "failed" &&
+                detail.recognitionJob.error && (
+                  <p className="review-note">
+                    识别详情：{detail.recognitionJob.error}
                   </p>
                 )}
               {detail.files?.length > 0 && (
