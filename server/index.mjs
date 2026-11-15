@@ -1154,6 +1154,22 @@ function submissionFor(req) {
       : null;
 }
 
+// 浏览器标题栏与教师看到的文件名：还原百分号编码，并修掉 multer 把 UTF-8
+// 当 latin1 解码产生的乱码，避免出现 %E5%85%A8…pdf 这样的附件名。
+function displayFileName(raw) {
+  let value = String(raw || "");
+  if (/%[0-9A-Fa-f]{2}/.test(value)) {
+    try {
+      value = decodeURIComponent(value);
+    } catch {}
+  }
+  if (/[À-ÿ]/.test(value) && !/[一-龥]/.test(value)) {
+    const repaired = Buffer.from(value, "latin1").toString("utf8");
+    if (!repaired.includes("�")) value = repaired;
+  }
+  return path.basename(value || "附件");
+}
+
 function submissionFiles(submission) {
   const rows = db
     .prepare(
@@ -1403,7 +1419,7 @@ app.get("/api/submissions/:id", auth, (req, res) => {
     grading_mode: assignment.grading_mode || "bank",
     review_mode: req.user.review_mode || "all",
     files: submissionFiles(s).map((file) => ({
-      name: file.original_name,
+      name: displayFileName(file.original_name),
       mimeType: file.file_type,
       url: `/uploads/${encodeURIComponent(path.basename(file.file_path))}`,
     })),

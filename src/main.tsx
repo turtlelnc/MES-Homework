@@ -2085,35 +2085,24 @@ function Review({
             />
           ) : (
             <>
-              <div className="detail-head">
+              <div className="review-status" data-state={detail.status}>
                 <div>
-                  <h2>{detail.student_name}</h2>
-                  <p>
+                  <span className="review-badge">
                     {statusName(detail.status)}
-                    {!detail.student_id && (
-                      <label className="field">
-                        <span>尚未匹配学生：请选择作业班级内的账号</span>
-                        <select
-                          value=""
-                          disabled={detail.status === "recognizing"}
-                          onChange={(e) => void linkStudent(e.target.value)}
-                        >
-                          <option value="">选择学生以同步作业与错题</option>
-                          {linkStudents.map((student) => (
-                            <option key={student.id} value={student.id}>
-                              {student.name} · {student.class_name} ·{" "}
-                              {student.username}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    )}
-                    {detail.grading_mode === "direct"
-                      ? " · 无需原题 · AI 直接批改"
-                      : ""}
-                    {detail.status === "completed" && detail.score !== null
-                      ? ` · 得分 ${detail.score}`
-                      : ""}
+                  </span>
+                  <h2>{detail.student_name || "未命名答卷"}</h2>
+                  <p>
+                    {detail.status === "queued" &&
+                      "已排队，系统会自动识别，不用停在这一页。"}
+                    {detail.status === "recognizing" && "正在识别，请稍候。"}
+                    {detail.status === "uploaded" &&
+                      "已上传，点右侧按钮开始识别。"}
+                    {detail.status === "review" &&
+                      "识别完成，请核对下面的批改结果。"}
+                    {detail.status === "failed" &&
+                      "识别没成功，请重试，或换一份更清晰的原件。"}
+                    {detail.status === "completed" &&
+                      `已完成复核${detail.score !== null ? `，得分 ${detail.score}` : ""}。`}
                   </p>
                 </div>
                 {(["uploaded", "failed", "completed"].includes(detail.status) ||
@@ -2124,13 +2113,42 @@ function Review({
                   >
                     <RefreshCw />
                     {busy[detail.id] === "recognize"
-                      ? "逐页 OCR 中…"
+                      ? "正在识别…"
                       : detail.status === "completed"
-                        ? "重新识别（覆盖当前结果）"
-                        : "开始 OCR"}
+                        ? "重新识别"
+                        : "开始识别"}
                   </Button>
                 )}
               </div>
+              {detail.grading_mode === "direct" && (
+                <p className="review-note">
+                  这份作业没有原题，由 AI 直接批改。
+                </p>
+              )}
+              {!detail.student_id && (
+                <div className="review-match">
+                  <strong>这份答卷是哪位学生的？</strong>
+                  <p>选好后，这次作业和错题会自动记到该学生名下。</p>
+                  <select
+                    value=""
+                    disabled={detail.status === "recognizing"}
+                    onChange={(e) => void linkStudent(e.target.value)}
+                  >
+                    <option value="">选择学生</option>
+                    {linkStudents.map((student) => (
+                      <option key={student.id} value={student.id}>
+                        {student.name}
+                        {student.class_name ? `（${student.class_name}）` : ""}
+                      </option>
+                    ))}
+                  </select>
+                  {linkStudents.length === 0 && (
+                    <small>
+                      这个班级还没有学生账号，请先到「学生管理」添加或导入。
+                    </small>
+                  )}
+                </div>
+              )}
               {reviewMode === "none" && detail.status === "review" && (
                 <p role="status">
                   当前为「不复核」方式：AI
@@ -2158,8 +2176,8 @@ function Review({
                   </p>
                 )}
               {detail.files?.length > 0 && (
-                <div className="field">
-                  <span>答卷原件（按上传顺序）</span>
+                <div className="review-files">
+                  <span>原件</span>
                   {detail.files.map(
                     (file: { name: string; url: string }, index: number) => (
                       <a
@@ -2168,7 +2186,7 @@ function Review({
                         target="_blank"
                         rel="noopener noreferrer"
                       >
-                        第 {index + 1} 个附件：{file.name}
+                        第 {index + 1} 页 · {file.name}
                       </a>
                     ),
                   )}

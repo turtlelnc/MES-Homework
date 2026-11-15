@@ -289,7 +289,7 @@ test("two pages form one submission; OCR and manual scores save consistently", a
     .first()
     .click();
   await expect(page.locator(".review-detail a")).toHaveCount(2);
-  await page.getByRole("button", { name: "开始 OCR", exact: true }).click();
+  await page.getByRole("button", { name: "开始识别", exact: true }).click();
   const rows = page.locator("fieldset.review-item");
   await expect(rows).toHaveCount(8);
   await expect(rows.first()).toContainText("教师标准答案：");
@@ -626,7 +626,7 @@ test("device-side overlapping tiles resume after interruption and preserve origi
     .first()
     .click();
   await expect(page.locator(".review-detail a")).toHaveCount(1);
-  await page.getByRole("button", { name: "开始 OCR", exact: true }).click();
+  await page.getByRole("button", { name: "开始识别", exact: true }).click();
   await expect(page.locator("fieldset.review-item")).toHaveCount(8);
   await page.screenshot({
     path: "test-results/device-tiling-review.png",
