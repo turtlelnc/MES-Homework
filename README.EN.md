@@ -137,15 +137,20 @@ npm run verify:teaching   # End-to-end verification of teaching analysis APIs (u
 
 `npm run verify:teaching` generates a fixture database under `.tmp-teaching-verify/` and starts a temporary port, verifying read/write interfaces, statistical standards, and permission boundaries item by item, then cleans up automatically. It only validates deterministic parts; AI generation endpoints return clear error messages when no API key is configured.
 
-## Cloudflare Free Tier
+## Official Website and Cloudflare Worker
 
-Cloudflare Worker hosts only the static frontend and proxies `/api/*` to your origin server, without depending on D1 or R2. Start the main service on your server first, then use cloudflared to expose port 8787, and write the HTTPS origin URL to `ORIGIN_URL` in `wrangler.jsonc`.
+The bilingual website lives in `website/`. Cloudflare Worker serves these static assets; `/app` redirects to the MES Homework application at `ORIGIN_URL`, while `/api`, `/api/*`, `/uploads` and `/uploads/*` proxy to the same origin. The marketing site is separate from the existing React application build in `dist/`, so the two do not overwrite each other. This setup does not require D1 or R2.
+
+Start MES Homework on your server, then expose its default port (8787) through cloudflared. Set `ORIGIN_URL` in `wrangler.jsonc` to the resulting HTTPS origin, and set the server's `APP_ORIGIN` to the exact public HTTPS origin users reach after following `/app` (no path or trailing slash). Use a persistent named tunnel and fixed hostname in production; Quick Tunnels are for temporary testing.
 
 ```powershell
-cloudflared tunnel --url http://127.0.0.1:8787
 npm run build
+npm start
+cloudflared tunnel --url http://127.0.0.1:8787
 npx wrangler deploy
 ```
+
+See [the website guide](website/README.md) for local preview, Worker routes and deployment details.
 
 ## Pre-Launch Checklist
 
