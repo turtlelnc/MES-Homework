@@ -36,7 +36,6 @@ function parseOrigin(value) {
     throw new Error("ORIGIN_URL cannot contain credentials, query, or fragment");
   }
 
-  origin.pathname = origin.pathname.replace(/\/+$/, "");
   return origin;
 }
 
@@ -71,7 +70,8 @@ async function proxyToOrigin(request, incomingUrl, env) {
   }
 
   const target = new URL(origin.origin);
-  target.pathname = origin.pathname + incomingUrl.pathname;
+  const basePath = origin.pathname.replace(/\/+$/, "");
+  target.pathname = basePath + incomingUrl.pathname;
   target.search = incomingUrl.search;
 
   const headers = new Headers(request.headers);
@@ -104,7 +104,8 @@ export default {
     if (url.pathname === "/app" || url.pathname === "/app/") {
       try {
         const origin = parseOrigin(env.ORIGIN_URL);
-        return Response.redirect(new URL(origin.pathname || "/", origin.origin).toString(), 302);
+        const basePath = origin.pathname.replace(/\/+$/, "");
+        return Response.redirect(new URL(basePath ? basePath + "/" : "/", origin.origin).toString(), 302);
       } catch (error) {
         return json({ error: "Application origin is not configured", detail: error.message }, 503);
       }
