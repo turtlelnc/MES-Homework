@@ -195,15 +195,20 @@ npm run verify:teaching   # 教学分析接口端到端校验（使用夹具数�
 
 `npm run verify:teaching` 会在 `.tmp-teaching-verify/` 下生成一份夹具数据库并启动一个临时端口，逐项校验教学分析的读写接口、统计口径与权限边界，结束后自动清理。它只验证确定性部分，AI 生成接口在未配置 API Key 时会确认返回清晰的报错。
 
-## Cloudflare 免费方案
+## 官网与 Cloudflare Worker
 
-Cloudflare Worker 只托管静态前端并代理 `/api/*` 到你的源站，不依赖 D1 或 R2。先在服务器启动主服务，再使用 cloudflared 暴露 8787 端口，并把 HTTPS 源站地址写入 `wrangler.jsonc` 的 `ORIGIN_URL`。
+仓库官网位于 `website/`，支持中文/English。Cloudflare Worker 从该目录托管官网静态资源；`/app` 会跳转到 `ORIGIN_URL` 对应的 MES Homework 应用，`/api`、`/api/*`、`/uploads` 与 `/uploads/*` 则代理到同一源站。官网与现有 React 应用构建目录 `dist/` 分离，互不覆盖，不需要 D1 或 R2。
+
+先在服务器启动 MES Homework，再通过 cloudflared 暴露默认 8787 端口。将获得的 HTTPS 源站地址填入 `wrangler.jsonc` 的 `ORIGIN_URL`，并在源站设置 `APP_ORIGIN` 为用户通过 `/app` 访问到的精确 HTTPS 源站地址（不带路径或尾部斜杠）。生产环境请使用固定域名和持久命名隧道；Quick Tunnel 仅用于临时测试。
 
 ```powershell
-cloudflared tunnel --url http://127.0.0.1:8787
 npm run build
+npm start
+cloudflared tunnel --url http://127.0.0.1:8787
 npx wrangler deploy
 ```
+
+本地预览、Worker 路由及完整部署步骤见 [官网说明](website/README.md)。
 
 ## 上线前事项
 
