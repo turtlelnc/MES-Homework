@@ -227,6 +227,7 @@ npx wrangler deploy
 | `src/`                    | 前端源码（React + TypeScript）                             |
 | `server/`                 | 服务端（Express + SQLite）                                 |
 | `public/`                 | 静态资源                                                   |
+| `website/`               | 中英双语官网、使用文档与 Cloudflare Worker 静态资源          |
 | `tools/`                  | 部署工具与脚本                                             |
 | `Roadshow PPT - 路演PPT/` | 路演演示文稿及素材（含中英文两套 PPTX / PDF / 网页源文件） |
 
