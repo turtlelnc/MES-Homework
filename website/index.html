@@ -243,7 +243,7 @@ npm start</code><button data-copy="npm install&#10;# Set APP_SECRET to a random 
             </article>
             <article class="doc-section" id="deploy">
               <div class="doc-kicker">03 / CLOUDFLARE WORKER</div><h3 data-i18n="docs.deploy.title">官网静态托管，API 回到你的源站。</h3>
-              <p data-i18n="docs.deploy.copy">Worker 将 <code>website/</code> 作为静态官网，并把 <code>/api</code>、<code>/api/*</code>、<code>/uploads</code> 与 <code>/uploads/*</code> 代理到 <code>ORIGIN_URL</code>。SQLite、上传原件和模型调用仍由你自己的 Node 服务负责；不依赖 D1 或 R2。</p>
+              <p data-i18n="docs.deploy.copy">Worker 将 <code>website/</code> 作为静态官网，<code>/app</code> 跳转到源站应用，并把 <code>/api</code>、<code>/api/*</code>、<code>/uploads</code> 与 <code>/uploads/*</code> 代理到 <code>ORIGIN_URL</code>。SQLite、上传原件和模型调用仍由你自己的 Node 服务负责；不依赖 D1 或 R2。</p>
               <div class="deploy-flow"><span>Browser</span><i>→</i><span>Cloudflare Worker</span><i>→</i><span>HTTPS Origin</span><small>Static assets · API proxy</small></div>
               <pre class="code-block"><code># 1. 在源站启动 MES Homework（默认 127.0.0.1:8787）
 npm run build
