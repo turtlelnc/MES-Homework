@@ -27,9 +27,9 @@
         <a href="https://github.com/turtlelnc/MES-Homework" target="_blank" rel="noreferrer">GitHub ↗</a>
       </nav>
       <div class="nav-actions">
-        <button class="lang-toggle" id="lang-toggle" type="button" aria-label="Switch language" aria-pressed="false">EN</button>
+        <button class="lang-toggle" id="lang-toggle" type="button" data-i18n-aria="a11y.language" aria-label="Switch language" aria-pressed="false">EN</button>
         <a class="nav-cta" href="/app" data-i18n="nav.open">进入系统 ↗</a>
-        <button class="menu-toggle" id="menu-toggle" type="button" aria-expanded="false" aria-controls="mobile-nav" aria-label="Open menu">
+        <button class="menu-toggle" id="menu-toggle" type="button" data-i18n-aria="menu.open" aria-expanded="false" aria-controls="mobile-nav" aria-label="Open menu">
           <span></span><span></span>
         </button>
       </div>
@@ -189,11 +189,11 @@
         <div class="terminal-top"><div class="window-dots"><i></i><i></i><i></i></div><span>TERMINAL · MSH</span><span class="terminal-version">v0.2.x</span></div>
         <div class="terminal-body">
           <div class="terminal-comment" data-i18n="cli.terminalhint"># 安装 CLI（需要 Node.js 24+）</div>
-          <div class="terminal-line"><span>$</span><code>npm install -g @turtlelnc/msh</code><button data-copy="npm install -g @turtlelnc/msh" data-i18n-aria="a11y.copy" aria-label="Copy command">复制</button></div>
+          <div class="terminal-line"><span>$</span><code>npm install -g @turtlelnc/msh</code><button data-copy="npm install -g @turtlelnc/msh" data-i18n="button.copy" data-i18n-aria="a11y.copy" aria-label="Copy command">复制</button></div>
           <div class="terminal-comment" data-i18n="cli.terminalhint2"># 在本机启动并打开浏览器</div>
-          <div class="terminal-line"><span>$</span><code>msh --local</code><button data-copy="msh --local" data-i18n-aria="a11y.copy" aria-label="Copy command">复制</button></div>
+          <div class="terminal-line"><span>$</span><code>msh --local</code><button data-copy="msh --local" data-i18n="button.copy" data-i18n-aria="a11y.copy" aria-label="Copy command">复制</button></div>
           <div class="terminal-comment" data-i18n="cli.terminalhint3"># 运行完整环境自检</div>
-          <div class="terminal-line"><span>$</span><code>msh --check</code><button data-copy="msh --check" data-i18n-aria="a11y.copy" aria-label="Copy command">复制</button></div>
+          <div class="terminal-line"><span>$</span><code>msh --check</code><button data-copy="msh --check" data-i18n="button.copy" data-i18n-aria="a11y.copy" aria-label="Copy command">复制</button></div>
           <div class="terminal-cursor"><i></i><span data-i18n="cli.ready">就绪。你的服务器，你来掌控。</span></div>
         </div>
       </div>
@@ -227,7 +227,7 @@
 cp .env.example .env
 # 编辑 .env：设置 APP_SECRET（至少 32 位）和 DATA_DIR
 npm run build
-node --env-file=.env server/index.mjs</code><button data-copy="npm ci&#10;cp .env.example .env&#10;# Set APP_SECRET (32+ random characters) and DATA_DIR in .env&#10;npm run build&#10;node --env-file=.env server/index.mjs" data-i18n-aria="a11y.copy" aria-label="Copy quick start">复制</button></pre>
+node --env-file=.env server/index.mjs</code><button data-copy="npm ci&#10;cp .env.example .env&#10;# Set APP_SECRET (32+ random characters) and DATA_DIR in .env&#10;npm run build&#10;node --env-file=.env server/index.mjs" data-i18n="button.copy" data-i18n-aria="a11y.copy" aria-label="Copy quick start">复制</button></pre>
               <div class="doc-callout"><b data-i18n="docs.quick.secret">生产环境必须设置 APP_SECRET。</b><span data-i18n="docs.quick.secretcopy">请使用密码管理器生成至少 32 字符的随机值，并妥善备份；现有加密凭证依赖同一密钥解密。</span></div>
               <div class="doc-links"><a href="https://github.com/turtlelnc/MES-Homework/blob/main/README.md" target="_blank" rel="noreferrer" data-i18n="docs.quick.more">阅读完整安装说明 ↗</a><a href="https://github.com/turtlelnc/MES-Homework/blob/main/tools/installer/README.md" target="_blank" rel="noreferrer" data-i18n="docs.quick.installer">原生安装器指南 ↗</a><a href="https://github.com/turtlelnc/MES-Homework/releases" target="_blank" rel="noreferrer" data-i18n="docs.quick.release">下载发行版 ↗</a></div>
             </article>
@@ -254,7 +254,7 @@ npm start
 cloudflared tunnel --url http://127.0.0.1:8787
 
 # 3. 将 HTTPS 地址设置为 wrangler.jsonc 的 ORIGIN_URL 后部署
-npx wrangler deploy</code><button data-copy="npm run build&#10;npm start&#10;cloudflared tunnel --url http://127.0.0.1:8787&#10;npx wrangler deploy" data-i18n-aria="a11y.copy" aria-label="Copy deployment commands">复制</button></pre>
+npx wrangler deploy</code><button data-copy="npm run build&#10;npm start&#10;cloudflared tunnel --url http://127.0.0.1:8787&#10;npx wrangler deploy" data-i18n="button.copy" data-i18n-aria="a11y.copy" aria-label="Copy deployment commands">复制</button></pre>
               <div class="doc-callout warning"><b data-i18n="docs.deploy.warning">不要把临时 Quick Tunnel 当生产入口。</b><span data-i18n="docs.deploy.warningcopy">生产环境建议使用持久命名隧道和固定 HTTPS 域名；API 服务端的 APP_ORIGIN 必须设置为浏览器访问的精确官网源（含 https://，不带路径或尾部斜杠）。</span></div>
               <a class="inline-link" href="https://developers.cloudflare.com/workers/static-assets/" target="_blank" rel="noreferrer" data-i18n="docs.deploy.cloudflare">Cloudflare Static Assets 官方文档 ↗</a>
             </article>
