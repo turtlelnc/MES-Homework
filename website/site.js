@@ -1,7 +1,7 @@
 const translations = {
   zh: {
     "a11y.skip":"跳到正文","a11y.copy":"复制命令",
-    "nav.product":"产品","nav.workflow":"工作流","nav.cli":"MSH CLI","nav.docs":"文档",
+    "nav.product":"产品","nav.workflow":"工作流","nav.cli":"MSH CLI","nav.docs":"文档","nav.open":"进入系统 ↗",
     "hero.eyebrow":"面向学校的 AI 作业分析平台","hero.title":"让作业不止于<br><span class=\"gradient-text\">批改完成。</span>","hero.lede":"从答卷识别、教师复核，到知识点掌握率、错因统计与讲评课方案。把零散的作业数据，变成下一堂课真正用得上的线索。","hero.primary":"开始使用","hero.secondary":"查看源代码",
     "visual.window":"教师工作台 · 班级学情","visual.overview":"班级总览","visual.assignments":"作业管理","visual.review":"识别与复核","visual.analytics":"AI 教学分析","visual.connected":"数据已同步","visual.term":"九年级 · 数学","visual.class":"七班学情概览","visual.reviewed":"已复核答卷","visual.score":"班级得分率","visual.errors":"待关注错因","visual.categories":"类主要问题","visual.mastery":"知识点掌握情况","visual.reviewedonly":"仅统计已复核数据","visual.algebra":"代数运算","visual.geometry":"几何证明","visual.functions":"函数图像","visual.insight":"本周教学建议","visual.insightcopy":"优先回顾几何证明中的条件遗漏。","visual.secure":"教师已确认","visual.note1":"教师复核","visual.note1sub":"结果可信，再进入统计","visual.note2":"从数据到课堂","visual.note2sub":"讲评方案一键生成",
     "proof.caption":"一个闭环，连接四种角色","proof.school":"学校管理","proof.teacher":"教师复核","proof.student":"学生巩固","proof.parent":"家长陪伴",
@@ -28,7 +28,7 @@ const translations = {
   },
   en: {
     "a11y.skip":"Skip to content","a11y.copy":"Copy command",
-    "nav.product":"Product","nav.workflow":"Workflow","nav.cli":"MSH CLI","nav.docs":"Docs",
+    "nav.product":"Product","nav.workflow":"Workflow","nav.cli":"MSH CLI","nav.docs":"Docs","nav.open":"Launch app ↗",
     "hero.eyebrow":"AI-assisted homework analysis for schools","hero.title":"Homework should do<br><span class=\"gradient-text\">more than get graded.</span>","hero.lede":"From answer-sheet recognition and teacher review to knowledge mastery, error patterns and lesson plans. Turn scattered homework data into signals teachers can actually use.","hero.primary":"Get started","hero.secondary":"Explore the source",
     "visual.window":"Teacher workspace · Class insights","visual.overview":"Class overview","visual.assignments":"Assignments","visual.review":"Recognition & review","visual.analytics":"AI teaching analysis","visual.connected":"Data synchronized","visual.term":"Grade 9 · Mathematics","visual.class":"Class 7 learning overview","visual.reviewed":"Reviewed sheets","visual.score":"Class score rate","visual.errors":"Error patterns","visual.categories":"key categories","visual.mastery":"Knowledge mastery","visual.reviewedonly":"Reviewed data only","visual.algebra":"Algebra","visual.geometry":"Geometry proofs","visual.functions":"Functions","visual.insight":"Teaching focus this week","visual.insightcopy":"Revisit omitted conditions in geometry proofs.","visual.secure":"Teacher confirmed","visual.note1":"Teacher review","visual.note1sub":"Reviewed first. Counted next.","visual.note2":"From data to teaching","visual.note2sub":"Generate a lesson plan",
     "proof.caption":"One loop, four roles","proof.school":"School admin","proof.teacher":"Teacher review","proof.student":"Student practice","proof.parent":"Parent insight",
