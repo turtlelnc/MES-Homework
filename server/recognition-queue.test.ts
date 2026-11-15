@@ -1,7 +1,11 @@
 import { beforeEach, afterEach, describe, it, expect } from "vitest";
 import { DatabaseSync } from "node:sqlite";
 import fs from "node:fs";
-import { createRecognitionQueue, publicJob } from "./recognition-queue.mjs";
+import {
+  createRecognitionQueue,
+  failureReason,
+  publicJob,
+} from "./recognition-queue.mjs";
 import { seedTeachingFixture } from "./analysis.fixture.mjs";
 import { setTimeout as pause } from "node:timers/promises";
 let db: DatabaseSync, f: any, submission: any, user: any;
@@ -403,4 +407,24 @@ it("keeps interrupted work recoverable during graceful shutdown", async () => {
     db.prepare("SELECT status FROM recognition_jobs WHERE id=?").get(job.id)!
       .status,
   ).toBe("succeeded");
+});
+
+describe("failureReason", () => {
+  const fallback = "识别未完成，请检查文件和模型设置后重试";
+  const exposed = (message) =>
+    Object.assign(new Error(message), { expose: true });
+  it("keeps the actionable server hint", () => {
+    expect(
+      failureReason(exposed("模型接口请求失败 (400)：模型不存在或不可用")),
+    ).toBe("模型接口请求失败 (400)：模型不存在或不可用");
+    expect(
+      failureReason(exposed("模型调用已达账户或学校限额，请稍后重试")),
+    ).toBe("模型调用已达账户或学校限额，请稍后重试");
+  });
+  it("never echoes text that was not marked safe", () => {
+    expect(failureReason(new Error("secret provider response"))).toBe(fallback);
+    expect(failureReason(new Error("<html>502</html>"))).toBe(fallback);
+    expect(failureReason(exposed(""))).toBe(fallback);
+    expect(failureReason(exposed("x".repeat(200)))).toBe(fallback);
+  });
 });
