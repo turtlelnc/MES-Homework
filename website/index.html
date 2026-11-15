@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f6f8">
+  <meta name="description" content="MES Homework turns teacher-reviewed homework into classroom insight — AI-assisted recognition, guided practice and learning analytics.">
+  <meta property="og:title" content="MES Homework — 从作业到学情">
+  <meta property="og:description" content="AI-assisted homework analysis for schools, teachers, students and parents.">
+  <meta property="og:type" content="website">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/site.css">
+  <title>MES Homework — 从作业到学情</title>
+</head>
+<body>
+  <a class="skip-link" href="#main" data-i18n="a11y.skip">跳到正文</a>
+  <header class="site-header">
+    <div class="nav-shell">
+      <a class="brand" href="#top" aria-label="MES Homework home">
+        <span class="brand-mark">M</span><span class="brand-name">MES <span>Homework</span></span>
+      </a>
+      <nav class="desktop-nav" aria-label="Primary navigation">
+        <a href="#product" data-i18n="nav.product">产品</a>
+        <a href="#workflow" data-i18n="nav.workflow">工作流</a>
+        <a href="#msh" data-i18n="nav.cli">MSH CLI</a>
+        <a href="#docs" data-i18n="nav.docs">文档</a>
+        <a href="https://github.com/turtlelnc/MES-Homework" target="_blank" rel="noreferrer">GitHub ↗</a>
+      </nav>
+      <div class="nav-actions">
+        <button class="lang-toggle" id="lang-toggle" type="button" aria-label="Switch language" aria-pressed="false">EN</button>
+        <a class="nav-cta" href="https://www.npmjs.com/package/@turtlelnc/msh" target="_blank" rel="noreferrer">npm ↗</a>
+        <button class="menu-toggle" id="menu-toggle" type="button" aria-expanded="false" aria-controls="mobile-nav" aria-label="Open menu">
+          <span></span><span></span>
+        </button>
+      </div>
+    </div>
+    <nav class="mobile-nav" id="mobile-nav" aria-label="Mobile navigation" hidden>
+      <a href="#product" data-i18n="nav.product">产品</a>
+      <a href="#workflow" data-i18n="nav.workflow">工作流</a>
+      <a href="#msh" data-i18n="nav.cli">MSH CLI</a>
+      <a href="#docs" data-i18n="nav.docs">文档</a>
+      <a href="https://github.com/turtlelnc/MES-Homework" target="_blank" rel="noreferrer">GitHub ↗</a>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="hero section-wrap" id="top">
+      <div class="hero-copy">
+        <div class="eyebrow"><span class="eyebrow-dot"></span><span data-i18n="hero.eyebrow">面向学校的 AI 作业分析平台</span></div>
+        <h1 data-i18n="hero.title">让作业不止于<br><span class="gradient-text">批改完成。</span></h1>
+        <p class="hero-lede" data-i18n="hero.lede">从答卷识别、教师复核，到知识点掌握率、错因统计与讲评课方案。把零散的作业数据，变成下一堂课真正用得上的线索。</p>
+        <div class="hero-actions">
+          <a class="button button-primary" href="#docs"><span data-i18n="hero.primary">开始使用</span><span>↗</span></a>
+          <a class="button button-quiet" href="https://github.com/turtlelnc/MES-Homework" target="_blank" rel="noreferrer"><span data-i18n="hero.secondary">查看源代码</span><span>↗</span></a>
+        </div>
+        <div class="hero-meta">
+          <span class="meta-chip">MIT License</span><span class="meta-chip">Node.js 24+</span><span class="meta-chip">Windows · Linux · macOS</span>
+        </div>
+      </div>
+
+      <div class="hero-visual" aria-label="MES Homework dashboard preview">
+        <div class="visual-glow"></div>
+        <div class="app-window">
+          <div class="window-top">
+            <div class="window-dots"><i></i><i></i><i></i></div>
+            <span data-i18n="visual.window">教师工作台 · 班级学情</span><span class="window-tag">CONCEPT PREVIEW</span>
+          </div>
+          <div class="dashboard">
+            <aside class="dashboard-side">
+              <div class="mini-brand"><span>M</span> MES</div>
+              <div class="side-item active"><b>▦</b><span data-i18n="visual.overview">班级总览</span></div>
+              <div class="side-item"><b>▤</b><span data-i18n="visual.assignments">作业管理</span></div>
+              <div class="side-item"><b>✓</b><span data-i18n="visual.review">识别与复核</span></div>
+              <div class="side-item"><b>⌘</b><span data-i18n="visual.analytics">AI 教学分析</span></div>
+              <div class="side-foot"><span class="online-dot"></span><span data-i18n="visual.connected">数据已同步</span></div>
+            </aside>
+            <div class="dashboard-main">
+              <div class="dash-heading">
+                <div><span class="dash-kicker" data-i18n="visual.term">九年级 · 数学</span><strong data-i18n="visual.class">七班学情概览</strong></div>
+                <div class="avatar-stack"><i>林</i><i>陈</i><i>+</i></div>
+              </div>
+              <div class="metric-grid">
+                <div class="metric-card"><span data-i18n="visual.reviewed">已复核答卷</span><strong>38</strong><small class="positive">↑ 12.4%</small></div>
+                <div class="metric-card"><span data-i18n="visual.score">班级得分率</span><strong>82.6<small>%</small></strong><div class="metric-bar"><i></i></div></div>
+                <div class="metric-card"><span data-i18n="visual.errors">待关注错因</span><strong>06</strong><small data-i18n="visual.categories">类主要问题</small></div>
+              </div>
+              <div class="chart-card">
+                <div class="chart-head"><b data-i18n="visual.mastery">知识点掌握情况</b><span data-i18n="visual.reviewedonly">仅统计已复核数据</span></div>
+                <div class="bars">
+                  <div class="bar-row"><span data-i18n="visual.algebra">代数运算</span><i><em class="bar-88"></em></i><b>88%</b></div>
+                  <div class="bar-row"><span data-i18n="visual.geometry">几何证明</span><i><em class="bar-64"></em></i><b>64%</b></div>
+                  <div class="bar-row"><span data-i18n="visual.functions">函数图像</span><i><em class="bar-76"></em></i><b>76%</b></div>
+                </div>
+              </div>
+              <div class="dash-bottom">
+                <div class="insight-card"><span class="insight-icon">✳</span><div><b data-i18n="visual.insight">本周教学建议</b><p data-i18n="visual.insightcopy">优先回顾几何证明中的条件遗漏。</p></div></div>
+                <div class="status-pill"><span></span><span data-i18n="visual.secure">教师已确认</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="floating-note note-top"><span class="note-icon">✓</span><span><b data-i18n="visual.note1">教师复核</b><small data-i18n="visual.note1sub">结果可信，再进入统计</small></span></div>
+        <div class="floating-note note-bottom"><span class="note-spark">✦</span><span><b data-i18n="visual.note2">从数据到课堂</b><small data-i18n="visual.note2sub">讲评方案一键生成</small></span></div>
+      </div>
+    </section>
+
+    <section class="proof-strip">
+      <div class="section-wrap proof-inner">
+        <span data-i18n="proof.caption">一个闭环，连接四种角色</span>
+        <div class="proof-items">
+          <span><i>01</i><b data-i18n="proof.school">学校管理</b></span>
+          <span><i>02</i><b data-i18n="proof.teacher">教师复核</b></span>
+          <span><i>03</i><b data-i18n="proof.student">学生巩固</b></span>
+          <span><i>04</i><b data-i18n="proof.parent">家长陪伴</b></span>
+        </div>
+      </div>
+    </section>
+
+    <section class="section section-wrap" id="product">
+      <div class="section-heading">
+        <div class="eyebrow"><span class="eyebrow-dot"></span><span data-i18n="product.eyebrow">PRODUCT / 产品能力</span></div>
+        <h2 data-i18n="product.title">把批改流程，<br>变成教学反馈系统。</h2>
+        <p data-i18n="product.lede">不是再加一个聊天框。MES Homework 将识别、复核、练习和分析串成可追溯的工作流。</p>
+      </div>
+      <div class="feature-grid">
+        <article class="feature-card feature-large feature-ocr">
+          <div class="feature-topline"><span class="feature-number">01</span><span class="feature-kind" data-i18n="feature.ocr.kind">识别 · 批改</span></div>
+          <div class="feature-copy"><h3 data-i18n="feature.ocr.title">从纸面答卷<br>到结构化结果。</h3><p data-i18n="feature.ocr.copy">支持图片、PDF 与 Word 作业材料。逐题提取答案、评分与判断依据，教师可以核对、改分，再决定哪些结果进入后续统计。</p></div>
+          <div class="paper-stack" aria-hidden="true"><div class="paper paper-back"></div><div class="paper paper-front"><span>数学 · 单元练习</span><i></i><i></i><i></i><b>√</b><i></i></div><div class="scan-line"></div></div>
+        </article>
+        <article class="feature-card feature-review">
+          <div class="feature-topline"><span class="feature-number">02</span><span class="feature-kind" data-i18n="feature.review.kind">教师在环</span></div>
+          <div class="feature-icon icon-check">✓</div><h3 data-i18n="feature.review.title">复核权，始终在老师手中。</h3>
+          <p data-i18n="feature.review.copy">全部复核、仅复核存疑题，或按学校策略自动完成。AI 结果附带参考答案与判分理由；结构异常仍回退人工处理。</p>
+          <div class="review-chips"><span data-i18n="feature.review.chip1">全部复核</span><span data-i18n="feature.review.chip2">仅存疑</span><span data-i18n="feature.review.chip3">不复核</span></div>
+        </article>
+        <article class="feature-card feature-mistake">
+          <div class="feature-topline"><span class="feature-number">03</span><span class="feature-kind" data-i18n="feature.mistake.kind">自主巩固</span></div>
+          <div class="feature-icon icon-spark">✳</div><h3 data-i18n="feature.mistake.title">错题本不急着给答案。</h3>
+          <p data-i18n="feature.mistake.copy">先提出思考问题，再给分步提示；学生重做后，才对照参考答案并完成同类练习。让掌握发生在解题过程中。</p>
+          <div class="practice-flow"><span>?</span><i>→</i><span>✦</span><i>→</i><span>✎</span><i>→</i><span>✓</span></div>
+        </article>
+        <article class="feature-card feature-analytics">
+          <div class="feature-topline"><span class="feature-number">04</span><span class="feature-kind" data-i18n="feature.analytics.kind">课堂决策</span></div>
+          <div class="feature-copy"><h3 data-i18n="feature.analytics.title">看见全班的薄弱点。</h3><p data-i18n="feature.analytics.copy">按题号聚合知识点掌握率与错因分布，找出高频错题，生成讲评提纲、板书设计、分层辅导动作和课后练习。</p></div>
+          <div class="analytics-visual" aria-hidden="true"><div class="analytics-ring"><strong>12<span>类</span></strong></div><div class="analytics-list"><i></i><i></i><i></i><i></i></div></div>
+        </article>
+        <article class="feature-card feature-parent">
+          <div class="feature-topline"><span class="feature-number">05</span><span class="feature-kind" data-i18n="feature.parent.kind">家校协同</span></div>
+          <div class="feature-icon icon-parent">⌂</div><h3 data-i18n="feature.parent.title">让家长看到成长，而不只是分数。</h3>
+          <p data-i18n="feature.parent.copy">家长看板呈现学习趋势、薄弱知识点和近期答卷细节，并可生成个性化学情分析与家庭配合建议。</p>
+        </article>
+        <article class="feature-card feature-school">
+          <div class="feature-topline"><span class="feature-number">06</span><span class="feature-kind" data-i18n="feature.school.kind">学校级管理</span></div>
+          <div class="feature-icon icon-school">⌘</div><h3 data-i18n="feature.school.title">权限、数据与模型配置分层管理。</h3>
+          <p data-i18n="feature.school.copy">学校、教师、学生和家长按角色与学校范围隔离访问；模型 API Key 由服务端加密保存，并支持学校统一或分角色的调用策略。</p>
+        </article>
+      </div>
+      <p class="section-footnote" data-i18n="product.note">统计口径：只有教师确认过的错题进入班级教学分析；无法辨认的题目单独列出，不计入错因占比。直接 AI 批改采用答卷级题目快照，不进入基于共享题库的班级讲评统计。</p>
+    </section>
+
+    <section class="workflow-band" id="workflow">
+      <div class="section-wrap">
+        <div class="section-heading heading-center">
+          <div class="eyebrow"><span class="eyebrow-dot"></span><span data-i18n="workflow.eyebrow">A CLEAR WORKFLOW / 清晰的工作流</span></div>
+          <h2 data-i18n="workflow.title">每一步都有来处，<br><span class="muted-heading">每个结论都有依据。</span></h2>
+          <p data-i18n="workflow.lede">让 AI 做擅长的识别与整理，让教师决定教学事实。</p>
+        </div>
+        <div class="workflow-steps">
+          <article class="workflow-step"><span class="step-index">01</span><div class="step-symbol">⇧</div><h3 data-i18n="workflow.step1.title">收集作业</h3><p data-i18n="workflow.step1.copy">上传学生答卷；可基于原题库，也可选择无需原题的 AI 直接批改。</p></article>
+          <article class="workflow-step"><span class="step-index">02</span><div class="step-symbol">⌕</div><h3 data-i18n="workflow.step2.title">识别与批改</h3><p data-i18n="workflow.step2.copy">OCR 提取题目与作答，模型给出逐题得分、参考答案和判分理由。</p></article>
+          <article class="workflow-step"><span class="step-index">03</span><div class="step-symbol">✓</div><h3 data-i18n="workflow.step3.title">教师复核</h3><p data-i18n="workflow.step3.copy">按学校选定的复核方式确认结果；存疑题与无法辨认内容可单独处理。</p></article>
+          <article class="workflow-step"><span class="step-index">04</span><div class="step-symbol">⌁</div><h3 data-i18n="workflow.step4.title">形成学情</h3><p data-i18n="workflow.step4.copy">确定性统计复核数据，计算知识点掌握率与错因分布，不让模型编造数字。</p></article>
+          <article class="workflow-step"><span class="step-index">05</span><div class="step-symbol">✦</div><h3 data-i18n="workflow.step5.title">回到课堂</h3><p data-i18n="workflow.step5.copy">生成讲评课方案、分层辅导动作与课后练习，学生和家长继续跟进。</p></article>
+        </div>
+        <div class="data-principle"><div class="principle-mark">∑</div><div><b data-i18n="workflow.principle.title">数据由程序计算，AI 负责表达。</b><p data-i18n="workflow.principle.copy">班级数字来自已复核记录的确定性聚合。AI 可以帮助把结论写成课堂语言，但不会替代数据计算或教师判断。</p></div></div>
+      </div>
+    </section>
+
+    <section class="section section-wrap cli-section" id="msh">
+      <div class="cli-intro">
+        <div class="eyebrow"><span class="eyebrow-dot"></span><span data-i18n="cli.eyebrow">THE OPERATOR TOOLKIT / 运维命令行</span></div>
+        <h2><span class="mono-word">msh</span><br><span data-i18n="cli.title">把部署与日常管理，<br>收进一个命令。</span></h2>
+        <p data-i18n="cli.lede"><code>@turtlelnc/msh</code> 是 MES Homework 的便携服务器 CLI。它管理本机运行时、Cloudflare Tunnel、学校开通码、模型凭证、管理员控制台和 MCP 接口。</p>
+        <a class="text-link" href="https://www.npmjs.com/package/@turtlelnc/msh" target="_blank" rel="noreferrer" data-i18n="cli.npm">在 npm 查看软件包 ↗</a>
+      </div>
+      <div class="terminal-card">
+        <div class="terminal-top"><div class="window-dots"><i></i><i></i><i></i></div><span>TERMINAL · MSH</span><span class="terminal-version">v0.2.x</span></div>
+        <div class="terminal-body">
+          <div class="terminal-comment" data-i18n="cli.terminalhint"># 安装 CLI（需要 Node.js 24+）</div>
+          <div class="terminal-line"><span>$</span><code>npm install -g @turtlelnc/msh</code><button data-copy="npm install -g @turtlelnc/msh" data-i18n-aria="a11y.copy" aria-label="Copy command">复制</button></div>
+          <div class="terminal-comment" data-i18n="cli.terminalhint2"># 在本机启动并打开浏览器</div>
+          <div class="terminal-line"><span>$</span><code>msh --local</code><button data-copy="msh --local" data-i18n-aria="a11y.copy" aria-label="Copy command">复制</button></div>
+          <div class="terminal-comment" data-i18n="cli.terminalhint3"># 运行完整环境自检</div>
+          <div class="terminal-line"><span>$</span><code>msh --check</code><button data-copy="msh --check" data-i18n-aria="a11y.copy" aria-label="Copy command">复制</button></div>
+          <div class="terminal-cursor"><i></i><span data-i18n="cli.ready">就绪。你的服务器，你来掌控。</span></div>
+        </div>
+      </div>
+      <div class="command-grid">
+        <div class="command-item"><code>msh --local</code><span data-i18n="cli.cmd.local">仅本机启动</span></div>
+        <div class="command-item"><code>msh --all</code><span data-i18n="cli.cmd.all">监听所有网卡</span></div>
+        <div class="command-item"><code>msh --cf</code><span data-i18n="cli.cmd.cf">启动服务与 Cloudflare Tunnel</span></div>
+        <div class="command-item"><code>msh --cfset</code><span data-i18n="cli.cmd.cfset">交互配置隧道和域名</span></div>
+        <div class="command-item"><code>msh --code</code><span data-i18n="cli.cmd.code">签发一次性学校开通码</span></div>
+        <div class="command-item"><code>msh --api</code><span data-i18n="cli.cmd.api">配置学校模型 API Key</span></div>
+        <div class="command-item"><code>msh --manager</code><span data-i18n="cli.cmd.manager">打开服务器管理网页</span></div>
+        <div class="command-item"><code>msh --mcp</code><span data-i18n="cli.cmd.mcp">启动 MCP stdio 服务</span></div>
+      </div>
+      <p class="section-footnote" data-i18n="cli.note">提示：<code>--all</code> 会监听所有网卡。公开部署前请配置 HTTPS、APP_ORIGIN、防火墙和安全密钥；不要直接把未保护的服务暴露到公网。</p>
+    </section>
+
+    <section class="docs-band" id="docs">
+      <div class="section-wrap">
+        <div class="section-heading">
+          <div class="eyebrow"><span class="eyebrow-dot"></span><span data-i18n="docs.eyebrow">DOCUMENTATION / 使用文档</span></div>
+          <h2 data-i18n="docs.title">从第一次启动开始。</h2>
+          <p data-i18n="docs.lede">部署、使用和维护的关键步骤都整理在这里。完整实现与历史变更仍以仓库文档为准。</p>
+        </div>
+        <div class="docs-layout">
+          <aside class="docs-rail"><span data-i18n="docs.rail.title">在本页阅读</span><a href="#quickstart" class="active" data-i18n="docs.rail.quick">快速开始</a><a href="#usage" data-i18n="docs.rail.use">使用流程</a><a href="#deploy" data-i18n="docs.rail.deploy">部署与 Worker</a><a href="#care" data-i18n="docs.rail.care">安全与运维</a></aside>
+          <div class="docs-content">
+            <article class="doc-section" id="quickstart">
+              <div class="doc-kicker">01 / GET STARTED</div><h3 data-i18n="docs.quick.title">启动你的第一套实例</h3>
+              <p data-i18n="docs.quick.copy">MES Homework 是需要自托管的全栈应用。准备 Node.js 24 或更新版本，然后在服务器或本机执行：</p>
+              <pre class="code-block"><code>npm install
+# 设置至少 32 字符的随机 APP_SECRET
+npm run build
+npm start</code><button data-copy="npm install&#10;# Set APP_SECRET to a random string of at least 32 characters&#10;npm run build&#10;npm start" data-i18n-aria="a11y.copy" aria-label="Copy quick start">复制</button></pre>
+              <div class="doc-callout"><b data-i18n="docs.quick.secret">生产环境必须设置 APP_SECRET。</b><span data-i18n="docs.quick.secretcopy">请使用密码管理器生成至少 32 字符的随机值，并妥善备份；现有加密凭证依赖同一密钥解密。</span></div>
+              <div class="doc-links"><a href="https://github.com/turtlelnc/MES-Homework/blob/main/README.md" target="_blank" rel="noreferrer" data-i18n="docs.quick.more">阅读完整安装说明 ↗</a><a href="https://github.com/turtlelnc/MES-Homework/releases" target="_blank" rel="noreferrer" data-i18n="docs.quick.release">下载发行版 ↗</a></div>
+            </article>
+            <article class="doc-section" id="usage">
+              <div class="doc-kicker">02 / DAILY WORKFLOW</div><h3 data-i18n="docs.usage.title">一次作业，如何走完整个闭环</h3>
+              <ol class="numbered-list">
+                <li><b data-i18n="docs.usage.1t">建立学校与角色</b><span data-i18n="docs.usage.1c">管理员使用一次性开通码创建学校，再由学校/教师管理员按权限建立成员、班级与教师关系。</span></li>
+                <li><b data-i18n="docs.usage.2t">配置知识库与模型</b><span data-i18n="docs.usage.2c">维护校本知识点，在学校设置中选择模型调用模式并配置服务端 API Key。</span></li>
+                <li><b data-i18n="docs.usage.3t">创建作业</b><span data-i18n="docs.usage.3c">上传原题生成题目草稿，或使用“无需原题 · AI 直接批改”创建答卷级题目快照。</span></li>
+                <li><b data-i18n="docs.usage.4t">上传答卷并复核</b><span data-i18n="docs.usage.4c">学生上传答卷；教师选择全部复核、仅存疑复核或不复核，并核对异常识别结果。</span></li>
+                <li><b data-i18n="docs.usage.5t">分析与巩固</b><span data-i18n="docs.usage.5c">教师查看班级教学分析；学生按思考、提示、重做、对照答案、同类练习的顺序订正；家长跟进孩子学情。</span></li>
+              </ol>
+              <div class="doc-links"><a href="https://github.com/turtlelnc/MES-Homework/blob/main/docs/workflow-pages.md" target="_blank" rel="noreferrer" data-i18n="docs.usage.more">查看同页工作流说明 ↗</a><a href="https://github.com/turtlelnc/MES-Homework/blob/main/OPERATIONS.md" target="_blank" rel="noreferrer" data-i18n="docs.usage.ops">查看运行与备份指南 ↗</a></div>
+            </article>
+            <article class="doc-section" id="deploy">
+              <div class="doc-kicker">03 / CLOUDFLARE WORKER</div><h3 data-i18n="docs.deploy.title">官网静态托管，API 回到你的源站。</h3>
+              <p data-i18n="docs.deploy.copy">Worker 将 <code>website/</code> 作为静态官网，并把 <code>/api</code>、<code>/api/*</code>、<code>/uploads</code> 与 <code>/uploads/*</code> 代理到 <code>ORIGIN_URL</code>。SQLite、上传原件和模型调用仍由你自己的 Node 服务负责；不依赖 D1 或 R2。</p>
+              <div class="deploy-flow"><span>Browser</span><i>→</i><span>Cloudflare Worker</span><i>→</i><span>HTTPS Origin</span><small>Static assets · API proxy</small></div>
+              <pre class="code-block"><code># 1. 在源站启动 MES Homework（默认 127.0.0.1:8787）
+npm run build
+npm start
+
+# 2. 用 cloudflared 暴露源站
+cloudflared tunnel --url http://127.0.0.1:8787
+
+# 3. 将 HTTPS 地址设置为 wrangler.jsonc 的 ORIGIN_URL 后部署
+npx wrangler deploy</code><button data-copy="npm run build&#10;npm start&#10;cloudflared tunnel --url http://127.0.0.1:8787&#10;npx wrangler deploy" data-i18n-aria="a11y.copy" aria-label="Copy deployment commands">复制</button></pre>
+              <div class="doc-callout warning"><b data-i18n="docs.deploy.warning">不要把临时 Quick Tunnel 当生产入口。</b><span data-i18n="docs.deploy.warningcopy">生产环境建议使用持久命名隧道和固定 HTTPS 域名；API 服务端的 APP_ORIGIN 必须设置为浏览器访问的精确官网源（含 https://，不带路径或尾部斜杠）。</span></div>
+              <a class="inline-link" href="https://developers.cloudflare.com/workers/static-assets/" target="_blank" rel="noreferrer" data-i18n="docs.deploy.cloudflare">Cloudflare Static Assets 官方文档 ↗</a>
+            </article>
+            <article class="doc-section" id="care">
+              <div class="doc-kicker">04 / OPERATIONS & SAFETY</div><h3 data-i18n="docs.care.title">上线前，先把边界讲清楚。</h3>
+              <div class="care-grid">
+                <div><b data-i18n="docs.care.data">数据与规模</b><p data-i18n="docs.care.datacopy">当前使用单机 SQLite 与本地附件目录，适合单机或单写节点。不要把 DATA_DIR 放在网络文件系统，也不要把它当成已验证的多节点集群。</p></div>
+                <div><b data-i18n="docs.care.review">人工复核</b><p data-i18n="docs.care.reviewcopy">AI OCR 与评分可能出错。模型结果和课堂分析不等于准确性保证，学校应由教师复核，并使用授权样本验证识别效果。</p></div>
+                <div><b data-i18n="docs.care.secrets">密钥与访问</b><p data-i18n="docs.care.secretscopy">保持 HTTPS、使用有效 APP_SECRET、限制可信模型 API Origin，并按学校/角色控制答卷访问。不要公开 API Key 或管理员令牌。</p></div>
+                <div><b data-i18n="docs.care.backup">备份与隐私</b><p data-i18n="docs.care.backupcopy">定期进行 SQLite 在线备份和隔离恢复演练。备份包含学生相关数据与加密凭证，应限制权限、加密异地保存并按制度清理。</p></div>
+              </div>
+              <div class="doc-links"><a href="https://github.com/turtlelnc/MES-Homework/blob/main/SECURITY_REVIEW.md" target="_blank" rel="noreferrer" data-i18n="docs.care.security">安全审查与剩余限制 ↗</a><a href="https://github.com/turtlelnc/MES-Homework/blob/main/BACKUPS.md" target="_blank" rel="noreferrer" data-i18n="docs.care.backupdoc">备份与恢复文档 ↗</a><a href="https://github.com/turtlelnc/MES-Homework/wiki" target="_blank" rel="noreferrer" data-i18n="docs.care.wiki">GitHub Wiki ↗</a></div>
+            </article>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="faq-section section-wrap" id="faq">
+      <div class="section-heading"><div class="eyebrow"><span class="eyebrow-dot"></span><span data-i18n="faq.eyebrow">FAQ / 常见问题</span></div><h2 data-i18n="faq.title">部署前，先看这几件事。</h2></div>
+      <div class="faq-list">
+        <details><summary data-i18n="faq.q1">它是 SaaS 服务，还是需要自己部署？</summary><p data-i18n="faq.a1">这是可自托管的全栈项目。你需要准备 Node.js 24+ 的服务器或本机环境、持久化数据目录、APP_SECRET，以及模型供应商 API Key。Worker 只负责官网静态资源和 API 反向代理。</p></details>
+        <details><summary data-i18n="faq.q2">AI 批改后，结果会自动成为班级统计吗？</summary><p data-i18n="faq.a2">不会无条件纳入。班级教学分析只统计教师已复核确认的数据；无法辨认的题目单独显示。直接 AI 批改的答卷级题目快照不进入共享题库的班级讲评统计。</p></details>
+        <details><summary data-i18n="faq.q3">是否包含模型额度或 API Key？</summary><p data-i18n="faq.a3">不包含。模型调用使用学校或部署方配置的 API Key，费用与速率限制由对应供应商账户及部署策略决定。</p></details>
+        <details><summary data-i18n="faq.q4">现在能否直接横向扩展到多台服务器？</summary><p data-i18n="faq.a4">目前不能把它视为开箱即用的多节点集群。现阶段基于单机 SQLite 与本地文件；多节点部署前需要 PostgreSQL、对象存储、共享队列及迁移/恢复方案。</p></details>
+      </div>
+    </section>
+
+    <section class="closing-cta">
+      <div class="section-wrap closing-inner">
+        <span class="closing-orbit">M</span>
+        <div class="eyebrow"><span class="eyebrow-dot"></span><span data-i18n="closing.eyebrow">OPEN SOURCE · BUILT FOR REAL CLASSROOMS</span></div>
+        <h2 data-i18n="closing.title">让每一份作业，<br>都多一点教学价值。</h2>
+        <p data-i18n="closing.copy">从仓库开始，按学校的节奏部署。代码、版本与完整文档都公开在 GitHub。</p>
+        <div class="hero-actions">
+          <a class="button button-primary" href="https://github.com/turtlelnc/MES-Homework" target="_blank" rel="noreferrer"><span data-i18n="closing.github">打开 GitHub 仓库</span><span>↗</span></a>
+          <a class="button button-outline" href="https://www.npmjs.com/package/@turtlelnc/msh" target="_blank" rel="noreferrer"><span data-i18n="closing.npm">安装 MSH CLI</span><span>↗</span></a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="section-wrap footer-top">
+      <a class="brand" href="#top"><span class="brand-mark">M</span><span class="brand-name">MES <span>Homework</span></span></a>
+      <p data-i18n="footer.copy">校园作业分析 · 让数据回到教学现场。</p>
+      <div class="footer-links"><a href="https://github.com/turtlelnc/MES-Homework" target="_blank" rel="noreferrer">GitHub ↗</a><a href="https://www.npmjs.com/package/@turtlelnc/msh" target="_blank" rel="noreferrer">npm ↗</a><a href="https://github.com/turtlelnc/MES-Homework/wiki" target="_blank" rel="noreferrer">Wiki ↗</a></div>
+    </div>
+    <div class="section-wrap footer-bottom">
+      <span>© <span id="year"></span> MES Homework</span><span data-i18n="footer.license">MIT License · 开源项目</span>
+      <a href="https://github.com/turtlelnc/MES-Homework/blob/main/SAFETY.zh.md" target="_blank" rel="noreferrer" data-i18n="footer.safety">安全与隐私说明 ↗</a>
+    </div>
+  </footer>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="/site.js" defer></script>
+</body>
+</html>
