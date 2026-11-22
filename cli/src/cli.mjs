@@ -78,6 +78,8 @@ function help(t) {
     ["--github", t("help.describe.github")],
     ["--language <zh|en> [--msh]", t("help.describe.language")],
     ["--version", t("help.describe.version")],
+    ["--install", t("help.describe.install")],
+    ["--change", t("help.describe.change")],
     ["--stop", t("help.describe.stop")],
     ["--status", t("help.describe.status")],
   ];
@@ -99,6 +101,20 @@ function help(t) {
     "",
   ];
   process.stdout.write(`${lines.join("\n")}\n`);
+}
+
+function newerVersion(latest, current) {
+  const parse = (value) =>
+    String(value || "")
+      .replace(/^v/, "")
+      .split("-")[0]
+      .split(".")
+      .map((part) => Number(part) || 0);
+  const next = parse(latest);
+  const now = parse(current);
+  for (let index = 0; index < 3; index += 1)
+    if (next[index] !== now[index]) return next[index] > now[index];
+  return false;
 }
 
 function version(t, config) {
@@ -225,6 +241,47 @@ export async function main(argv = process.argv.slice(2)) {
       stdio: "inherit",
       shell: process.platform === "win32",
     });
+    return;
+  }
+
+  if (has("install") || has("change")) {
+    const current = APP_VERSION.replace(/^v/, "");
+    let latest = "";
+    try {
+      const response = await fetch(
+        "https://registry.npmjs.org/@turtlelnc%2fmsh/latest",
+        {
+          headers: { accept: "application/json" },
+          signal: AbortSignal.timeout(8000),
+        },
+      );
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      latest = String((await response.json()).version || "");
+    } catch (error) {
+      throw new Error(`无法从 npmjs 检查更新：${error.message}`);
+    }
+    process.stdout.write(`当前版本：${current}\n最新版本：${latest}\n`);
+    const newer = newerVersion(latest, current);
+    if (!newer && !has("change")) {
+      process.stdout.write("已经是最新版本，无需更新。\n");
+      return;
+    }
+    process.stdout.write(
+      `${newer ? "发现新版本，正在更新…" : "重新安装最新版本…"}\n`,
+    );
+    const result = spawnSync(
+      "npm",
+      ["install", "-g", "@turtlelnc/msh@latest"],
+      {
+        stdio: "inherit",
+        shell: process.platform === "win32",
+      },
+    );
+    if (result.status !== 0)
+      throw new Error(
+        "更新失败，请手动运行 npm install -g @turtlelnc/msh@latest",
+      );
+    process.stdout.write("更新完成，重新打开终端后生效。\n");
     return;
   }
 
