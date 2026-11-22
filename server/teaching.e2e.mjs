@@ -116,8 +116,8 @@ const teacher = { email: "teacher@fixture.test", password: "ChangeMe123!" };
 
 const health = await call("/health");
 ok(
-  "health reports v0.2.3-rc6",
-  health.data?.version === "v0.2.3-rc6" && health.data?.build === "26111505",
+  "health reports v0.2.3-rc7",
+  health.data?.version === "v0.2.3-rc7" && health.data?.build === "26112201",
 );
 
 ok(
