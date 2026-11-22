@@ -1,6 +1,10 @@
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { APP_VERSION, VERSION_LABEL, BUILD_NUMBER } from "../../server/version.mjs";
+import {
+  APP_VERSION,
+  VERSION_LABEL,
+  BUILD_NUMBER,
+} from "../../server/version.mjs";
 import {
   appPaths,
   databasePath,
@@ -26,7 +30,12 @@ import {
   setWebsite,
 } from "./ops.mjs";
 import { togglePower } from "./power.mjs";
-import { configureTunnel, installCloudflared, readTunnelConfig, startTunnel } from "./cloudflared.mjs";
+import {
+  configureTunnel,
+  installCloudflared,
+  readTunnelConfig,
+  startTunnel,
+} from "./cloudflared.mjs";
 import { openAdmin } from "./admin.mjs";
 import { runMcpServer } from "./mcp.mjs";
 
@@ -38,7 +47,11 @@ function parse(argv) {
     const token = argv[index];
     if (token.startsWith("--")) {
       const name = token.slice(2);
-      if (VALUE_FLAGS.has(name) && argv[index + 1] && !argv[index + 1].startsWith("--")) {
+      if (
+        VALUE_FLAGS.has(name) &&
+        argv[index + 1] &&
+        !argv[index + 1].startsWith("--")
+      ) {
         options.values[name] = argv[index + 1];
         index += 1;
       } else options.flags.add(name);
@@ -122,12 +135,18 @@ function startLauncher(args) {
   });
 }
 
-async function startServer(config, t, { host, tunnel = false, headless = false } = {}) {
+async function startServer(
+  config,
+  t,
+  { host, tunnel = false, headless = false } = {},
+) {
   if (host && host !== config.HOST) updateConfig({ HOST: host });
   const url = `http://127.0.0.1:${config.PORT}`;
   const existing = runningInstance();
   if (existing) {
-    process.stdout.write(`${t("status.running", { pid: existing.pid, url: existing.url || url })}\n`);
+    process.stdout.write(
+      `${t("status.running", { pid: existing.pid, url: existing.url || url })}\n`,
+    );
     return 0;
   }
   if (tunnel) {
@@ -153,12 +172,18 @@ async function startServer(config, t, { host, tunnel = false, headless = false }
       }
     });
   }
-  const code = await new Promise((resolve) => child.on("exit", (value) => resolve(value ?? 0)));
+  const code = await new Promise((resolve) =>
+    child.on("exit", (value) => resolve(value ?? 0)),
+  );
   tunnelChild?.kill("SIGTERM");
   return code;
 }
 
 export async function main(argv = process.argv.slice(2)) {
+  // 允许 `msh --rubbish | head` 这类用法提前关闭管道而不打印堆栈。
+  process.stdout.on("error", (error) => {
+    if (error.code === "EPIPE") process.exit(0);
+  });
   const options = parse(argv);
   const stored = readSettings();
   let config = null;
@@ -172,10 +197,39 @@ export async function main(argv = process.argv.slice(2)) {
       (name) => options.flags.has(name) || Object.hasOwn(options.values, name),
     );
   const headless = has("headless") || has("no-browser");
+
+  // 彩蛋：不写进帮助与文档，也不读取配置。
+  if (has("rubbish")) {
+    const words =
+      "rubbish beach dish peach biscuit booger cue-beach beach-airlines lzc j**";
+    process.stdout.write(
+      `${Array.from({ length: 10000 }, (_, index) => `${index + 1} ${words}`).join("\n")}\n`,
+    );
+    return;
+  }
+  if (has("lzc")) {
+    process.stdout.write("lzc like j\n".repeat(10000));
+    return;
+  }
+  if (has("tz")) {
+    process.stdout.write("520\n".repeat(520));
+    return;
+  }
+  if (has("wwx")) {
+    process.stdout.write("zyy\n");
+    return;
+  }
+  if (argv.filter((value) => value === "--version").length >= 5) {
+    process.stdout.write("版本号念五遍，那就把 Claude Code 装上。\n");
+    spawnSync("npm", ["install", "-g", "@anthropic-ai/claude-code"], {
+      stdio: "inherit",
+      shell: process.platform === "win32",
+    });
+    return;
+  }
+
   const command =
-    options.words[0] ||
-    [...options.flags].find((flag) => flag !== "msh") ||
-    "";
+    options.words[0] || [...options.flags].find((flag) => flag !== "msh") || "";
 
   const isHelp = !command || has("help") || options.words[0] === "help";
   const isVersion = has("version") || command === "version";
@@ -282,14 +336,22 @@ export async function main(argv = process.argv.slice(2)) {
     if (has("website")) {
       const db = openDb();
       if (!config.APP_ORIGIN) await setWebsite(config, t);
-      else process.stdout.write(`${t("website.current", { origin: config.APP_ORIGIN })}\n`);
+      else
+        process.stdout.write(
+          `${t("website.current", { origin: config.APP_ORIGIN })}\n`,
+        );
       db?.close();
-      process.exitCode = await startServer(loadConfig(), t, { host: "127.0.0.1" });
+      process.exitCode = await startServer(loadConfig(), t, {
+        host: "127.0.0.1",
+      });
       return;
     }
     if (has("all")) {
       process.stdout.write(`${t("all.mode")}\n${t("all.warning")}\n`);
-      process.exitCode = await startServer(config, t, { host: "0.0.0.0", headless });
+      process.exitCode = await startServer(config, t, {
+        host: "0.0.0.0",
+        headless,
+      });
       return;
     }
     if (has("cf")) {
@@ -303,7 +365,10 @@ export async function main(argv = process.argv.slice(2)) {
     }
     if (has("local")) {
       process.stdout.write(`${t("local.mode")}\n`);
-      process.exitCode = await startServer(config, t, { host: "127.0.0.1", headless });
+      process.exitCode = await startServer(config, t, {
+        host: "127.0.0.1",
+        headless,
+      });
       return;
     }
     process.stderr.write(`${t("common.unknownCommand", { cmd: command })}\n`);
